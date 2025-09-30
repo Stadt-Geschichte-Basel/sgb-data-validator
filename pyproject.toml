@@ -1,0 +1,10 @@
+[project]
+name = "sgb-data-validator"
+version = "0.1.0"
+description = "A data validator for the Stadt-Geschichte-Basel project."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.11.9",
+]
