@@ -46,8 +46,6 @@ website:
             href: LICENSE-AGPL.md
           - text: Security
             href: SECURITY.md
-      - href: report.md
-        contents: project-management/*
 
 format:
   html:

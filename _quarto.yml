@@ -26,8 +26,6 @@ website:
     left:
       - text: Readme
         href: index.qmd
-      - text: Report
-        href: report.md
 
   sidebar:
     contents:
