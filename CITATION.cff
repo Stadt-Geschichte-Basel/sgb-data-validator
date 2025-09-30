@@ -1,1 +1,12 @@
-# Go to https://citation-file-format.github.io/ to learn more about the Citation File Format.
+cff-version: 1.2.0
+message: 'If you use this software, please cite it as below.'
+authors:
+  - family-names: 'Mähr'
+    given-names: 'Moritz'
+    orcid: 'https://orcid.org/0000-0002-1367-1618'
+    affiliation: 'University of Basel'
+    email: 'moritz.maehr@unibas.ch'
+title: 'sgb-data-validator'
+version: 0.1.0
+date-released: 2025-09-30
+url: 'https://github.com/Stadt-Geschichte-Basel/sgb-data-validator'
