@@ -24,11 +24,70 @@ The structure of this repository follows the [Advanced Structure for Data Analys
 
 ## Data Description
 
-This repository contains a Python script to validate data from the "Stadt.Geschichte.Basel" project's Omeka S instance. The script checks for the existence of certain fields and validates their content.
+This repository contains a Python script to validate data from the "Stadt.Geschichte.Basel" project's Omeka S instance. The script uses pydantic models to validate items and media against a comprehensive data model, checking for:
 
-The data models, including field names, descriptions, and controlled values, are documented in the `documentation` folder.
+- Required fields (title, identifier, etc.)
+- Controlled vocabularies (Era, MIME types, Licenses, Iconclass)
+- Well-formed URIs
+- Empty or invalid field values
+- Unexpected fields
+
+The data models, including field names, descriptions, and controlled values, are documented in the `data/raw/vocabularies.json` file.
 
 All rights and intellectual property issues are documented in the `LICENSE-CCBY.md` and `LICENSE-AGPL.md` files.
+
+### Installation
+
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management. To install dependencies:
+
+```bash
+pip install uv
+uv sync
+```
+
+### Usage
+
+To validate data from the Omeka S API:
+
+```bash
+# Validate the default item set (10780)
+python validate.py
+
+# Validate with custom parameters
+python validate.py --base-url https://omeka.unibe.ch --item-set-id 10780
+
+# Save report to file
+python validate.py --output validation_report.txt
+
+# Use API key for authentication (optional)
+python validate.py --api-key YOUR_API_KEY
+
+# Get help
+python validate.py --help
+```
+
+### Development
+
+This project uses the following tools from Astral:
+
+- **uv**: Fast Python package installer and resolver
+- **ruff**: Fast Python linter and formatter
+
+To run the linter and formatter:
+
+```bash
+# Check code
+uv run ruff check .
+
+# Format code
+uv run ruff format .
+```
+
+To run tests:
+
+```bash
+PYTHONPATH=. uv run python test/test_validation.py
+```
 
 ## Use
 

@@ -23,6 +23,9 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "W", "B", "UP"]
 ignore = ["N815"]  # Allow mixedCase for API field names
 
+[tool.ruff.lint.per-file-ignores]
+"test/*.py" = ["E501"]  # Allow long lines in test files
+
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
