@@ -1,0 +1,52 @@
+"""Vocabulary loader for controlled vocabularies"""
+
+import json
+from pathlib import Path
+from typing import Any
+
+
+class VocabularyLoader:
+    """Loads and manages controlled vocabularies"""
+
+    def __init__(self, vocab_file: Path) -> None:
+        with open(vocab_file, encoding="utf-8") as f:
+            data: list[dict[str, Any]] = json.load(f)
+
+        self.eras: set[str] = set()
+        self.mime_types: set[str] = set()
+        self.licenses: set[str] = set()
+        self.iconclass: set[str] = set()
+
+        for vocab in data:
+            label = vocab.get("label", "")
+            terms = vocab.get("terms", [])
+
+            if "Epoche" in label:
+                self.eras.update(terms)
+            elif "Media Type" in label:
+                self.mime_types.update(terms)
+            elif "Licenses" in label:
+                self.licenses.update(terms)
+            elif "Iconclass" in label:
+                # Extract just the code part before the pipe
+                self.iconclass.update(term.split("|")[0] for term in terms)
+
+    def is_valid_era(self, value: str) -> bool:
+        """Check if value is a valid era"""
+        return value in self.eras
+
+    def is_valid_mime_type(self, value: str) -> bool:
+        """Check if value is a valid MIME type"""
+        return value in self.mime_types
+
+    def is_valid_license(self, value: str) -> bool:
+        """Check if value is a valid license URI"""
+        return value in self.licenses
+
+    def is_valid_iconclass(self, value: str) -> bool:
+        """Check if value is a valid Iconclass code"""
+        # Check if it starts with a valid code
+        for code in self.iconclass:
+            if value.startswith(code):
+                return True
+        return False
