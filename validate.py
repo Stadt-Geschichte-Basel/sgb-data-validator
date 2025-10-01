@@ -78,8 +78,9 @@ class OmekaValidator:
 
     def fetch_media(self, item_id: int) -> list[dict[str, Any]]:
         """Fetch all media for an item"""
-        url = f"{self.base_url}/api/items/{item_id}/media"
-        response = self.client.get(url)
+        url = f"{self.base_url}/api/media"
+        params = {"item_id": item_id}
+        response = self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
 
