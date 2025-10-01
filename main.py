@@ -14,10 +14,10 @@ def main() -> None:
     print("This package validates Omeka S data for the Stadt.Geschichte.Basel project.")
     print()
     print("To validate data from the Omeka S API, run:")
-    print("  python validate.py --help")
+    print("  uv run python validate.py --help")
     print()
     print("Example usage:")
-    print("  python validate.py --item-set-id 10780 --output report.txt")
+    print("  uv run python validate.py --item-set-id 10780 --output report.txt")
     print()
 
 

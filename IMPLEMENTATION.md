@@ -68,27 +68,27 @@ The validator validates all items and media in the Omeka S item set 10780 agains
 
 ### Basic validation
 ```bash
-python validate.py
+uv run python validate.py
 ```
 
 ### Save report to file
 ```bash
-python validate.py --output validation_report.txt
+uv run python validate.py --output validation_report.txt
 ```
 
 ### Use API key
 ```bash
-python validate.py --api-key YOUR_API_KEY
+uv run python validate.py --api-key YOUR_API_KEY
 ```
 
 ### Validate different item set
 ```bash
-python validate.py --item-set-id 12345
+uv run python validate.py --item-set-id 12345
 ```
 
 ### Full options
 ```bash
-python validate.py \
+uv run python validate.py \
   --base-url https://omeka.unibe.ch \
   --item-set-id 10780 \
   --api-key YOUR_API_KEY \
@@ -115,7 +115,7 @@ uv run ruff format .
 
 ### Run tests
 ```bash
-PYTHONPATH=. uv run python test/test_validation.py
+uv run python test/test_validation.py
 ```
 
 ## Data Model

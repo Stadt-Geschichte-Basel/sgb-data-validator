@@ -51,19 +51,19 @@ To validate data from the Omeka S API:
 
 ```bash
 # Validate the default item set (10780)
-python validate.py
+uv run python validate.py
 
 # Validate with custom parameters
-python validate.py --base-url https://omeka.unibe.ch --item-set-id 10780
+uv run python validate.py --base-url https://omeka.unibe.ch --item-set-id 10780
 
 # Save report to file
-python validate.py --output validation_report.txt
+uv run python validate.py --output validation_report.txt
 
 # Use API key for authentication (optional)
-python validate.py --api-key YOUR_API_KEY
+uv run python validate.py --api-key YOUR_API_KEY
 
 # Get help
-python validate.py --help
+uv run python validate.py --help
 ```
 
 ### Development
@@ -86,7 +86,7 @@ uv run ruff format .
 To run tests:
 
 ```bash
-PYTHONPATH=. uv run python test/test_validation.py
+uv run python test/test_validation.py
 ```
 
 ## Use

@@ -1,6 +1,5 @@
 """Test data validation with sample Omeka S data"""
 
-
 from src.models import Item, Media
 
 # Sample Item from the issue

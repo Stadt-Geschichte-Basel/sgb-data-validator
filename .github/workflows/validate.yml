@@ -1,0 +1,63 @@
+name: Validate Omeka S Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      item_set_id:
+        description: 'Item Set ID to validate'
+        required: false
+        default: '10780'
+        type: string
+      base_url:
+        description: 'Base URL of Omeka S instance'
+        required: false
+        default: 'https://omeka.unibe.ch'
+        type: string
+      api_key:
+        description: 'API key for authentication (optional)'
+        required: false
+        type: string
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      
+      - name: Install dependencies
+        run: uv sync
+      
+      - name: Run validation
+        run: |
+          if [ -n "${{ github.event.inputs.api_key }}" ]; then
+            uv run python validate.py \
+              --base-url "${{ github.event.inputs.base_url }}" \
+              --item-set-id "${{ github.event.inputs.item_set_id }}" \
+              --api-key "${{ github.event.inputs.api_key }}" \
+              --output validation_report.txt
+          else
+            uv run python validate.py \
+              --base-url "${{ github.event.inputs.base_url }}" \
+              --item-set-id "${{ github.event.inputs.item_set_id }}" \
+              --output validation_report.txt
+          fi
+      
+      - name: Upload validation report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-report
+          path: validation_report.txt
+          retention-days: 30
