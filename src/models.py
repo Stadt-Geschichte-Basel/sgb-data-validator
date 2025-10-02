@@ -59,6 +59,9 @@ class Item(BaseModel):
     o_resource_template: ResourceRef | None = Field(None, alias="o:resource_template")
     o_thumbnail: Any | None = Field(None, alias="o:thumbnail")
     o_title: str = Field(alias="o:title")
+    thumbnail_display_urls: dict[str, str] | None = Field(
+        None, alias="thumbnail_display_urls"
+    )
     o_created: DateTimeValue = Field(alias="o:created")
     o_modified: DateTimeValue = Field(alias="o:modified")
     o_media: list[ResourceRef] = Field(default_factory=list, alias="o:media")
@@ -112,6 +115,9 @@ class Media(BaseModel):
     o_resource_template: ResourceRef | None = Field(None, alias="o:resource_template")
     o_thumbnail: Any | None = Field(None, alias="o:thumbnail")
     o_title: str = Field(alias="o:title")
+    thumbnail_display_urls: dict[str, str] | None = Field(
+        None, alias="thumbnail_display_urls"
+    )
     o_created: DateTimeValue = Field(alias="o:created")
     o_modified: DateTimeValue = Field(alias="o:modified")
     o_ingester: str = Field(alias="o:ingester")
