@@ -21,24 +21,24 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          version: "latest"
-      
+          version: 'latest'
+
       - name: Install dependencies
         run: uv sync
-      
+
       - name: Run validation
         run: |
           if [ -n "${{ github.event.inputs.api_key }}" ]; then
@@ -53,7 +53,7 @@ jobs:
               --item-set-id "${{ github.event.inputs.item_set_id }}" \
               --output validation_report.txt
           fi
-      
+
       - name: Upload validation report
         uses: actions/upload-artifact@v4
         if: always()

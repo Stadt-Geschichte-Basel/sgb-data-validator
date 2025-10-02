@@ -36,6 +36,31 @@ The data models, including field names, descriptions, and controlled values, are
 
 All rights and intellectual property issues are documented in the `LICENSE-CCBY.md` and `LICENSE-AGPL.md` files.
 
+### Validation Workflow
+
+```mermaid
+flowchart TD
+    A[Start Validation] --> B[Fetch Items from Omeka S API]
+    B --> C{Items Found?}
+    C -->|No| D[End - No Items]
+    C -->|Yes| E[For Each Item]
+    E --> F[Validate Item Against Pydantic Model]
+    F --> G{Valid?}
+    G -->|No| H[Log Validation Errors]
+    G -->|Yes| I[Fetch Item Media]
+    I --> J[For Each Media]
+    J --> K[Validate Media Against Pydantic Model]
+    K --> L{Valid?}
+    L -->|No| M[Log Validation Errors]
+    L -->|Yes| N[Continue]
+    H --> N
+    M --> N
+    N --> O{More Items?}
+    O -->|Yes| E
+    O -->|No| P[Generate Validation Report]
+    P --> Q[End]
+```
+
 ### Installation
 
 This project uses [uv](https://docs.astral.sh/uv/) for dependency management. To install dependencies:
