@@ -114,6 +114,43 @@ To run tests:
 uv run python test/test_validation.py
 ```
 
+### API Usage
+
+The validator now provides a comprehensive API for programmatic interaction with Omeka S data:
+
+```python
+from src.api import OmekaAPI
+
+# Initialize the API
+with OmekaAPI("https://omeka.unibe.ch", api_key="YOUR_KEY") as api:
+    # Read operations
+    item_set = api.get_item_set(10780)
+    items = api.get_items_from_set(10780)
+    item = api.get_item(12345)
+    media = api.get_media_from_item(12345)
+
+    # Save operations
+    api.save_to_file(items, "backup/items.json")
+    loaded_items = api.load_from_file("backup/items.json")
+
+    # Validation
+    is_valid, errors = api.validate_item(item_data)
+    validation_report = api.validate_item_set(10780)
+
+    # Backup operations
+    backup_paths = api.backup_item_set(10780, "backups/")
+    restore_status = api.restore_from_backup("backups/itemset_10780_20240101")
+
+    # Update operations (requires write permissions)
+    result = api.update_item(12345, updated_data, dry_run=True)
+```
+
+For complete examples, see `examples/api_usage.py`:
+
+```bash
+uv run python examples/api_usage.py
+```
+
 ## Use
 
 These data are openly available to everyone and can be used for any research or educational purpose. If you use this data in your research, please cite as specified in `CITATION.cff`. The following citation formats are also available through _Zenodo_:
