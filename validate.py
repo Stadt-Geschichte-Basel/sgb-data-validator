@@ -32,6 +32,18 @@ class DataValidationError:
         return f"[{self.resource_type} {self.resource_id}] {self.field}: {self.error}"
 
 
+class DataValidationWarning:
+    """Represents a validation warning (informational, not an error)"""
+
+    def __init__(self, resource_type: str, resource_id: int, message: str) -> None:
+        self.resource_type = resource_type
+        self.resource_id = resource_id
+        self.message = message
+
+    def __str__(self) -> str:
+        return f"[{self.resource_type} {self.resource_id}] {self.message}"
+
+
 class OmekaValidator:
     """Validates Omeka S data against data model"""
 
@@ -42,6 +54,7 @@ class OmekaValidator:
         self.api_key = api_key
         self.check_uris = check_uris
         self.errors: list[DataValidationError] = []
+        self.warnings: list[DataValidationWarning] = []
         self.validated_items = 0
         self.validated_media = 0
 
@@ -125,6 +138,13 @@ class OmekaValidator:
             if item_id:
                 try:
                     media_list = self.fetch_media(item_id)
+                    if not media_list:
+                        # Item has no media - add as informational warning
+                        self.warnings.append(
+                            DataValidationWarning(
+                                "Item", item_id, "No media/children found for this item"
+                            )
+                        )
                     for media in media_list:
                         self.validate_media(media)
                 except httpx.HTTPError as e:
@@ -140,12 +160,18 @@ class OmekaValidator:
         print(f"Items validated: {self.validated_items}")
         print(f"Media validated: {self.validated_media}")
         print(f"Total errors: {len(self.errors)}")
+        print(f"Total warnings: {len(self.warnings)}")
         print("=" * 80)
 
         if self.errors:
             print("\nERRORS:")
             for error in self.errors:
                 print(f"  {error}")
+
+        if self.warnings:
+            print("\nWARNINGS (informational):")
+            for warning in self.warnings:
+                print(f"  {warning}")
 
     def save_report(self, output_file: Path) -> None:
         """Save validation report to file"""
@@ -156,12 +182,18 @@ class OmekaValidator:
             f.write(f"Items validated: {self.validated_items}\n")
             f.write(f"Media validated: {self.validated_media}\n")
             f.write(f"Total errors: {len(self.errors)}\n")
+            f.write(f"Total warnings: {len(self.warnings)}\n")
             f.write("=" * 80 + "\n\n")
 
             if self.errors:
                 f.write("ERRORS:\n")
                 for error in self.errors:
                     f.write(f"  {error}\n")
+
+            if self.warnings:
+                f.write("\nWARNINGS (informational):\n")
+                for warning in self.warnings:
+                    f.write(f"  {warning}\n")
 
         print(f"\nReport saved to: {output_file}")
 
