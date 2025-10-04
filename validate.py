@@ -115,6 +115,7 @@ class OmekaValidator:
             return
 
         self.checked_uris += 1
+        print(f"Checking URI ({self.checked_uris}): {uri}", end="\r")
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
             try:
                 response = await client.head(uri)
@@ -260,6 +261,10 @@ class OmekaValidator:
                     print(f"\nWarning: Could not fetch media for item {item_id}: {e}")
 
         print()  # New line after progress
+        
+        # Clear the URI checking line if it was displayed
+        if self.check_uris and self.checked_uris > 0:
+            print()  # Clear the last URI checking line
 
     def print_report(self) -> None:
         """Print validation report"""
