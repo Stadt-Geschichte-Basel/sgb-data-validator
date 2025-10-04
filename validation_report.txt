@@ -1,0 +1,81 @@
+================================================================================
+VALIDATION REPORT
+================================================================================
+Items validated: 623
+Media validated: 748
+Total errors: 0
+Total warnings: 70
+================================================================================
+
+
+WARNINGS (informational):
+  [Item 10891] No media/children found for this item
+  [Item 11066] No media/children found for this item
+  [Item 11438] No media/children found for this item
+  [Item 11471] No media/children found for this item
+  [Item 11480] No media/children found for this item
+  [Item 11515] No media/children found for this item
+  [Item 11518] No media/children found for this item
+  [Item 11569] No media/children found for this item
+  [Item 11605] No media/children found for this item
+  [Item 11686] No media/children found for this item
+  [Item 11689] No media/children found for this item
+  [Item 11708] No media/children found for this item
+  [Item 11773] No media/children found for this item
+  [Item 11864] No media/children found for this item
+  [Item 11878] No media/children found for this item
+  [Item 11881] No media/children found for this item
+  [Item 11882] No media/children found for this item
+  [Item 11943] No media/children found for this item
+  [Item 11971] No media/children found for this item
+  [Item 11973] No media/children found for this item
+  [Item 11982] No media/children found for this item
+  [Item 11993] No media/children found for this item
+  [Item 11997] No media/children found for this item
+  [Item 12000] No media/children found for this item
+  [Item 12006] No media/children found for this item
+  [Item 12018] No media/children found for this item
+  [Item 12028] No media/children found for this item
+  [Item 12030] No media/children found for this item
+  [Item 12036] No media/children found for this item
+  [Item 12040] No media/children found for this item
+  [Item 12048] No media/children found for this item
+  [Item 12054] No media/children found for this item
+  [Item 12055] No media/children found for this item
+  [Item 12056] No media/children found for this item
+  [Item 12057] No media/children found for this item
+  [Item 12059] No media/children found for this item
+  [Item 12061] No media/children found for this item
+  [Item 12072] No media/children found for this item
+  [Item 12074] No media/children found for this item
+  [Item 12084] No media/children found for this item
+  [Item 12088] No media/children found for this item
+  [Item 12090] No media/children found for this item
+  [Item 12132] No media/children found for this item
+  [Item 12185] No media/children found for this item
+  [Item 12198] No media/children found for this item
+  [Item 12210] No media/children found for this item
+  [Item 12214] No media/children found for this item
+  [Item 12224] No media/children found for this item
+  [Item 12230] No media/children found for this item
+  [Item 12232] No media/children found for this item
+  [Item 12238] No media/children found for this item
+  [Item 12364] No media/children found for this item
+  [Item 12367] No media/children found for this item
+  [Item 12403] No media/children found for this item
+  [Item 12405] No media/children found for this item
+  [Item 12407] No media/children found for this item
+  [Item 12409] No media/children found for this item
+  [Item 12411] No media/children found for this item
+  [Item 12413] No media/children found for this item
+  [Item 12415] No media/children found for this item
+  [Item 12417] No media/children found for this item
+  [Item 12419] No media/children found for this item
+  [Item 12445] No media/children found for this item
+  [Item 12535] No media/children found for this item
+  [Item 12538] No media/children found for this item
+  [Item 12540] No media/children found for this item
+  [Item 12544] No media/children found for this item
+  [Item 12582] No media/children found for this item
+  [Item 12606] No media/children found for this item
+  [Item 12928] No media/children found for this item
