@@ -17,6 +17,24 @@ on:
         description: 'API key for authentication (optional)'
         required: false
         type: string
+      check_uris:
+        description: 'Check if URIs are reachable (may be slow)'
+        required: false
+        default: false
+        type: boolean
+      check_redirects:
+        description: 'Check for redirects to different domains (requires check_uris)'
+        required: false
+        default: false
+        type: boolean
+      uri_check_severity:
+        description: 'Severity for failed URI checks'
+        required: false
+        default: 'warning'
+        type: choice
+        options:
+          - warning
+          - error
 
 jobs:
   validate:
@@ -41,18 +59,28 @@ jobs:
 
       - name: Run validation
         run: |
+          CMD="uv run python validate.py \
+            --base-url \"${{ github.event.inputs.base_url }}\" \
+            --item-set-id \"${{ github.event.inputs.item_set_id }}\" \
+            --output validation_report.txt"
+          
           if [ -n "${{ github.event.inputs.api_key }}" ]; then
-            uv run python validate.py \
-              --base-url "${{ github.event.inputs.base_url }}" \
-              --item-set-id "${{ github.event.inputs.item_set_id }}" \
-              --api-key "${{ github.event.inputs.api_key }}" \
-              --output validation_report.txt
-          else
-            uv run python validate.py \
-              --base-url "${{ github.event.inputs.base_url }}" \
-              --item-set-id "${{ github.event.inputs.item_set_id }}" \
-              --output validation_report.txt
+            CMD="$CMD --api-key \"${{ github.event.inputs.api_key }}\""
           fi
+          
+          if [ "${{ github.event.inputs.check_uris }}" = "true" ]; then
+            CMD="$CMD --check-uris"
+          fi
+          
+          if [ "${{ github.event.inputs.check_redirects }}" = "true" ]; then
+            CMD="$CMD --check-redirects"
+          fi
+          
+          if [ -n "${{ github.event.inputs.uri_check_severity }}" ]; then
+            CMD="$CMD --uri-check-severity \"${{ github.event.inputs.uri_check_severity }}\""
+          fi
+          
+          eval $CMD
 
       - name: Upload validation report
         uses: actions/upload-artifact@v4

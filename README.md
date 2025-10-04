@@ -87,9 +87,34 @@ uv run python validate.py --output validation_report.txt
 # Use API key for authentication (optional)
 uv run python validate.py --api-key YOUR_API_KEY
 
+# Check URIs for broken links (404 errors, etc.) - This may take longer
+uv run python validate.py --check-uris
+
+# Check URIs and report redirects to different domains
+uv run python validate.py --check-uris --check-redirects
+
+# Treat failed URI checks as errors instead of warnings
+uv run python validate.py --check-uris --uri-check-severity error
+
 # Get help
 uv run python validate.py --help
 ```
+
+#### URL/URI Checking
+
+The validator can check URLs and URIs in the data to ensure they are reachable:
+
+- **`--check-uris`**: Enable URI checking (validates URLs in dcterms fields and media URLs)
+- **`--check-redirects`**: Check for redirects and warn if URLs redirect to different domains (requires `--check-uris`)
+- **`--uri-check-severity`**: Set severity for failed URI checks - `warning` (default) or `error`
+
+URI checking features:
+- Detects 404 errors and other HTTP status codes (4xx, 5xx)
+- Validates URLs in Dublin Core fields (dcterms:creator, dcterms:source, etc.)
+- Checks media original URLs
+- Uses asynchronous requests for efficient parallel checking
+- Configurable severity allows treating broken links as warnings or errors
+- Optional redirect detection warns when URLs redirect to unexpected domains
 
 ### Development
 
