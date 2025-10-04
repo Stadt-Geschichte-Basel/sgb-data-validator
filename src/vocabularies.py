@@ -16,6 +16,11 @@ class VocabularyLoader:
         self.mime_types: set[str] = set()
         self.licenses: set[str] = set()
         self.iconclass: set[str] = set()
+        self.types: set[str] = {
+            "http://purl.org/dc/dcmitype/Image",
+            "http://purl.org/dc/dcmitype/Dataset"
+        }
+        self.languages: set[str] = {"de", "fr", "sp", "lat"}
 
         for vocab in data:
             label = vocab.get("label", "")
@@ -50,3 +55,11 @@ class VocabularyLoader:
             if value.startswith(code):
                 return True
         return False
+
+    def is_valid_type(self, value: str) -> bool:
+        """Check if value is a valid Dublin Core type URI"""
+        return value in self.types
+
+    def is_valid_language(self, value: str) -> bool:
+        """Check if value is a valid language code"""
+        return value in self.languages

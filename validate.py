@@ -219,6 +219,105 @@ class OmekaValidator:
 
         return uris
 
+    def _validate_vocabularies(self, data: dict[str, Any], resource_type: str, resource_id: int) -> None:
+        """Validate vocabulary-controlled fields"""
+        # Validate dcterms:temporal (Era)
+        temporal_values = data.get("dcterms:temporal", [])
+        if isinstance(temporal_values, list):
+            for idx, item in enumerate(temporal_values):
+                if isinstance(item, dict):
+                    value = item.get("@value")
+                    if value and not self.vocab_loader.is_valid_era(value):
+                        self.errors.append(
+                            DataValidationError(
+                                resource_type,
+                                resource_id,
+                                f"dcterms:temporal[{idx}]",
+                                f"Value must be from Era vocabulary: {value}"
+                            )
+                        )
+        
+        # Validate dcterms:format (MIME type)
+        format_values = data.get("dcterms:format", [])
+        if isinstance(format_values, list):
+            for idx, item in enumerate(format_values):
+                if isinstance(item, dict):
+                    value = item.get("@value")
+                    if value and not self.vocab_loader.is_valid_mime_type(value):
+                        self.errors.append(
+                            DataValidationError(
+                                resource_type,
+                                resource_id,
+                                f"dcterms:format[{idx}]",
+                                f"Value must be from MIME type vocabulary: {value}"
+                            )
+                        )
+        
+        # Validate dcterms:license
+        license_values = data.get("dcterms:license", [])
+        if isinstance(license_values, list):
+            for idx, item in enumerate(license_values):
+                if isinstance(item, dict):
+                    value = item.get("@value")
+                    if value and not self.vocab_loader.is_valid_license(value):
+                        self.errors.append(
+                            DataValidationError(
+                                resource_type,
+                                resource_id,
+                                f"dcterms:license[{idx}]",
+                                f"Invalid license URI: {value}"
+                            )
+                        )
+        
+        # Validate dcterms:type
+        type_values = data.get("dcterms:type", [])
+        if isinstance(type_values, list):
+            for idx, item in enumerate(type_values):
+                if isinstance(item, dict):
+                    value = item.get("@id")
+                    if value and not self.vocab_loader.is_valid_type(value):
+                        self.errors.append(
+                            DataValidationError(
+                                resource_type,
+                                resource_id,
+                                f"dcterms:type[{idx}]",
+                                f"Invalid type URI (must be Image or Dataset): {value}"
+                            )
+                        )
+        
+        # Validate dcterms:language
+        language_values = data.get("dcterms:language", [])
+        if isinstance(language_values, list):
+            for idx, item in enumerate(language_values):
+                if isinstance(item, dict):
+                    value = item.get("@value")
+                    if value and not self.vocab_loader.is_valid_language(value):
+                        self.errors.append(
+                            DataValidationError(
+                                resource_type,
+                                resource_id,
+                                f"dcterms:language[{idx}]",
+                                f"Invalid language code (must be de, fr, sp, or lat): {value}"
+                            )
+                        )
+        
+        # Validate dcterms:subject (Iconclass)
+        subject_values = data.get("dcterms:subject", [])
+        if isinstance(subject_values, list):
+            for idx, item in enumerate(subject_values):
+                if isinstance(item, dict):
+                    value = item.get("@value")
+                    # Only validate if it looks like an Iconclass code (starts with numbers)
+                    if value and value[0].isdigit() and not self.vocab_loader.is_valid_iconclass(value):
+                        self.errors.append(
+                            DataValidationError(
+                                resource_type,
+                                resource_id,
+                                f"dcterms:subject[{idx}]",
+                                f"Invalid Iconclass code: {value}"
+                            )
+                        )
+
     async def check_uris_for_resource(
         self, data: dict[str, Any], resource_type: str, resource_id: int
     ) -> None:
@@ -239,10 +338,13 @@ class OmekaValidator:
         try:
             Item.model_validate(item_data)
             self.validated_items += 1
+            
+            # Additional vocabulary validations
+            item_id = item_data.get("o:id", "unknown")
+            self._validate_vocabularies(item_data, "Item", item_id)
 
             # Check URIs if enabled
             if self.check_uris:
-                item_id = item_data.get("o:id", 0)
                 asyncio.run(self.check_uris_for_resource(item_data, "Item", item_id))
 
         except ValidationError as e:
@@ -258,10 +360,13 @@ class OmekaValidator:
         try:
             Media.model_validate(media_data)
             self.validated_media += 1
+            
+            # Additional vocabulary validations
+            media_id = media_data.get("o:id", "unknown")
+            self._validate_vocabularies(media_data, "Media", media_id)
 
             # Check URIs if enabled
             if self.check_uris:
-                media_id = media_data.get("o:id", 0)
                 asyncio.run(self.check_uris_for_resource(media_data, "Media", media_id))
 
         except ValidationError as e:

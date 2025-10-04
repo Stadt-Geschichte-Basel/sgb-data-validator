@@ -16,23 +16,12 @@
 		"label": "Internet Media Type",
 		"language": "en",
 		"terms": [
-			"application/geo+json",
-			"application/pdf",
-			"image/jpeg",
-			"image/png",
-			"image/svg+xml",
 			"image/tiff",
-			"image/bmp",
-			"image/emf",
-			"image/wmf",
-			"image/gif",
-			"image/webp",
-			"image/avif",
-			"image/heic",
-			"image/heif",
+			"image/jpeg",
+			"application/pdf",
+			"application/geo+json",
 			"text/csv",
-			"text/markdown",
-			"text/plain"
+			"image/png"
 		]
 	},
 	{
@@ -40,12 +29,11 @@
 		"language": "en",
 		"terms": [
 			"https://creativecommons.org/publicdomain/mark/1.0/",
-			"https://creativecommons.org/publicdomain/zero/1.0/",
-			"https://creativecommons.org/licenses/by/4.0/",
 			"https://creativecommons.org/licenses/by-sa/4.0/",
+			"http://rightsstatements.org/vocab/inc/1.0/",
+			"https://creativecommons.org/licenses/by/4.0/",
 			"https://creativecommons.org/licenses/by-nc-sa/4.0/",
-			"http://rightsstatements.org/vocab/InC/1.0/",
-			"http://rightsstatements.org/vocab/InC-RUU/1.0/"
+			"https://creativecommons.org/publicdomain/zero/1.0/"
 		]
 	},
 	{
