@@ -115,7 +115,9 @@ class OmekaValidator:
             return
 
         self.checked_uris += 1
-        print(f"Checking URI ({self.checked_uris}): {uri}", end="\r")
+        # Truncate long URIs for display
+        display_uri = uri if len(uri) <= 60 else uri[:57] + "..."
+        print(f"\rChecking URI ({self.checked_uris}): {display_uri}        ", end="", flush=True)
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
             try:
                 response = await client.head(uri)
@@ -240,7 +242,7 @@ class OmekaValidator:
         print(f"Found {len(items)} items")
 
         for idx, item in enumerate(items, 1):
-            print(f"Validating item {idx}/{len(items)}...", end="\r")
+            print(f"\rValidating item {idx}/{len(items)}...        ", end="", flush=True)
             self.validate_item(item)
 
             # Validate associated media
@@ -258,13 +260,15 @@ class OmekaValidator:
                     for media in media_list:
                         self.validate_media(media)
                 except httpx.HTTPError as e:
-                    print(f"\nWarning: Could not fetch media for item {item_id}: {e}")
+                    print(f"\n\rWarning: Could not fetch media for item {item_id}: {e}")
 
-        print()  # New line after progress
+        print("\r" + " " * 80 + "\r", end="")  # Clear progress line
         
-        # Clear the URI checking line if it was displayed
+        # Show URI checking summary if enabled
         if self.check_uris and self.checked_uris > 0:
-            print()  # Clear the last URI checking line
+            print(f"Checked {self.checked_uris} URIs, {self.failed_uris} failed")
+        else:
+            print()  # Just add a newline
 
     def print_report(self) -> None:
         """Print validation report"""
@@ -273,11 +277,11 @@ class OmekaValidator:
         print("=" * 80)
         print(f"Items validated: {self.validated_items}")
         print(f"Media validated: {self.validated_media}")
+        print(f"Total errors: {len(self.errors)}")
+        print(f"Total warnings: {len(self.warnings)}")
         if self.check_uris:
             print(f"URIs checked: {self.checked_uris}")
             print(f"Failed URIs: {self.failed_uris}")
-        print(f"Total errors: {len(self.errors)}")
-        print(f"Total warnings: {len(self.warnings)}")
         print("=" * 80)
 
         if self.errors:
@@ -298,11 +302,11 @@ class OmekaValidator:
             f.write("=" * 80 + "\n")
             f.write(f"Items validated: {self.validated_items}\n")
             f.write(f"Media validated: {self.validated_media}\n")
+            f.write(f"Total errors: {len(self.errors)}\n")
+            f.write(f"Total warnings: {len(self.warnings)}\n")
             if self.check_uris:
                 f.write(f"URIs checked: {self.checked_uris}\n")
                 f.write(f"Failed URIs: {self.failed_uris}\n")
-            f.write(f"Total errors: {len(self.errors)}\n")
-            f.write(f"Total warnings: {len(self.warnings)}\n")
             f.write("=" * 80 + "\n\n")
 
             if self.errors:
