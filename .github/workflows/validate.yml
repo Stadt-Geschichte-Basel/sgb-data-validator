@@ -63,23 +63,23 @@ jobs:
             --base-url \"${{ github.event.inputs.base_url }}\" \
             --item-set-id \"${{ github.event.inputs.item_set_id }}\" \
             --output validation_report.txt"
-          
+
           if [ -n "${{ github.event.inputs.api_key }}" ]; then
             CMD="$CMD --api-key \"${{ github.event.inputs.api_key }}\""
           fi
-          
+
           if [ "${{ github.event.inputs.check_uris }}" = "true" ]; then
             CMD="$CMD --check-uris"
           fi
-          
+
           if [ "${{ github.event.inputs.check_redirects }}" = "true" ]; then
             CMD="$CMD --check-redirects"
           fi
-          
+
           if [ -n "${{ github.event.inputs.uri_check_severity }}" ]; then
             CMD="$CMD --uri-check-severity \"${{ github.event.inputs.uri_check_severity }}\""
           fi
-          
+
           eval $CMD
 
       - name: Upload validation report

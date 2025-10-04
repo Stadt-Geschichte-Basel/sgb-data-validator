@@ -96,6 +96,15 @@ uv run python validate.py --check-uris --check-redirects
 # Treat failed URI checks as errors instead of warnings
 uv run python validate.py --check-uris --uri-check-severity error
 
+# Enable data profiling and generate HTML reports
+uv run python validate.py --profile
+
+# Enable minimal profiling (faster, less detailed)
+uv run python validate.py --profile --profile-minimal
+
+# Specify profiling output directory
+uv run python validate.py --profile --profile-output my_analysis/
+
 # Get help
 uv run python validate.py --help
 ```
@@ -109,12 +118,49 @@ The validator can check URLs and URIs in the data to ensure they are reachable:
 - **`--uri-check-severity`**: Set severity for failed URI checks - `warning` (default) or `error`
 
 URI checking features:
+
 - Detects 404 errors and other HTTP status codes (4xx, 5xx)
 - Validates URLs in Dublin Core fields (dcterms:creator, dcterms:source, etc.)
 - Checks media original URLs
 - Uses asynchronous requests for efficient parallel checking
 - Configurable severity allows treating broken links as warnings or errors
 - Optional redirect detection warns when URLs redirect to unexpected domains
+
+#### Data Profiling
+
+The validator can generate comprehensive data profiling reports using [ydata-profiling](https://docs.profiling.ydata.ai/):
+
+- **`--profile`**: Enable data profiling and generate analysis reports
+- **`--profile-minimal`**: Generate minimal profiling reports (faster, less detailed)
+- **`--profile-output`**: Specify output directory for profiling reports (default: `analysis/`)
+
+Profiling features:
+
+- **Automatic DataFrame conversion**: Converts nested JSON data from Omeka S API into tabular format
+- **Interactive HTML reports**: Generates comprehensive HTML reports with statistics, distributions, correlations, and missing values
+- **Separate analysis for items and media**: Creates individual reports for items and media with appropriate field handling
+- **CSV exports**: Saves flattened data to CSV files for further analysis
+- **Correlation analysis**: Identifies relationships between fields
+- **Missing data analysis**: Shows patterns of missing or incomplete data
+- **Data quality insights**: Helps identify data quality issues and inconsistencies
+
+Example profiling output:
+
+```
+analysis/
+├── items.csv                   # Flattened items data
+├── items_profile.html          # Interactive items report
+├── media.csv                   # Flattened media data
+└── media_profile.html          # Interactive media report
+```
+
+Each HTML report includes:
+
+- Overview with dataset statistics
+- Variable details (type, distribution, unique values)
+- Correlation matrix
+- Missing values analysis
+- Sample data previews
 
 ### Development
 

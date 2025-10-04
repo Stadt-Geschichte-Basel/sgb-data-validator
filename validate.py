@@ -15,6 +15,7 @@ import httpx
 from pydantic import ValidationError
 
 from src.models import Item, Media
+from src.profiling import analyze_items, analyze_media
 from src.vocabularies import VocabularyLoader
 
 
@@ -55,12 +56,14 @@ class OmekaValidator:
         check_uris: bool = False,
         check_redirects: bool = False,
         uri_check_severity: str = "warning",
+        enable_profiling: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.check_uris = check_uris
         self.check_redirects = check_redirects
         self.uri_check_severity = uri_check_severity
+        self.enable_profiling = enable_profiling
         self.errors: list[DataValidationError] = []
         self.warnings: list[DataValidationWarning] = []
         self.validated_items = 0
@@ -68,6 +71,10 @@ class OmekaValidator:
         self.checked_uris = 0
         self.failed_uris = 0
         self.uri_cache: dict[str, tuple[int, str | None]] = {}  # LRU cache for URI checks
+        
+        # Store raw data for profiling
+        self.items_data: list[dict[str, Any]] = []
+        self.media_data: list[dict[str, Any]] = []
 
         headers = {}
         if api_key:
@@ -335,10 +342,14 @@ class OmekaValidator:
 
     def validate_item(self, item_data: dict[str, Any]) -> None:
         """Validate a single item"""
+        # Store raw data for profiling if enabled
+        if self.enable_profiling:
+            self.items_data.append(item_data)
+            
         try:
             Item.model_validate(item_data)
             self.validated_items += 1
-            
+
             # Additional vocabulary validations
             item_id = item_data.get("o:id", "unknown")
             self._validate_vocabularies(item_data, "Item", item_id)
@@ -357,6 +368,10 @@ class OmekaValidator:
 
     def validate_media(self, media_data: dict[str, Any]) -> None:
         """Validate a single media object"""
+        # Store raw data for profiling if enabled
+        if self.enable_profiling:
+            self.media_data.append(media_data)
+            
         try:
             Media.model_validate(media_data)
             self.validated_media += 1
@@ -463,6 +478,39 @@ class OmekaValidator:
 
         print(f"\nReport saved to: {output_file}")
 
+    def generate_profiling_reports(self, output_dir: str | Path = "analysis", minimal: bool = False) -> None:
+        """Generate data profiling reports using ydata-profiling.
+        
+        Args:
+            output_dir: Directory to save profiling outputs
+            minimal: If True, generate minimal reports for faster processing
+        """
+        if not self.enable_profiling:
+            print("Profiling is not enabled. Use --profile to enable data profiling.")
+            return
+            
+        if not self.items_data and not self.media_data:
+            print("No data collected for profiling.")
+            return
+            
+        output_dir = Path(output_dir)
+        print(f"\nGenerating profiling reports in {output_dir}/...")
+        
+        if self.items_data:
+            print(f"  Profiling {len(self.items_data)} items...")
+            analyze_items(self.items_data, output_dir, minimal=minimal)
+            print(f"    - Items DataFrame saved to {output_dir}/items.csv")
+            print(f"    - Items profile report saved to {output_dir}/items_profile.html")
+        
+        if self.media_data:
+            print(f"  Profiling {len(self.media_data)} media...")
+            analyze_media(self.media_data, output_dir, minimal=minimal)
+            print(f"    - Media DataFrame saved to {output_dir}/media.csv")
+            print(f"    - Media profile report saved to {output_dir}/media_profile.html")
+        
+        print("\nProfiling complete!")
+
+
 
 def main() -> int:
     """Main entry point"""
@@ -502,6 +550,22 @@ def main() -> int:
         type=Path,
         help="Save report to file (default: print to console only)",
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable data profiling and generate analysis reports",
+    )
+    parser.add_argument(
+        "--profile-minimal",
+        action="store_true",
+        help="Generate minimal profiling reports (faster, less detailed)",
+    )
+    parser.add_argument(
+        "--profile-output",
+        type=Path,
+        default="analysis",
+        help="Directory for profiling outputs (default: analysis/)",
+    )
 
     args = parser.parse_args()
 
@@ -512,6 +576,8 @@ def main() -> int:
         print(f"URI checking: enabled (severity: {args.uri_check_severity})")
         if args.check_redirects:
             print("Redirect checking: enabled")
+    if args.profile:
+        print(f"Data profiling: enabled (output: {args.profile_output}/)")
     print()
 
     validator = OmekaValidator(
@@ -520,6 +586,7 @@ def main() -> int:
         args.check_uris,
         args.check_redirects,
         args.uri_check_severity,
+        args.profile,
     )
 
     try:
@@ -535,6 +602,9 @@ def main() -> int:
 
     if args.output:
         validator.save_report(args.output)
+    
+    if args.profile:
+        validator.generate_profiling_reports(args.profile_output, args.profile_minimal)
 
     return 0 if not validator.errors else 1
 
