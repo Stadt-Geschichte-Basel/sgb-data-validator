@@ -67,6 +67,7 @@ class OmekaValidator:
         self.validated_media = 0
         self.checked_uris = 0
         self.failed_uris = 0
+        self.uri_cache: dict[str, tuple[int, str | None]] = {}  # LRU cache for URI checks
 
         headers = {}
         if api_key:
@@ -107,6 +108,29 @@ class OmekaValidator:
         response.raise_for_status()
         return response.json()
 
+    async def check_single_uri(self, uri: str) -> tuple[int, str | None]:
+        """Check a single URI and return (status_code, redirect_location)"""
+        # Check cache first
+        if uri in self.uri_cache:
+            return self.uri_cache[uri]
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False, headers=headers) as client:
+            try:
+                response = await client.head(uri)
+                redirect_location = response.headers.get("location")
+                result = (response.status_code, redirect_location)
+                # Cache the result
+                self.uri_cache[uri] = result
+                return result
+            except (httpx.RequestError, httpx.HTTPError) as e:
+                # Return a special status code for exceptions
+                result = (-1, str(e))
+                self.uri_cache[uri] = result
+                return result
+
     async def check_uri_async(
         self, uri: str, resource_type: str, resource_id: int, field: str
     ) -> None:
@@ -118,36 +142,14 @@ class OmekaValidator:
         # Truncate long URIs for display
         display_uri = uri if len(uri) <= 60 else uri[:57] + "..."
         print(f"\rChecking URI ({self.checked_uris}): {display_uri}        ", end="", flush=True)
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
-            try:
-                response = await client.head(uri)
-
-                # Check for redirects
-                if self.check_redirects and response.status_code in (301, 302, 303, 307, 308):
-                    redirect_location = response.headers.get("location", "")
-                    # Check if redirect is to a different domain
-                    if redirect_location and not redirect_location.startswith(uri.split("/")[2]):
-                        message = f"URI redirects to different domain: {uri} -> {redirect_location}"
-                        self.warnings.append(
-                            DataValidationWarning(resource_type, resource_id, f"{field}: {message}")
-                        )
-
-                # Check for HTTP errors
-                if response.status_code >= 400:
-                    self.failed_uris += 1
-                    message = f"URI returned HTTP {response.status_code}: {uri}"
-                    if self.uri_check_severity == "error":
-                        self.errors.append(
-                            DataValidationError(resource_type, resource_id, field, message)
-                        )
-                    else:
-                        self.warnings.append(
-                            DataValidationWarning(resource_type, resource_id, f"{field}: {message}")
-                        )
-
-            except (httpx.RequestError, httpx.HTTPError) as e:
+        
+        try:
+            status_code, redirect_location = await self.check_single_uri(uri)
+            
+            if status_code == -1:
+                # This was an exception
                 self.failed_uris += 1
-                message = f"URI check failed: {uri} ({str(e)})"
+                message = f"URI check failed: {uri} ({redirect_location})"
                 if self.uri_check_severity == "error":
                     self.errors.append(
                         DataValidationError(resource_type, resource_id, field, message)
@@ -156,6 +158,41 @@ class OmekaValidator:
                     self.warnings.append(
                         DataValidationWarning(resource_type, resource_id, f"{field}: {message}")
                     )
+                return
+
+            # Check for redirects
+            if self.check_redirects and status_code in (301, 302, 303, 307, 308):
+                # Check if redirect is to a different domain
+                if redirect_location and not redirect_location.startswith(uri.split("/")[2]):
+                    message = f"URI redirects to different domain: {uri} -> {redirect_location}"
+                    self.warnings.append(
+                        DataValidationWarning(resource_type, resource_id, f"{field}: {message}")
+                    )
+
+            # Check for HTTP errors
+            if status_code >= 400:
+                self.failed_uris += 1
+                message = f"URI returned HTTP {status_code}: {uri}"
+                if self.uri_check_severity == "error":
+                    self.errors.append(
+                        DataValidationError(resource_type, resource_id, field, message)
+                    )
+                else:
+                    self.warnings.append(
+                        DataValidationWarning(resource_type, resource_id, f"{field}: {message}")
+                    )
+        except Exception as e:
+            # Catch any other exceptions
+            self.failed_uris += 1
+            message = f"URI check failed: {uri} ({str(e)})"
+            if self.uri_check_severity == "error":
+                self.errors.append(
+                    DataValidationError(resource_type, resource_id, field, message)
+                )
+            else:
+                self.warnings.append(
+                    DataValidationWarning(resource_type, resource_id, f"{field}: {message}")
+                )
 
     def extract_uris_from_data(self, data: dict[str, Any]) -> list[tuple[str, str]]:
         """Extract URIs from item or media data
