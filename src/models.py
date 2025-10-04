@@ -51,7 +51,7 @@ class Item(BaseModel):
 
     context: str = Field(alias="@context")
     id: str = Field(alias="@id")
-    type: str = Field(alias="@type")
+    type: str | list[str] = Field(alias="@type")
     o_id: int = Field(alias="o:id")
     o_is_public: bool = Field(alias="o:is_public")
     o_owner: ResourceRef | None = Field(None, alias="o:owner")
@@ -59,7 +59,7 @@ class Item(BaseModel):
     o_resource_template: ResourceRef | None = Field(None, alias="o:resource_template")
     o_thumbnail: ResourceRef | dict[str, Any] | None = Field(None, alias="o:thumbnail")
     o_title: str = Field(alias="o:title")
-    thumbnail_display_urls: dict[str, str] | list[Any] | None = Field(
+    thumbnail_display_urls: dict[str, str | None] | list[Any] | None = Field(
         None, alias="thumbnail_display_urls"
     )
     o_created: DateTimeValue = Field(alias="o:created")
@@ -107,7 +107,7 @@ class Media(BaseModel):
 
     context: str = Field(alias="@context")
     id: str = Field(alias="@id")
-    type: str = Field(alias="@type")
+    type: str | list[str] = Field(alias="@type")
     o_id: int = Field(alias="o:id")
     o_is_public: bool = Field(alias="o:is_public")
     o_owner: ResourceRef | None = Field(None, alias="o:owner")
@@ -115,7 +115,7 @@ class Media(BaseModel):
     o_resource_template: ResourceRef | None = Field(None, alias="o:resource_template")
     o_thumbnail: ResourceRef | dict[str, Any] | None = Field(None, alias="o:thumbnail")
     o_title: str = Field(alias="o:title")
-    thumbnail_display_urls: dict[str, str] | list[Any] | None = Field(
+    thumbnail_display_urls: dict[str, str | None] | list[Any] | None = Field(
         None, alias="thumbnail_display_urls"
     )
     o_created: DateTimeValue = Field(alias="o:created")
@@ -131,7 +131,7 @@ class Media(BaseModel):
     o_lang: str | None = Field(None, alias="o:lang")
     o_alt_text: str | None = Field(None, alias="o:alt_text")
     o_original_url: str | None = Field(None, alias="o:original_url")
-    o_thumbnail_urls: dict[str, str] | list[Any] | None = Field(
+    o_thumbnail_urls: dict[str, str | None] | list[Any] | None = Field(
         None, alias="o:thumbnail_urls"
     )
     data: list[Any] = Field(default_factory=list)
