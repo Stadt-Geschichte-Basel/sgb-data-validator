@@ -16,11 +16,8 @@ class VocabularyLoader:
         self.mime_types: set[str] = set()
         self.licenses: set[str] = set()
         self.iconclass: set[str] = set()
-        self.types: set[str] = {
-            "http://purl.org/dc/dcmitype/Image",
-            "http://purl.org/dc/dcmitype/Dataset"
-        }
-        self.languages: set[str] = {"de", "fr", "sp", "lat"}
+        self.types: set[str] = set()
+        self.languages: set[str] = set()
 
         for vocab in data:
             label = vocab.get("label", "")
@@ -35,6 +32,10 @@ class VocabularyLoader:
             elif "Iconclass" in label:
                 # Extract just the code part before the pipe
                 self.iconclass.update(term.split("|")[0] for term in terms)
+            elif "Dublin Core Types" in label:
+                self.types.update(terms)
+            elif "Languages" in label:
+                self.languages.update(terms)
 
     def is_valid_era(self, value: str) -> bool:
         """Check if value is a valid era"""

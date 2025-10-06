@@ -28,11 +28,13 @@
 		"label": "Licenses",
 		"language": "en",
 		"terms": [
-			"https://creativecommons.org/publicdomain/mark/1.0/",
-			"https://creativecommons.org/licenses/by-sa/4.0/",
+			"http://rightsstatements.org/vocab/InC-RUU/1.0/",
+			"http://rightsstatements.org/vocab/InC/1.0/",
 			"http://rightsstatements.org/vocab/inc/1.0/",
-			"https://creativecommons.org/licenses/by/4.0/",
 			"https://creativecommons.org/licenses/by-nc-sa/4.0/",
+			"https://creativecommons.org/licenses/by-sa/4.0/",
+			"https://creativecommons.org/licenses/by/4.0/",
+			"https://creativecommons.org/publicdomain/mark/1.0/",
 			"https://creativecommons.org/publicdomain/zero/1.0/"
 		]
 	},
@@ -414,5 +416,20 @@
 			"98B|männliche Personen der klassisch-antiken Geschichte",
 			"98C|weibliche Personen der klassisch-antiken Geschichte"
 		]
+	},
+	{
+		"label": "Dublin Core Types",
+		"language": "en",
+		"terms": [
+			"http://purl.org/dc/dcmitype/Dataset",
+			"http://purl.org/dc/dcmitype/Image",
+			"https://purl.org/dc/dcmitype/Dataset",
+			"https://purl.org/dc/dcmitype/Image"
+		]
+	},
+	{
+		"label": "Languages",
+		"language": "en",
+		"terms": ["de", "fr", "sp", "lat"]
 	}
 ]
