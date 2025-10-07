@@ -70,21 +70,40 @@ pip install uv
 uv sync
 ```
 
+### Configuration
+
+You can configure the validator using a `.env` file. Copy the example file and edit it with your settings:
+
+```bash
+cp example.env .env
+```
+
+The `.env` file should contain:
+
+```env
+OMEKA_URL=https://omeka.unibe.ch
+KEY_IDENTITY=YOUR_KEY_IDENTITY
+KEY_CREDENTIAL=YOUR_KEY_CREDENTIAL
+ITEM_SET_ID=10780
+```
+
+**Note:** Command-line parameters will override values from the `.env` file. This allows you to set default values in `.env` and override them when needed.
+
 ### Usage
 
 To validate data from the Omeka S API:
 
 ```bash
-# Validate the default item set (10780)
+# Validate using settings from .env file
 uv run python validate.py
 
-# Validate with custom parameters
+# Validate the default item set (10780) with explicit parameters
 uv run python validate.py --base-url https://omeka.unibe.ch --item-set-id 10780
 
 # Save report to file
 uv run python validate.py --output validation_report.txt
 
-# Use API keys for authentication (optional)
+# Use API keys for authentication (can also be set in .env file)
 uv run python validate.py --key-identity YOUR_KEY_IDENTITY --key-credential YOUR_KEY_CREDENTIAL
 
 # Check URIs for broken links (404 errors, etc.) - This may take longer
@@ -193,7 +212,11 @@ The validator now provides a comprehensive API for programmatic interaction with
 from src.api import OmekaAPI
 
 # Initialize the API
-with OmekaAPI("https://omeka.unibe.ch", api_key="YOUR_KEY") as api:
+with OmekaAPI(
+    "https://omeka.unibe.ch",
+    key_identity="YOUR_KEY_IDENTITY",
+    key_credential="YOUR_KEY_CREDENTIAL"
+) as api:
     # Read operations
     item_set = api.get_item_set(10780)
     items = api.get_items_from_set(10780)

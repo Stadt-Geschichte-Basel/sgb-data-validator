@@ -7,11 +7,13 @@ a comprehensive data model using pydantic.
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from src.models import Item, Media
@@ -185,7 +187,8 @@ class OmekaValidator:
             if status_code >= 400:
                 self.failed_uris += 1
                 message = f"URI returned HTTP {status_code}: {uri}"
-                if self.uri_check_severity == "error":
+                # 404 errors are always treated as errors
+                if status_code == 404 or self.uri_check_severity == "error":
                     self.errors.append(
                         DataValidationError(resource_type, resource_id, field, message)
                     )
@@ -519,22 +522,39 @@ class OmekaValidator:
 
 def main() -> int:
     """Main entry point"""
+    # Load environment variables from .env file if it exists
+    load_dotenv()
+    
+    # Get defaults from environment variables
+    env_base_url = os.getenv("OMEKA_URL", "https://omeka.unibe.ch")
+    env_item_set_id = int(os.getenv("ITEM_SET_ID", "10780"))
+    env_key_identity = os.getenv("KEY_IDENTITY")
+    env_key_credential = os.getenv("KEY_CREDENTIAL")
+    
     parser = argparse.ArgumentParser(
         description="Validate Omeka S data against Stadt.Geschichte.Basel data model"
     )
     parser.add_argument(
         "--base-url",
-        default="https://omeka.unibe.ch",
-        help="Base URL of the Omeka S instance (default: https://omeka.unibe.ch)",
+        default=env_base_url,
+        help=f"Base URL of the Omeka S instance (default: {env_base_url})",
     )
     parser.add_argument(
         "--item-set-id",
         type=int,
-        default=10780,
-        help="Item set ID to validate (default: 10780)",
+        default=env_item_set_id,
+        help=f"Item set ID to validate (default: {env_item_set_id})",
     )
-    parser.add_argument("--key-identity", help="Optional API key identity for authentication")
-    parser.add_argument("--key-credential", help="Optional API key credential for authentication")
+    parser.add_argument(
+        "--key-identity",
+        default=env_key_identity,
+        help="Optional API key identity for authentication (can be set in .env as KEY_IDENTITY)",
+    )
+    parser.add_argument(
+        "--key-credential",
+        default=env_key_credential,
+        help="Optional API key credential for authentication (can be set in .env as KEY_CREDENTIAL)",
+    )
     parser.add_argument(
         "--check-uris",
         action="store_true",

@@ -10,6 +10,7 @@ dependencies = [
     "pandas>=2.2.0",
     "ydata-profiling>=4.10.0",
     "setuptools>=75.0.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

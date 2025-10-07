@@ -45,7 +45,8 @@ graph TB
    - Connects to Omeka S API using httpx
    - Validates items and media using pydantic models
    - Generates comprehensive error reports
-   - Supports optional API key authentication
+   - Supports optional Omeka S authentication (key_identity and key_credential) via CLI or .env file
+   - Loads configuration from .env file (command-line args override)
 
 2. **`src/models.py`** - Pydantic data models
    - `OmekaProperty` - Base model for Omeka property values
@@ -119,7 +120,9 @@ sequenceDiagram
 - [x] Uses uv for project setup
 - [x] Uses ruff for formatting and linting
 - [x] Type checking support with mypy annotations
-- [x] Optional API key authentication
+- [x] Optional Omeka S authentication with key_identity and key_credential (CLI or .env file)
+- [x] Configuration via .env file with command-line override
+- [x] Uses python-dotenv for environment variable loading
 - [x] Validates all items and media in item set
 - [x] Continues validation on errors (doesn't stop)
 - [x] Comprehensive error logging
@@ -135,14 +138,53 @@ sequenceDiagram
 ✅ **CLI Features**
 
 - [x] Simple command-line interface
-- [x] Optional API key parameter
+- [x] Configuration via .env file
+- [x] Command-line arguments override .env values
+- [x] Optional Omeka S authentication parameters (key_identity and key_credential via CLI or .env)
 - [x] Configurable base URL and item set ID
 - [x] Optional output to file
 - [x] Progress indicators during validation
+- [x] URI checking with configurable severity
+- [x] Data profiling with ydata-profiling
+
+## Configuration
+
+The validator can be configured using a `.env` file or command-line arguments. Command-line arguments override `.env` values.
+
+### Setting up .env file
+
+```bash
+cp example.env .env
+```
+
+Edit `.env` with your configuration:
+
+```env
+OMEKA_URL=https://omeka.unibe.ch
+KEY_IDENTITY=YOUR_KEY_IDENTITY
+KEY_CREDENTIAL=YOUR_KEY_CREDENTIAL
+ITEM_SET_ID=10780
+```
+
+### Omeka S Authentication
+
+The validator supports optional authentication with Omeka S using **key_identity** and **key_credential** parameters. These are Omeka S API credentials, not a single API key. Authentication is optional for read operations on public resources but may be required for:
+
+- Accessing private items or item sets
+- Rate limiting relief
+- Write operations (when using the API module)
+
+You can provide credentials via:
+
+1. `.env` file (recommended for development)
+2. Command-line arguments (useful for CI/CD or one-off runs)
+3. No credentials (works for public resources)
+
+**Note:** The validator performs read-only operations by default and does not require authentication for public item sets like 10780.
 
 ## Usage Examples
 
-### Basic validation
+### Basic validation (uses .env if present)
 
 ```bash
 uv run python validate.py
@@ -154,7 +196,7 @@ uv run python validate.py
 uv run python validate.py --output validation_report.txt
 ```
 
-### Use API key
+### Use Omeka S authentication (can also be set in .env file)
 
 ```bash
 uv run python validate.py --key-identity YOUR_KEY_IDENTITY --key-credential YOUR_KEY_CREDENTIAL
@@ -166,7 +208,7 @@ uv run python validate.py --key-identity YOUR_KEY_IDENTITY --key-credential YOUR
 uv run python validate.py --item-set-id 12345
 ```
 
-### Full options
+### Full options (override .env values)
 
 ```bash
 uv run python validate.py \
@@ -175,6 +217,19 @@ uv run python validate.py \
   --key-identity YOUR_KEY_IDENTITY \
   --key-credential YOUR_KEY_CREDENTIAL \
   --output report.txt
+```
+
+### URI checking and data profiling
+
+```bash
+# Check URIs for broken links
+uv run python validate.py --check-uris
+
+# Check URIs and detect redirects
+uv run python validate.py --check-uris --check-redirects
+
+# Generate data profiling reports
+uv run python validate.py --profile --profile-output my_analysis/
 ```
 
 ## Development
@@ -247,7 +302,8 @@ classDiagram
 
     class OmekaValidator {
         +str base_url
-        +str api_key
+        +str key_identity
+        +str key_credential
         +httpx.Client client
         +fetch_items()
         +fetch_media()
@@ -313,12 +369,12 @@ classDiagram
 
 Potential improvements for future versions:
 
-1. **URI Reachability Check** - Add optional HTTP HEAD requests to verify URIs are accessible
+1. ~~**URI Reachability Check**~~ - ✅ Implemented with `--check-uris` flag
 2. **EDTF Validation** - Validate dates conform to Extended Date/Time Format
 3. **ISO 639-1 Validation** - Validate language codes against ISO standard
 4. **Batch Processing** - Support validating multiple item sets in one run
 5. **JSON Report Format** - Output reports in JSON for programmatic processing
-6. **Statistics Dashboard** - Generate HTML dashboard with validation statistics
+6. ~~**Statistics Dashboard**~~ - ✅ Implemented with `--profile` flag (ydata-profiling)
 7. **Incremental Validation** - Only validate items modified since last run
 8. **Custom Vocabularies** - Support loading additional custom vocabularies
 
