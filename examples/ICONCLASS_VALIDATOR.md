@@ -25,6 +25,7 @@ Iconclass is a hierarchical classification system for art and iconography. This 
 ### 1. Format Validation
 
 Validates that Iconclass notation contains only allowed characters:
+
 - Digits (0-9)
 - Uppercase letters (A-Z)
 - Lowercase 'q' (for qualifiers)
@@ -144,6 +145,7 @@ python examples/iconclass_usage.py
 ```
 
 This will demonstrate:
+
 1. Basic format validation
 2. Complex notation with qualifiers
 3. Validation against vocabulary
@@ -159,6 +161,7 @@ This will demonstrate:
 ## Implementation Notes
 
 The implementation follows the repository's coding style:
+
 - Uses Pydantic BaseModel with field validators
 - Follows patterns from `src/models.py` and `src/vocabularies.py`
 - Comprehensive docstrings for all functions and classes
