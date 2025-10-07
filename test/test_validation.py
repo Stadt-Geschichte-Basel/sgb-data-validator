@@ -84,7 +84,7 @@ sample_item = {
     ],
     "dcterms:language": [
         {
-            "type": "valuesuggest:lc:iso6392",
+            "type": "valuesuggest:lc:iso6391",
             "property_id": 12,
             "property_label": "Language",
             "is_public": True,
@@ -264,7 +264,7 @@ sample_media = {
     ],
     "dcterms:language": [
         {
-            "type": "valuesuggest:lc:iso6392",
+            "type": "valuesuggest:lc:iso6391",
             "property_id": 12,
             "property_label": "Language",
             "is_public": True,
