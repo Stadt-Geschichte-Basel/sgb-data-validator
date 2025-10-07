@@ -129,7 +129,9 @@ class OmekaAPI:
         if page is not None:
             # Fetch single page
             url = f"{self.base_url}/api/items"
-            params = self._add_auth_params({"item_set_id": item_set_id, "page": page, "per_page": per_page})
+            params = self._add_auth_params(
+                {"item_set_id": item_set_id, "page": page, "per_page": per_page}
+            )
             response = self.client.get(url, params=params)
             response.raise_for_status()
             return response.json()
@@ -139,11 +141,13 @@ class OmekaAPI:
         current_page = 1
         while True:
             url = f"{self.base_url}/api/items"
-            params = self._add_auth_params({
-                "item_set_id": item_set_id,
-                "page": current_page,
-                "per_page": per_page,
-            })
+            params = self._add_auth_params(
+                {
+                    "item_set_id": item_set_id,
+                    "page": current_page,
+                    "per_page": per_page,
+                }
+            )
             response = self.client.get(url, params=params)
             response.raise_for_status()
             page_items = response.json()

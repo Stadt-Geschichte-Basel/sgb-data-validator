@@ -222,7 +222,7 @@ uv run python validate.py \
 ### URI checking and data profiling
 
 ```bash
-# Check URIs for broken links
+# Check URIs for broken links (with User-Agent rotation to avoid 403 errors)
 uv run python validate.py --check-uris
 
 # Check URIs and detect redirects

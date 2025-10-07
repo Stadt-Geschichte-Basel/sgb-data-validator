@@ -1305,6 +1305,11 @@ dev = [
     { name = "ruff" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
@@ -1317,6 +1322,9 @@ requires-dist = [
     { name = "ydata-profiling", specifier = ">=4.10.0" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.13.2" }]
 
 [[package]]
 name = "six"

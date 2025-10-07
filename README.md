@@ -142,6 +142,9 @@ URI checking features:
 - Validates URLs in Dublin Core fields (dcterms:creator, dcterms:source, etc.)
 - Checks media original URLs
 - Uses asynchronous requests for efficient parallel checking
+- **Rotates through multiple User-Agent strings to reduce 403 errors**
+- Falls back to GET requests when servers don't support HEAD
+- Includes realistic browser headers (Accept, Accept-Language, etc.)
 - Configurable severity allows treating broken links as warnings or errors
 - Optional redirect detection warns when URLs redirect to unexpected domains
 

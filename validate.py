@@ -8,6 +8,7 @@ a comprehensive data model using pydantic.
 import argparse
 import asyncio
 import os
+import random
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,18 @@ from pydantic import ValidationError
 from src.models import Item, Media
 from src.profiling import analyze_items, analyze_media
 from src.vocabularies import VocabularyLoader
+
+
+# List of realistic User-Agent strings to rotate through
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+]
 
 
 class DataValidationError:
@@ -74,8 +87,10 @@ class OmekaValidator:
         self.validated_media = 0
         self.checked_uris = 0
         self.failed_uris = 0
-        self.uri_cache: dict[str, tuple[int, str | None]] = {}  # LRU cache for URI checks
-        
+        self.uri_cache: dict[
+            str, tuple[int, str | None]
+        ] = {}  # LRU cache for URI checks
+
         # Store raw data for profiling
         self.items_data: list[dict[str, Any]] = []
         self.media_data: list[dict[str, Any]] = []
@@ -100,7 +115,9 @@ class OmekaValidator:
 
         while True:
             url = f"{self.base_url}/api/items"
-            params = self._add_auth_params({"item_set_id": item_set_id, "page": page, "per_page": per_page})
+            params = self._add_auth_params(
+                {"item_set_id": item_set_id, "page": page, "per_page": per_page}
+            )
 
             response = self.client.get(url, params=params)
             response.raise_for_status()
@@ -127,18 +144,46 @@ class OmekaValidator:
         # Check cache first
         if uri in self.uri_cache:
             return self.uri_cache[uri]
-        
+
+        # Rotate through user agents to avoid being blocked
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
         }
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False, headers=headers) as client:
+
+        async with httpx.AsyncClient(
+            timeout=10.0, follow_redirects=False, headers=headers
+        ) as client:
             try:
+                # Try HEAD request first
                 response = await client.head(uri)
                 redirect_location = response.headers.get("location")
                 result = (response.status_code, redirect_location)
                 # Cache the result
                 self.uri_cache[uri] = result
                 return result
+            except httpx.HTTPStatusError as e:
+                # Some servers don't support HEAD, try GET with a fallback
+                if e.response.status_code == 405:
+                    try:
+                        response = await client.get(uri, timeout=10.0)
+                        redirect_location = response.headers.get("location")
+                        result = (response.status_code, redirect_location)
+                        self.uri_cache[uri] = result
+                        return result
+                    except (httpx.RequestError, httpx.HTTPError) as ge:
+                        result = (-1, str(ge))
+                        self.uri_cache[uri] = result
+                        return result
+                else:
+                    result = (e.response.status_code, None)
+                    self.uri_cache[uri] = result
+                    return result
             except (httpx.RequestError, httpx.HTTPError) as e:
                 # Return a special status code for exceptions
                 result = (-1, str(e))
@@ -155,11 +200,15 @@ class OmekaValidator:
         self.checked_uris += 1
         # Truncate long URIs for display
         display_uri = uri if len(uri) <= 60 else uri[:57] + "..."
-        print(f"\rChecking URI ({self.checked_uris}): {display_uri}        ", end="", flush=True)
-        
+        print(
+            f"\rChecking URI ({self.checked_uris}): {display_uri}        ",
+            end="",
+            flush=True,
+        )
+
         try:
             status_code, redirect_location = await self.check_single_uri(uri)
-            
+
             if status_code == -1:
                 # This was an exception
                 self.failed_uris += 1
@@ -170,17 +219,23 @@ class OmekaValidator:
                     )
                 else:
                     self.warnings.append(
-                        DataValidationWarning(resource_type, resource_id, f"{field}: {message}")
+                        DataValidationWarning(
+                            resource_type, resource_id, f"{field}: {message}"
+                        )
                     )
                 return
 
             # Check for redirects
             if self.check_redirects and status_code in (301, 302, 303, 307, 308):
                 # Check if redirect is to a different domain
-                if redirect_location and not redirect_location.startswith(uri.split("/")[2]):
+                if redirect_location and not redirect_location.startswith(
+                    uri.split("/")[2]
+                ):
                     message = f"URI redirects to different domain: {uri} -> {redirect_location}"
                     self.warnings.append(
-                        DataValidationWarning(resource_type, resource_id, f"{field}: {message}")
+                        DataValidationWarning(
+                            resource_type, resource_id, f"{field}: {message}"
+                        )
                     )
 
             # Check for HTTP errors
@@ -194,7 +249,9 @@ class OmekaValidator:
                     )
                 else:
                     self.warnings.append(
-                        DataValidationWarning(resource_type, resource_id, f"{field}: {message}")
+                        DataValidationWarning(
+                            resource_type, resource_id, f"{field}: {message}"
+                        )
                     )
         except Exception as e:
             # Catch any other exceptions
@@ -206,12 +263,14 @@ class OmekaValidator:
                 )
             else:
                 self.warnings.append(
-                    DataValidationWarning(resource_type, resource_id, f"{field}: {message}")
+                    DataValidationWarning(
+                        resource_type, resource_id, f"{field}: {message}"
+                    )
                 )
 
     def extract_uris_from_data(self, data: dict[str, Any]) -> list[tuple[str, str]]:
         """Extract URIs from item or media data
-        
+
         Returns list of (field_name, uri) tuples
         """
         uris = []
@@ -234,7 +293,9 @@ class OmekaValidator:
 
         return uris
 
-    def _validate_vocabularies(self, data: dict[str, Any], resource_type: str, resource_id: int) -> None:
+    def _validate_vocabularies(
+        self, data: dict[str, Any], resource_type: str, resource_id: int
+    ) -> None:
         """Validate vocabulary-controlled fields"""
         # Validate dcterms:temporal (Era)
         temporal_values = data.get("dcterms:temporal", [])
@@ -248,10 +309,10 @@ class OmekaValidator:
                                 resource_type,
                                 resource_id,
                                 f"dcterms:temporal[{idx}]",
-                                f"Value must be from Era vocabulary: {value}"
+                                f"Value must be from Era vocabulary: {value}",
                             )
                         )
-        
+
         # Validate dcterms:format (MIME type)
         format_values = data.get("dcterms:format", [])
         if isinstance(format_values, list):
@@ -264,10 +325,10 @@ class OmekaValidator:
                                 resource_type,
                                 resource_id,
                                 f"dcterms:format[{idx}]",
-                                f"Value must be from MIME type vocabulary: {value}"
+                                f"Value must be from MIME type vocabulary: {value}",
                             )
                         )
-        
+
         # Validate dcterms:license
         license_values = data.get("dcterms:license", [])
         if isinstance(license_values, list):
@@ -280,10 +341,10 @@ class OmekaValidator:
                                 resource_type,
                                 resource_id,
                                 f"dcterms:license[{idx}]",
-                                f"Invalid license URI: {value}"
+                                f"Invalid license URI: {value}",
                             )
                         )
-        
+
         # Validate dcterms:type
         type_values = data.get("dcterms:type", [])
         if isinstance(type_values, list):
@@ -296,10 +357,10 @@ class OmekaValidator:
                                 resource_type,
                                 resource_id,
                                 f"dcterms:type[{idx}]",
-                                f"Invalid type URI (must be Image or Dataset): {value}"
+                                f"Invalid type URI (must be Image or Dataset): {value}",
                             )
                         )
-        
+
         # Validate dcterms:language
         language_values = data.get("dcterms:language", [])
         if isinstance(language_values, list):
@@ -312,10 +373,10 @@ class OmekaValidator:
                                 resource_type,
                                 resource_id,
                                 f"dcterms:language[{idx}]",
-                                f"Invalid language code (must be two-letter ISO-639-1 code: de, fr, sp, or lat): {value}"
+                                f"Invalid language code (must be two-letter ISO-639-1 code: de, fr, sp, or lat): {value}",
                             )
                         )
-        
+
         # Validate dcterms:subject (Iconclass)
         subject_values = data.get("dcterms:subject", [])
         if isinstance(subject_values, list):
@@ -323,13 +384,17 @@ class OmekaValidator:
                 if isinstance(item, dict):
                     value = item.get("@value")
                     # Only validate if it looks like an Iconclass code (starts with numbers)
-                    if value and value[0].isdigit() and not self.vocab_loader.is_valid_iconclass(value):
+                    if (
+                        value
+                        and value[0].isdigit()
+                        and not self.vocab_loader.is_valid_iconclass(value)
+                    ):
                         self.errors.append(
                             DataValidationError(
                                 resource_type,
                                 resource_id,
                                 f"dcterms:subject[{idx}]",
-                                f"Invalid Iconclass code: {value}"
+                                f"Invalid Iconclass code: {value}",
                             )
                         )
 
@@ -353,7 +418,7 @@ class OmekaValidator:
         # Store raw data for profiling if enabled
         if self.enable_profiling:
             self.items_data.append(item_data)
-            
+
         try:
             Item.model_validate(item_data)
             self.validated_items += 1
@@ -379,11 +444,11 @@ class OmekaValidator:
         # Store raw data for profiling if enabled
         if self.enable_profiling:
             self.media_data.append(media_data)
-            
+
         try:
             Media.model_validate(media_data)
             self.validated_media += 1
-            
+
             # Additional vocabulary validations
             media_id = media_data.get("o:id", "unknown")
             self._validate_vocabularies(media_data, "Media", media_id)
@@ -407,7 +472,9 @@ class OmekaValidator:
         print(f"Found {len(items)} items")
 
         for idx, item in enumerate(items, 1):
-            print(f"\rValidating item {idx}/{len(items)}...        ", end="", flush=True)
+            print(
+                f"\rValidating item {idx}/{len(items)}...        ", end="", flush=True
+            )
             self.validate_item(item)
 
             # Validate associated media
@@ -428,7 +495,7 @@ class OmekaValidator:
                     print(f"\n\rWarning: Could not fetch media for item {item_id}: {e}")
 
         print("\r" + " " * 80 + "\r", end="")  # Clear progress line
-        
+
         # Show URI checking summary if enabled
         if self.check_uris and self.checked_uris > 0:
             print(f"Checked {self.checked_uris} URIs, {self.failed_uris} failed")
@@ -486,9 +553,11 @@ class OmekaValidator:
 
         print(f"\nReport saved to: {output_file}")
 
-    def generate_profiling_reports(self, output_dir: str | Path = "analysis", minimal: bool = False) -> None:
+    def generate_profiling_reports(
+        self, output_dir: str | Path = "analysis", minimal: bool = False
+    ) -> None:
         """Generate data profiling reports using ydata-profiling.
-        
+
         Args:
             output_dir: Directory to save profiling outputs
             minimal: If True, generate minimal reports for faster processing
@@ -496,41 +565,44 @@ class OmekaValidator:
         if not self.enable_profiling:
             print("Profiling is not enabled. Use --profile to enable data profiling.")
             return
-            
+
         if not self.items_data and not self.media_data:
             print("No data collected for profiling.")
             return
-            
+
         output_dir = Path(output_dir)
         print(f"\nGenerating profiling reports in {output_dir}/...")
-        
+
         if self.items_data:
             print(f"  Profiling {len(self.items_data)} items...")
             analyze_items(self.items_data, output_dir, minimal=minimal)
             print(f"    - Items DataFrame saved to {output_dir}/items.csv")
-            print(f"    - Items profile report saved to {output_dir}/items_profile.html")
-        
+            print(
+                f"    - Items profile report saved to {output_dir}/items_profile.html"
+            )
+
         if self.media_data:
             print(f"  Profiling {len(self.media_data)} media...")
             analyze_media(self.media_data, output_dir, minimal=minimal)
             print(f"    - Media DataFrame saved to {output_dir}/media.csv")
-            print(f"    - Media profile report saved to {output_dir}/media_profile.html")
-        
-        print("\nProfiling complete!")
+            print(
+                f"    - Media profile report saved to {output_dir}/media_profile.html"
+            )
 
+        print("\nProfiling complete!")
 
 
 def main() -> int:
     """Main entry point"""
     # Load environment variables from .env file if it exists
     load_dotenv()
-    
+
     # Get defaults from environment variables
     env_base_url = os.getenv("OMEKA_URL", "https://omeka.unibe.ch")
     env_item_set_id = int(os.getenv("ITEM_SET_ID", "10780"))
     env_key_identity = os.getenv("KEY_IDENTITY")
     env_key_credential = os.getenv("KEY_CREDENTIAL")
-    
+
     parser = argparse.ArgumentParser(
         description="Validate Omeka S data against Stadt.Geschichte.Basel data model"
     )
@@ -629,7 +701,7 @@ def main() -> int:
 
     if args.output:
         validator.save_report(args.output)
-    
+
     if args.profile:
         validator.generate_profiling_reports(args.profile_output, args.profile_minimal)
 

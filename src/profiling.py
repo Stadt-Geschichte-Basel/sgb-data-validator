@@ -8,7 +8,9 @@ import pandas as pd
 from ydata_profiling import ProfileReport
 
 
-def flatten_dict(d: dict[str, Any], parent_key: str = "", sep: str = ".") -> dict[str, Any]:
+def flatten_dict(
+    d: dict[str, Any], parent_key: str = "", sep: str = "."
+) -> dict[str, Any]:
     """Flatten nested dictionary structure."""
     items: list[tuple[str, Any]] = []
     for k, v in d.items():
@@ -28,10 +30,10 @@ def flatten_dict(d: dict[str, Any], parent_key: str = "", sep: str = ".") -> dic
 
 def items_to_dataframe(items: list[dict[str, Any]]) -> pd.DataFrame:
     """Convert list of Omeka S items to a pandas DataFrame.
-    
+
     Args:
         items: List of item dictionaries from Omeka S API
-        
+
     Returns:
         DataFrame with flattened item data
     """
@@ -41,10 +43,10 @@ def items_to_dataframe(items: list[dict[str, Any]]) -> pd.DataFrame:
 
 def media_to_dataframe(media_list: list[dict[str, Any]]) -> pd.DataFrame:
     """Convert list of Omeka S media to a pandas DataFrame.
-    
+
     Args:
         media_list: List of media dictionaries from Omeka S API
-        
+
     Returns:
         DataFrame with flattened media data
     """
@@ -59,13 +61,13 @@ def generate_profile_report(
     minimal: bool = False,
 ) -> ProfileReport:
     """Generate a ydata-profiling report for a DataFrame.
-    
+
     Args:
         df: DataFrame to profile
         title: Title for the report
         output_path: Path to save HTML report
         minimal: If True, generate minimal report for faster processing
-        
+
     Returns:
         ProfileReport object
     """
@@ -74,10 +76,10 @@ def generate_profile_report(
         "minimal": minimal,
         "explorative": not minimal,
     }
-    
+
     profile = ProfileReport(df, **config)
     profile.to_file(output_path)
-    
+
     return profile
 
 
@@ -87,25 +89,25 @@ def analyze_items(
     minimal: bool = False,
 ) -> tuple[pd.DataFrame, ProfileReport]:
     """Analyze Omeka S items and generate profiling report.
-    
+
     Args:
         items: List of item dictionaries
         output_dir: Directory to save outputs
         minimal: If True, generate minimal report
-        
+
     Returns:
         Tuple of (DataFrame, ProfileReport)
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create DataFrame
     df = items_to_dataframe(items)
-    
+
     # Save DataFrame
     df.to_csv(output_dir / "items.csv", index=False)
     df.to_json(output_dir / "items.json", orient="records", indent=2)
-    
+
     # Generate profile report
     profile = generate_profile_report(
         df,
@@ -113,7 +115,7 @@ def analyze_items(
         output_path=output_dir / "items_profile.html",
         minimal=minimal,
     )
-    
+
     return df, profile
 
 
@@ -123,25 +125,25 @@ def analyze_media(
     minimal: bool = False,
 ) -> tuple[pd.DataFrame, ProfileReport]:
     """Analyze Omeka S media and generate profiling report.
-    
+
     Args:
         media_list: List of media dictionaries
         output_dir: Directory to save outputs
         minimal: If True, generate minimal report
-        
+
     Returns:
         Tuple of (DataFrame, ProfileReport)
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create DataFrame
     df = media_to_dataframe(media_list)
-    
+
     # Save DataFrame
     df.to_csv(output_dir / "media.csv", index=False)
     df.to_json(output_dir / "media.json", orient="records", indent=2)
-    
+
     # Generate profile report
     profile = generate_profile_report(
         df,
@@ -149,5 +151,5 @@ def analyze_media(
         output_path=output_dir / "media_profile.html",
         minimal=minimal,
     )
-    
+
     return df, profile
