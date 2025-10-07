@@ -157,7 +157,7 @@ uv run python validate.py --output validation_report.txt
 ### Use API key
 
 ```bash
-uv run python validate.py --api-key YOUR_API_KEY
+uv run python validate.py --key-identity YOUR_KEY_IDENTITY --key-credential YOUR_KEY_CREDENTIAL
 ```
 
 ### Validate different item set
@@ -172,7 +172,8 @@ uv run python validate.py --item-set-id 12345
 uv run python validate.py \
   --base-url https://omeka.unibe.ch \
   --item-set-id 10780 \
-  --api-key YOUR_API_KEY \
+  --key-identity YOUR_KEY_IDENTITY \
+  --key-credential YOUR_KEY_CREDENTIAL \
   --output report.txt
 ```
 

@@ -8,9 +8,14 @@ from src.api import OmekaAPI
 
 def test_api_initialization():
     """Test API client initialization"""
-    api = OmekaAPI("https://omeka.unibe.ch", api_key="test_key")
+    api = OmekaAPI(
+        "https://omeka.unibe.ch",
+        key_identity="test_identity",
+        key_credential="test_credential",
+    )
     assert api.base_url == "https://omeka.unibe.ch"
-    assert api.api_key == "test_key"
+    assert api.key_identity == "test_identity"
+    assert api.key_credential == "test_credential"
     api.close()
     print("✓ API initialization test passed")
 

@@ -84,8 +84,8 @@ uv run python validate.py --base-url https://omeka.unibe.ch --item-set-id 10780
 # Save report to file
 uv run python validate.py --output validation_report.txt
 
-# Use API key for authentication (optional)
-uv run python validate.py --api-key YOUR_API_KEY
+# Use API keys for authentication (optional)
+uv run python validate.py --key-identity YOUR_KEY_IDENTITY --key-credential YOUR_KEY_CREDENTIAL
 
 # Check URIs for broken links (404 errors, etc.) - This may take longer
 uv run python validate.py --check-uris

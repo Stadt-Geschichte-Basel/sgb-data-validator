@@ -24,25 +24,27 @@ class OmekaAPI:
     """High-level API for interacting with Omeka S resources"""
 
     def __init__(
-        self, base_url: str, api_key: str | None = None, timeout: float = 30.0
+        self,
+        base_url: str,
+        key_identity: str | None = None,
+        key_credential: str | None = None,
+        timeout: float = 30.0,
     ) -> None:
         """
         Initialize the Omeka API client.
 
         Args:
             base_url: Base URL of the Omeka S instance
-            api_key: Optional API key for authentication
+            key_identity: Optional API key identity for authentication
+            key_credential: Optional API key credential for authentication
             timeout: Request timeout in seconds
         """
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        self.key_identity = key_identity
+        self.key_credential = key_credential
         self.timeout = timeout
 
-        headers = {}
-        if api_key:
-            headers["key_identity"] = api_key
-
-        self.client = httpx.Client(headers=headers, timeout=timeout)
+        self.client = httpx.Client(timeout=timeout)
 
         # Initialize vocabulary loader for validation
         vocab_file = Path(__file__).parent.parent / "data" / "raw" / "vocabularies.json"
@@ -64,6 +66,13 @@ class OmekaAPI:
     # READ OPERATIONS
     # =========================================================================
 
+    def _add_auth_params(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Add authentication parameters if configured."""
+        if self.key_identity and self.key_credential:
+            params["key_identity"] = self.key_identity
+            params["key_credential"] = self.key_credential
+        return params
+
     def get_item_set(self, item_set_id: int) -> dict[str, Any]:
         """
         Get a single item set by ID.
@@ -78,7 +87,8 @@ class OmekaAPI:
             httpx.HTTPStatusError: If the request fails
         """
         url = f"{self.base_url}/api/item_sets/{item_set_id}"
-        response = self.client.get(url)
+        params = self._add_auth_params({})
+        response = self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
 
@@ -97,7 +107,7 @@ class OmekaAPI:
             List of item set data dictionaries
         """
         url = f"{self.base_url}/api/item_sets"
-        params = {"page": page, "per_page": per_page, **filters}
+        params = self._add_auth_params({"page": page, "per_page": per_page, **filters})
         response = self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
@@ -119,7 +129,7 @@ class OmekaAPI:
         if page is not None:
             # Fetch single page
             url = f"{self.base_url}/api/items"
-            params = {"item_set_id": item_set_id, "page": page, "per_page": per_page}
+            params = self._add_auth_params({"item_set_id": item_set_id, "page": page, "per_page": per_page})
             response = self.client.get(url, params=params)
             response.raise_for_status()
             return response.json()
@@ -129,11 +139,11 @@ class OmekaAPI:
         current_page = 1
         while True:
             url = f"{self.base_url}/api/items"
-            params = {
+            params = self._add_auth_params({
                 "item_set_id": item_set_id,
                 "page": current_page,
                 "per_page": per_page,
-            }
+            })
             response = self.client.get(url, params=params)
             response.raise_for_status()
             page_items = response.json()
@@ -154,7 +164,8 @@ class OmekaAPI:
             The item data as a dictionary
         """
         url = f"{self.base_url}/api/items/{item_id}"
-        response = self.client.get(url)
+        params = self._add_auth_params({})
+        response = self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
 
@@ -169,7 +180,8 @@ class OmekaAPI:
             The media data as a dictionary
         """
         url = f"{self.base_url}/api/media/{media_id}"
-        response = self.client.get(url)
+        params = self._add_auth_params({})
+        response = self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
 
@@ -184,7 +196,7 @@ class OmekaAPI:
             List of media data dictionaries
         """
         url = f"{self.base_url}/api/media"
-        params = {"item_id": item_id}
+        params = self._add_auth_params({"item_id": item_id})
         response = self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()

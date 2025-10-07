@@ -30,7 +30,6 @@
 		"terms": [
 			"http://rightsstatements.org/vocab/InC-RUU/1.0/",
 			"http://rightsstatements.org/vocab/InC/1.0/",
-			"http://rightsstatements.org/vocab/inc/1.0/",
 			"https://creativecommons.org/licenses/by-nc-sa/4.0/",
 			"https://creativecommons.org/licenses/by-sa/4.0/",
 			"https://creativecommons.org/licenses/by/4.0/",
@@ -423,13 +422,15 @@
 		"terms": [
 			"http://purl.org/dc/dcmitype/Dataset",
 			"http://purl.org/dc/dcmitype/Image",
+			"http://purl.org/dc/dcmitype/InteractiveResource",
 			"https://purl.org/dc/dcmitype/Dataset",
-			"https://purl.org/dc/dcmitype/Image"
+			"https://purl.org/dc/dcmitype/Image",
+			"https://purl.org/dc/dcmitype/InteractiveResource"
 		]
 	},
 	{
 		"label": "Languages",
 		"language": "en",
-		"terms": ["de", "fr", "sp", "lat"]
+		"terms": ["de", "fr", "nld", "lat", "mul"]
 	}
 ]

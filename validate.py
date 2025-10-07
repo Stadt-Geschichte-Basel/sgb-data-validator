@@ -52,14 +52,16 @@ class OmekaValidator:
     def __init__(
         self,
         base_url: str,
-        api_key: str | None = None,
+        key_identity: str | None = None,
+        key_credential: str | None = None,
         check_uris: bool = False,
         check_redirects: bool = False,
         uri_check_severity: str = "warning",
         enable_profiling: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        self.key_identity = key_identity
+        self.key_credential = key_credential
         self.check_uris = check_uris
         self.check_redirects = check_redirects
         self.uri_check_severity = uri_check_severity
@@ -76,14 +78,17 @@ class OmekaValidator:
         self.items_data: list[dict[str, Any]] = []
         self.media_data: list[dict[str, Any]] = []
 
-        headers = {}
-        if api_key:
-            headers["key_identity"] = api_key
-
-        self.client = httpx.Client(headers=headers, timeout=30.0)
+        self.client = httpx.Client(timeout=30.0)
 
         vocab_file = Path(__file__).parent / "data" / "raw" / "vocabularies.json"
         self.vocab_loader = VocabularyLoader(vocab_file)
+
+    def _add_auth_params(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Add authentication parameters if configured."""
+        if self.key_identity and self.key_credential:
+            params["key_identity"] = self.key_identity
+            params["key_credential"] = self.key_credential
+        return params
 
     def fetch_items(self, item_set_id: int) -> list[dict[str, Any]]:
         """Fetch all items from an item set"""
@@ -93,7 +98,7 @@ class OmekaValidator:
 
         while True:
             url = f"{self.base_url}/api/items"
-            params = {"item_set_id": item_set_id, "page": page, "per_page": per_page}
+            params = self._add_auth_params({"item_set_id": item_set_id, "page": page, "per_page": per_page})
 
             response = self.client.get(url, params=params)
             response.raise_for_status()
@@ -110,7 +115,7 @@ class OmekaValidator:
     def fetch_media(self, item_id: int) -> list[dict[str, Any]]:
         """Fetch all media for an item"""
         url = f"{self.base_url}/api/media"
-        params = {"item_id": item_id}
+        params = self._add_auth_params({"item_id": item_id})
         response = self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
@@ -528,7 +533,8 @@ def main() -> int:
         default=10780,
         help="Item set ID to validate (default: 10780)",
     )
-    parser.add_argument("--api-key", help="Optional API key for authentication")
+    parser.add_argument("--key-identity", help="Optional API key identity for authentication")
+    parser.add_argument("--key-credential", help="Optional API key credential for authentication")
     parser.add_argument(
         "--check-uris",
         action="store_true",
@@ -582,7 +588,8 @@ def main() -> int:
 
     validator = OmekaValidator(
         args.base_url,
-        args.api_key,
+        args.key_identity,
+        args.key_credential,
         args.check_uris,
         args.check_redirects,
         args.uri_check_severity,

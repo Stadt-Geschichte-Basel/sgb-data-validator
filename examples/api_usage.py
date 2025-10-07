@@ -17,9 +17,10 @@ def main() -> None:
     """Demonstrate API usage"""
     # Initialize the API client
     base_url = "https://omeka.unibe.ch"
-    api_key = None  # Optional: Add your API key here
+    key_identity = None  # Optional: Add your API key identity here
+    key_credential = None  # Optional: Add your API key credential here
 
-    with OmekaAPI(base_url, api_key) as api:
+    with OmekaAPI(base_url, key_identity, key_credential) as api:
         # Example 1: Read an item set
         print("=" * 70)
         print("Example 1: Reading an item set")
