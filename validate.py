@@ -10,6 +10,7 @@ import asyncio
 import os
 import random
 import sys
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -87,9 +88,9 @@ class OmekaValidator:
         self.validated_media = 0
         self.checked_uris = 0
         self.failed_uris = 0
-        self.uri_cache: dict[
-            str, tuple[int, str | None]
-        ] = {}  # LRU cache for URI checks
+        # Bounded LRU cache for URI checks (max 10000 entries)
+        self.uri_cache: OrderedDict[str, tuple[int, str | None]] = OrderedDict()
+        self.uri_cache_max_size = 10000
 
         # Store raw data for profiling
         self.items_data: list[dict[str, Any]] = []
@@ -141,8 +142,9 @@ class OmekaValidator:
 
     async def check_single_uri(self, uri: str) -> tuple[int, str | None]:
         """Check a single URI and return (status_code, redirect_location)"""
-        # Check cache first
+        # Check cache first (LRU: move to end if found)
         if uri in self.uri_cache:
+            self.uri_cache.move_to_end(uri)
             return self.uri_cache[uri]
 
         # Rotate through user agents to avoid being blocked
@@ -173,19 +175,32 @@ class OmekaValidator:
                         redirect_location = response.headers.get("location")
                     except (httpx.RequestError, httpx.HTTPError) as ge:
                         result = (-1, str(ge))
-                        self.uri_cache[uri] = result
+                        self._cache_uri_result(uri, result)
                         return result
 
                 # Cache and return the result
                 result = (status_code, redirect_location)
-                self.uri_cache[uri] = result
+                self._cache_uri_result(uri, result)
                 return result
 
             except (httpx.RequestError, httpx.HTTPError) as e:
                 # Return a special status code for network exceptions
                 result = (-1, str(e))
-                self.uri_cache[uri] = result
+                self._cache_uri_result(uri, result)
                 return result
+
+    def _cache_uri_result(self, uri: str, result: tuple[int, str | None]) -> None:
+        """Add result to bounded LRU cache, evicting oldest if at max size."""
+        if uri in self.uri_cache:
+            # Update existing entry and move to end
+            self.uri_cache[uri] = result
+            self.uri_cache.move_to_end(uri)
+        else:
+            # Add new entry
+            self.uri_cache[uri] = result
+            # Evict oldest entry if cache is full
+            if len(self.uri_cache) > self.uri_cache_max_size:
+                self.uri_cache.popitem(last=False)  # Remove oldest (FIFO)
 
     async def check_uri_async(
         self, uri: str, resource_type: str, resource_id: int, field: str
@@ -368,7 +383,7 @@ class OmekaValidator:
                                 resource_type,
                                 resource_id,
                                 f"dcterms:language[{idx}]",
-                                f"Invalid language code (must be two-letter ISO-639-1 code: de, fr, sp, or lat): {value}",
+                                f"Invalid language code (must be two-letter ISO-639-1 code: de, fr, es, or la): {value}",
                             )
                         )
 

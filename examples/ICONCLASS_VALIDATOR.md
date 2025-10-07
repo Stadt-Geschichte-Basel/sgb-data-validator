@@ -127,13 +127,13 @@ except ValidationError as e:
 
 ```bash
 # Unit tests
-python test/test_iconclass.py
+uv run python test/test_iconclass.py
 
 # Integration tests
-python test/test_iconclass_integration.py
+uv run python test/test_iconclass_integration.py
 
 # All validation tests
-python test/test_validation.py
+uv run python test/test_validation.py
 ```
 
 ## Example Output
@@ -141,7 +141,7 @@ python test/test_validation.py
 Run the example script to see the validator in action:
 
 ```bash
-python examples/iconclass_usage.py
+uv run python examples/iconclass_usage.py
 ```
 
 This will demonstrate:
