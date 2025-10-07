@@ -281,7 +281,7 @@ classDiagram
 - `dcterms:subject` (Iconclass terms)
 - `dcterms:description`
 - `dcterms:temporal` (Era vocabulary)
-- `dcterms:language` (ISO 639-2)
+- `dcterms:language` (ISO 639-1)
 - `dcterms:isPartOf`
 
 ### Media Fields
@@ -302,7 +302,7 @@ classDiagram
 - `dcterms:format` (MIME vocabulary)
 - `dcterms:extent`
 - `dcterms:source` (URI or text)
-- `dcterms:language` (ISO 639-2)
+- `dcterms:language` (ISO 639-1)
 - `dcterms:relation` (URI or text)
 - `dcterms:rights`
 - `dcterms:license` (License URI vocabulary)
@@ -314,7 +314,7 @@ Potential improvements for future versions:
 
 1. **URI Reachability Check** - Add optional HTTP HEAD requests to verify URIs are accessible
 2. **EDTF Validation** - Validate dates conform to Extended Date/Time Format
-3. **ISO 639-2 Validation** - Validate language codes against ISO standard
+3. **ISO 639-1 Validation** - Validate language codes against ISO standard
 4. **Batch Processing** - Support validating multiple item sets in one run
 5. **JSON Report Format** - Output reports in JSON for programmatic processing
 6. **Statistics Dashboard** - Generate HTML dashboard with validation statistics
