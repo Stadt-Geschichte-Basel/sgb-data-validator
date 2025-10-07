@@ -1,0 +1,91 @@
+name: Validate Omeka S Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      item_set_id:
+        description: 'Item Set ID to validate'
+        required: false
+        default: '10780'
+        type: string
+      base_url:
+        description: 'Base URL of Omeka S instance'
+        required: false
+        default: 'https://omeka.unibe.ch'
+        type: string
+      api_key:
+        description: 'API key for authentication (optional)'
+        required: false
+        type: string
+      check_uris:
+        description: 'Check if URIs are reachable (may be slow)'
+        required: false
+        default: false
+        type: boolean
+      check_redirects:
+        description: 'Check for redirects to different domains (requires check_uris)'
+        required: false
+        default: false
+        type: boolean
+      uri_check_severity:
+        description: 'Severity for failed URI checks'
+        required: false
+        default: 'warning'
+        type: choice
+        options:
+          - warning
+          - error
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: 'latest'
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run validation
+        run: |
+          CMD="uv run python validate.py \
+            --base-url \"${{ github.event.inputs.base_url }}\" \
+            --item-set-id \"${{ github.event.inputs.item_set_id }}\" \
+            --output validation_report.txt"
+
+          if [ -n "${{ github.event.inputs.api_key }}" ]; then
+            CMD="$CMD --api-key \"${{ github.event.inputs.api_key }}\""
+          fi
+
+          if [ "${{ github.event.inputs.check_uris }}" = "true" ]; then
+            CMD="$CMD --check-uris"
+          fi
+
+          if [ "${{ github.event.inputs.check_redirects }}" = "true" ]; then
+            CMD="$CMD --check-redirects"
+          fi
+
+          if [ -n "${{ github.event.inputs.uri_check_severity }}" ]; then
+            CMD="$CMD --uri-check-severity \"${{ github.event.inputs.uri_check_severity }}\""
+          fi
+
+          eval $CMD
+
+      - name: Upload validation report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-report
+          path: validation_report.txt
+          retention-days: 30
