@@ -12,13 +12,13 @@ import random
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from src.models import Item, Media
-from src.profiling import analyze_items, analyze_media
 from src.vocabularies import VocabularyLoader
 
 
@@ -162,30 +162,27 @@ class OmekaValidator:
             try:
                 # Try HEAD request first
                 response = await client.head(uri)
+                status_code = response.status_code
                 redirect_location = response.headers.get("location")
-                result = (response.status_code, redirect_location)
-                # Cache the result
-                self.uri_cache[uri] = result
-                return result
-            except httpx.HTTPStatusError as e:
-                # Some servers don't support HEAD, try GET with a fallback
-                if e.response.status_code == 405:
+
+                # If server doesn't support HEAD (405 or 501), try GET
+                if status_code in (405, 501):
                     try:
                         response = await client.get(uri, timeout=10.0)
+                        status_code = response.status_code
                         redirect_location = response.headers.get("location")
-                        result = (response.status_code, redirect_location)
-                        self.uri_cache[uri] = result
-                        return result
                     except (httpx.RequestError, httpx.HTTPError) as ge:
                         result = (-1, str(ge))
                         self.uri_cache[uri] = result
                         return result
-                else:
-                    result = (e.response.status_code, None)
-                    self.uri_cache[uri] = result
-                    return result
+
+                # Cache and return the result
+                result = (status_code, redirect_location)
+                self.uri_cache[uri] = result
+                return result
+
             except (httpx.RequestError, httpx.HTTPError) as e:
-                # Return a special status code for exceptions
+                # Return a special status code for network exceptions
                 result = (-1, str(e))
                 self.uri_cache[uri] = result
                 return result
@@ -206,58 +203,56 @@ class OmekaValidator:
             flush=True,
         )
 
-        try:
-            status_code, redirect_location = await self.check_single_uri(uri)
+        status_code, redirect_location = await self.check_single_uri(uri)
 
-            if status_code == -1:
-                # This was an exception
-                self.failed_uris += 1
-                message = f"URI check failed: {uri} ({redirect_location})"
-                if self.uri_check_severity == "error":
-                    self.errors.append(
-                        DataValidationError(resource_type, resource_id, field, message)
-                    )
-                else:
-                    self.warnings.append(
-                        DataValidationWarning(
-                            resource_type, resource_id, f"{field}: {message}"
-                        )
-                    )
-                return
-
-            # Check for redirects
-            if self.check_redirects and status_code in (301, 302, 303, 307, 308):
-                # Check if redirect is to a different domain
-                if redirect_location and not redirect_location.startswith(
-                    uri.split("/")[2]
-                ):
-                    message = f"URI redirects to different domain: {uri} -> {redirect_location}"
-                    self.warnings.append(
-                        DataValidationWarning(
-                            resource_type, resource_id, f"{field}: {message}"
-                        )
-                    )
-
-            # Check for HTTP errors
-            if status_code >= 400:
-                self.failed_uris += 1
-                message = f"URI returned HTTP {status_code}: {uri}"
-                # 404 errors are always treated as errors
-                if status_code == 404 or self.uri_check_severity == "error":
-                    self.errors.append(
-                        DataValidationError(resource_type, resource_id, field, message)
-                    )
-                else:
-                    self.warnings.append(
-                        DataValidationWarning(
-                            resource_type, resource_id, f"{field}: {message}"
-                        )
-                    )
-        except Exception as e:
-            # Catch any other exceptions
+        if status_code == -1:
+            # This was an exception
             self.failed_uris += 1
-            message = f"URI check failed: {uri} ({str(e)})"
+            message = f"URI check failed: {uri} ({redirect_location})"
             if self.uri_check_severity == "error":
+                self.errors.append(
+                    DataValidationError(resource_type, resource_id, field, message)
+                )
+            else:
+                self.warnings.append(
+                    DataValidationWarning(
+                        resource_type, resource_id, f"{field}: {message}"
+                    )
+                )
+            return
+
+        # Check for redirects
+        if self.check_redirects and status_code in (301, 302, 303, 307, 308):
+            # Check if redirect is to a different domain
+            if redirect_location:
+                # Parse original URI
+                parsed_original = urlparse(uri)
+                # Resolve redirect location (could be relative)
+                absolute_redirect = urljoin(uri, redirect_location)
+                parsed_redirect = urlparse(absolute_redirect)
+
+                # Normalize netlocs (lowercase, remove default ports)
+                original_netloc = parsed_original.netloc.lower()
+                redirect_netloc = parsed_redirect.netloc.lower()
+
+                # Compare netlocs
+                if original_netloc != redirect_netloc:
+                    message = (
+                        f"URI redirects to different domain: "
+                        f"{uri} -> {absolute_redirect}"
+                    )
+                    self.warnings.append(
+                        DataValidationWarning(
+                            resource_type, resource_id, f"{field}: {message}"
+                        )
+                    )
+
+        # Check for HTTP errors
+        if status_code >= 400:
+            self.failed_uris += 1
+            message = f"URI returned HTTP {status_code}: {uri}"
+            # 404 errors are always treated as errors
+            if status_code == 404 or self.uri_check_severity == "error":
                 self.errors.append(
                     DataValidationError(resource_type, resource_id, field, message)
                 )
@@ -568,6 +563,25 @@ class OmekaValidator:
 
         if not self.items_data and not self.media_data:
             print("No data collected for profiling.")
+            return
+
+        # Lazy import profiling modules
+        try:
+            from src.profiling import analyze_items, analyze_media
+        except ImportError as e:
+            print(
+                "\nError: Profiling dependencies are not installed.",
+                file=sys.stderr,
+            )
+            print(
+                "Please install the profiling dependencies with: uv sync",
+                file=sys.stderr,
+            )
+            print(
+                "Or install ydata-profiling manually: pip install ydata-profiling",
+                file=sys.stderr,
+            )
+            print(f"\nDetails: {e}", file=sys.stderr)
             return
 
         output_dir = Path(output_dir)

@@ -51,7 +51,7 @@ class Item(BaseModel):
 
     context: str = Field(alias="@context")
     id: str = Field(alias="@id")
-    type: str | list[str] = Field(alias="@type")
+    type: str | dict[str, Any] | list[str] | list[dict[str, Any]] = Field(alias="@type")
     o_id: int = Field(alias="o:id")
     o_is_public: bool = Field(alias="o:is_public")
     o_owner: ResourceRef | None = Field(None, alias="o:owner")
@@ -107,7 +107,7 @@ class Media(BaseModel):
 
     context: str = Field(alias="@context")
     id: str = Field(alias="@id")
-    type: str | list[str] = Field(alias="@type")
+    type: str | dict[str, Any] | list[str] | list[dict[str, Any]] = Field(alias="@type")
     o_id: int = Field(alias="o:id")
     o_is_public: bool = Field(alias="o:is_public")
     o_owner: ResourceRef | None = Field(None, alias="o:owner")
