@@ -53,18 +53,12 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Create .env file from secrets
-        run: |
-          echo "OMEKA_URL=${{ github.event.inputs.base_url }}" > .env
-          echo "ITEM_SET_ID=${{ github.event.inputs.item_set_id }}" >> .env
-          if [ -n "${{ secrets.KEY_IDENTITY }}" ]; then
-            echo "KEY_IDENTITY=${{ secrets.KEY_IDENTITY }}" >> .env
-          fi
-          if [ -n "${{ secrets.KEY_CREDENTIAL }}" ]; then
-            echo "KEY_CREDENTIAL=${{ secrets.KEY_CREDENTIAL }}" >> .env
-          fi
-
       - name: Run validation
+        env:
+          OMEKA_URL: ${{ github.event.inputs.base_url }}
+          ITEM_SET_ID: ${{ github.event.inputs.item_set_id }}
+          KEY_IDENTITY: ${{ secrets.KEY_IDENTITY }}
+          KEY_CREDENTIAL: ${{ secrets.KEY_CREDENTIAL }}
         run: |
           CMD="uv run python validate.py --output validation_report.txt"
 
