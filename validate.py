@@ -22,7 +22,6 @@ from pydantic import ValidationError
 from src.models import Item, Media
 from src.vocabularies import VocabularyLoader
 
-
 # List of realistic User-Agent strings to rotate through
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -423,26 +422,206 @@ class OmekaValidator:
             ]
             await asyncio.gather(*tasks)
 
+    def _check_missing_field(
+        self, data: dict[str, Any], field_name: str
+    ) -> bool:
+        """Check if a field is missing or empty"""
+        value = data.get(field_name)
+        if value is None:
+            return True
+        if isinstance(value, list) and len(value) == 0:
+            return True
+        return False
+
+    def _check_thumbnail_or_media(
+        self, data: dict[str, Any]
+    ) -> bool:
+        """Check if any thumbnails or media are missing"""
+        # Check thumbnail_display_urls
+        thumbnails = data.get("thumbnail_display_urls")
+        has_thumbnails = False
+        if thumbnails and isinstance(thumbnails, dict):
+            has_thumbnails = bool(
+                thumbnails.get("large") or
+                thumbnails.get("medium") or
+                thumbnails.get("small")
+            )
+
+        # Check o:media for items
+        media = data.get("o:media")
+        has_media = media and isinstance(media, list) and len(media) > 0
+
+        # Return True if BOTH are missing
+        return not has_thumbnails and not has_media
+
+    def _validate_item_additional_checks(
+        self, item_data: dict[str, Any], item_id: int
+    ) -> None:
+        """Additional validation checks for items per issue #16"""
+        # Errors (missing required fields)
+        if not item_data.get("o:title"):
+            self.errors.append(
+                DataValidationError("Item", item_id, "o:title", "Field is required")
+            )
+
+        if self._check_missing_field(item_data, "dcterms:identifier"):
+            self.errors.append(
+                DataValidationError("Item", item_id, "dcterms:identifier", "Field is required")
+            )
+
+        if self._check_missing_field(item_data, "dcterms:description"):
+            self.errors.append(
+                DataValidationError("Item", item_id, "dcterms:description", "Field is required")
+            )
+
+        if self._check_missing_field(item_data, "dcterms:temporal"):
+            self.errors.append(
+                DataValidationError("Item", item_id, "dcterms:temporal", "Field is required")
+            )
+
+        # Warnings (missing recommended fields)
+        if self._check_thumbnail_or_media(item_data):
+            self.warnings.append(
+                DataValidationWarning(
+                    "Item", item_id,
+                    "Missing thumbnails (large, medium, small) or media"
+                )
+            )
+
+        if self._check_missing_field(item_data, "dcterms:language"):
+            self.warnings.append(
+                DataValidationWarning("Item", item_id, "Missing dcterms:language")
+            )
+
+        if self._check_missing_field(item_data, "dcterms:isPartOf"):
+            self.warnings.append(
+                DataValidationWarning("Item", item_id, "Missing dcterms:isPartOf")
+            )
+
+        if self._check_missing_field(item_data, "dcterms:creator"):
+            self.warnings.append(
+                DataValidationWarning("Item", item_id, "Missing dcterms:creator")
+            )
+
+        if self._check_missing_field(item_data, "dcterms:publisher"):
+            self.warnings.append(
+                DataValidationWarning("Item", item_id, "Missing dcterms:publisher")
+            )
+
+    def _validate_media_additional_checks(
+        self, media_data: dict[str, Any], media_id: int
+    ) -> None:
+        """Additional validation checks for media per issue #16"""
+        # Errors (missing required fields)
+        if not media_data.get("o:title"):
+            self.errors.append(
+                DataValidationError("Media", media_id, "o:title", "Field is required")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:identifier"):
+            self.errors.append(
+                DataValidationError("Media", media_id, "dcterms:identifier", "Field is required")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:description"):
+            self.errors.append(
+                DataValidationError("Media", media_id, "dcterms:description", "Field is required")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:rights"):
+            self.errors.append(
+                DataValidationError("Media", media_id, "dcterms:rights", "Field is required")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:license"):
+            self.errors.append(
+                DataValidationError("Media", media_id, "dcterms:license", "Field is required")
+            )
+
+        # Warnings (missing recommended fields)
+        # Check if both o:resource_template.@id and o:resource_template.o:id are missing
+        resource_template = media_data.get("o:resource_template")
+        if not resource_template or (
+            not resource_template.get("@id") and not resource_template.get("o:id")
+        ):
+            self.warnings.append(
+                DataValidationWarning(
+                    "Media", media_id,
+                    "Missing o:resource_template (@id and o:id)"
+                )
+            )
+
+        if self._check_thumbnail_or_media(media_data):
+            self.warnings.append(
+                DataValidationWarning(
+                    "Media", media_id,
+                    "Missing thumbnails (large, medium, small) or media"
+                )
+            )
+
+        if self._check_missing_field(media_data, "dcterms:creator"):
+            self.warnings.append(
+                DataValidationWarning("Media", media_id, "Missing dcterms:creator")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:publisher"):
+            self.warnings.append(
+                DataValidationWarning("Media", media_id, "Missing dcterms:publisher")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:temporal"):
+            self.warnings.append(
+                DataValidationWarning("Media", media_id, "Missing dcterms:temporal")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:type"):
+            self.warnings.append(
+                DataValidationWarning("Media", media_id, "Missing dcterms:type")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:format"):
+            self.warnings.append(
+                DataValidationWarning("Media", media_id, "Missing dcterms:format")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:extent"):
+            self.warnings.append(
+                DataValidationWarning("Media", media_id, "Missing dcterms:extent")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:source"):
+            self.warnings.append(
+                DataValidationWarning("Media", media_id, "Missing dcterms:source")
+            )
+
+        if self._check_missing_field(media_data, "dcterms:language"):
+            self.warnings.append(
+                DataValidationWarning("Media", media_id, "Missing dcterms:language")
+            )
+
     def validate_item(self, item_data: dict[str, Any]) -> None:
         """Validate a single item"""
         # Store raw data for profiling if enabled
         if self.enable_profiling:
             self.items_data.append(item_data)
 
+        item_id = item_data.get("o:id", "unknown")
+
         try:
             Item.model_validate(item_data)
             self.validated_items += 1
 
             # Additional vocabulary validations
-            item_id = item_data.get("o:id", "unknown")
             self._validate_vocabularies(item_data, "Item", item_id)
+
+            # Additional field presence checks (issue #16)
+            self._validate_item_additional_checks(item_data, item_id)
 
             # Check URIs if enabled
             if self.check_uris:
                 asyncio.run(self.check_uris_for_resource(item_data, "Item", item_id))
 
         except ValidationError as e:
-            item_id = item_data.get("o:id", "unknown")
             for error in e.errors():
                 field = ".".join(str(loc) for loc in error["loc"])
                 self.errors.append(
@@ -455,20 +634,23 @@ class OmekaValidator:
         if self.enable_profiling:
             self.media_data.append(media_data)
 
+        media_id = media_data.get("o:id", "unknown")
+
         try:
             Media.model_validate(media_data)
             self.validated_media += 1
 
             # Additional vocabulary validations
-            media_id = media_data.get("o:id", "unknown")
             self._validate_vocabularies(media_data, "Media", media_id)
+
+            # Additional field presence checks (issue #16)
+            self._validate_media_additional_checks(media_data, media_id)
 
             # Check URIs if enabled
             if self.check_uris:
                 asyncio.run(self.check_uris_for_resource(media_data, "Media", media_id))
 
         except ValidationError as e:
-            media_id = media_data.get("o:id", "unknown")
             for error in e.errors():
                 field = ".".join(str(loc) for loc in error["loc"])
                 self.errors.append(

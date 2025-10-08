@@ -77,6 +77,10 @@ class Item(BaseModel):
     dcterms_description: list[OmekaProperty] | None = Field(
         None, alias="dcterms:description"
     )
+    dcterms_creator: list[OmekaProperty] | None = Field(None, alias="dcterms:creator")
+    dcterms_publisher: list[OmekaProperty] | None = Field(
+        None, alias="dcterms:publisher"
+    )
     dcterms_temporal: list[OmekaProperty] | None = Field(None, alias="dcterms:temporal")
     dcterms_language: list[OmekaProperty] | None = Field(None, alias="dcterms:language")
     dcterms_isPartOf: list[OmekaProperty] | None = Field(None, alias="dcterms:isPartOf")
