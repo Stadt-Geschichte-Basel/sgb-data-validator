@@ -483,6 +483,68 @@ def test_valid_complete_media() -> None:
     print("  ✓ Complete valid media has no errors or warnings")
 
 
+def test_duplicate_identifiers() -> None:
+    """Test that duplicate identifiers generate errors"""
+    print("\nTesting duplicate identifiers...")
+
+    # Test duplicate item identifiers
+    validator = OmekaValidator("https://example.com")
+    item1 = create_minimal_item(201)
+    item2 = create_minimal_item(202)
+    # Give both items the same identifier
+    item1["dcterms:identifier"][0]["@value"] = "duplicate_id_123"
+    item2["dcterms:identifier"][0]["@value"] = "duplicate_id_123"
+
+    validator.validate_item(item1)
+    validator.validate_item(item2)
+    validator._check_duplicate_identifiers()
+
+    # Should have errors for both items
+    duplicate_errors = [e for e in validator.errors if "Duplicate identifier" in str(e)]
+    assert len(duplicate_errors) == 2, f"Expected 2 duplicate errors, got {len(duplicate_errors)}"
+    assert any("201" in str(e) for e in duplicate_errors), "Expected error for item 201"
+    assert any("202" in str(e) for e in duplicate_errors), "Expected error for item 202"
+    print("  ✓ Duplicate item identifiers generate errors for all affected items")
+
+    # Test duplicate media identifiers
+    validator = OmekaValidator("https://example.com")
+    media1 = create_minimal_media(301)
+    media2 = create_minimal_media(302)
+    media3 = create_minimal_media(303)
+    # Give three media the same identifier
+    media1["dcterms:identifier"][0]["@value"] = "duplicate_media_456"
+    media2["dcterms:identifier"][0]["@value"] = "duplicate_media_456"
+    media3["dcterms:identifier"][0]["@value"] = "duplicate_media_456"
+
+    validator.validate_media(media1)
+    validator.validate_media(media2)
+    validator.validate_media(media3)
+    validator._check_duplicate_identifiers()
+
+    # Should have errors for all three media
+    duplicate_errors = [e for e in validator.errors if "Duplicate identifier" in str(e)]
+    assert len(duplicate_errors) == 3, f"Expected 3 duplicate errors, got {len(duplicate_errors)}"
+    assert any("301" in str(e) for e in duplicate_errors), "Expected error for media 301"
+    assert any("302" in str(e) for e in duplicate_errors), "Expected error for media 302"
+    assert any("303" in str(e) for e in duplicate_errors), "Expected error for media 303"
+    print("  ✓ Duplicate media identifiers generate errors for all affected media")
+
+    # Test that unique identifiers don't generate errors
+    validator = OmekaValidator("https://example.com")
+    item1 = create_minimal_item(401)
+    item2 = create_minimal_item(402)
+    item1["dcterms:identifier"][0]["@value"] = "unique_id_1"
+    item2["dcterms:identifier"][0]["@value"] = "unique_id_2"
+
+    validator.validate_item(item1)
+    validator.validate_item(item2)
+    validator._check_duplicate_identifiers()
+
+    duplicate_errors = [e for e in validator.errors if "Duplicate identifier" in str(e)]
+    assert len(duplicate_errors) == 0, f"Expected no duplicate errors, got {duplicate_errors}"
+    print("  ✓ Unique identifiers do not generate duplicate errors")
+
+
 if __name__ == "__main__":
     try:
         test_item_errors()
@@ -491,6 +553,7 @@ if __name__ == "__main__":
         test_media_warnings()
         test_valid_complete_item()
         test_valid_complete_media()
+        test_duplicate_identifiers()
         print("\n✓ All issue #16 validation tests passed!")
     except AssertionError as e:
         print(f"\n✗ Test failed: {e}")

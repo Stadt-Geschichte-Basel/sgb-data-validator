@@ -95,6 +95,10 @@ class OmekaValidator:
         self.items_data: list[dict[str, Any]] = []
         self.media_data: list[dict[str, Any]] = []
 
+        # Track identifiers for uniqueness validation
+        self.item_identifiers: dict[str, list[int]] = {}  # identifier -> [item_ids]
+        self.media_identifiers: dict[str, list[int]] = {}  # identifier -> [media_ids]
+
         self.client = httpx.Client(timeout=30.0)
 
         vocab_file = Path(__file__).parent / "data" / "raw" / "vocabularies.json"
@@ -433,6 +437,15 @@ class OmekaValidator:
             return True
         return False
 
+    def _extract_identifier_value(self, data: dict[str, Any]) -> str | None:
+        """Extract the identifier value from dcterms:identifier field"""
+        identifiers = data.get("dcterms:identifier")
+        if identifiers and isinstance(identifiers, list) and len(identifiers) > 0:
+            first_identifier = identifiers[0]
+            if isinstance(first_identifier, dict):
+                return first_identifier.get("@value")
+        return None
+
     def _check_thumbnail_or_media(
         self, data: dict[str, Any]
     ) -> bool:
@@ -589,6 +602,34 @@ class OmekaValidator:
                 DataValidationWarning("Media", media_id, "Missing dcterms:language")
             )
 
+    def _check_duplicate_identifiers(self) -> None:
+        """Check for duplicate identifiers and generate errors for all entries with duplicates"""
+        # Check for duplicate item identifiers
+        for identifier, item_ids in self.item_identifiers.items():
+            if len(item_ids) > 1:
+                for item_id in item_ids:
+                    self.errors.append(
+                        DataValidationError(
+                            "Item",
+                            item_id,
+                            "dcterms:identifier",
+                            f"Duplicate identifier '{identifier}' found in items: {item_ids}",
+                        )
+                    )
+
+        # Check for duplicate media identifiers
+        for identifier, media_ids in self.media_identifiers.items():
+            if len(media_ids) > 1:
+                for media_id in media_ids:
+                    self.errors.append(
+                        DataValidationError(
+                            "Media",
+                            media_id,
+                            "dcterms:identifier",
+                            f"Duplicate identifier '{identifier}' found in media: {media_ids}",
+                        )
+                    )
+
     def validate_item(self, item_data: dict[str, Any]) -> None:
         """Validate a single item"""
         # Store raw data for profiling if enabled
@@ -596,6 +637,13 @@ class OmekaValidator:
             self.items_data.append(item_data)
 
         item_id = item_data.get("o:id", "unknown")
+
+        # Track identifier for uniqueness checking
+        identifier_value = self._extract_identifier_value(item_data)
+        if identifier_value:
+            if identifier_value not in self.item_identifiers:
+                self.item_identifiers[identifier_value] = []
+            self.item_identifiers[identifier_value].append(item_id)
 
         try:
             Item.model_validate(item_data)
@@ -625,6 +673,13 @@ class OmekaValidator:
             self.media_data.append(media_data)
 
         media_id = media_data.get("o:id", "unknown")
+
+        # Track identifier for uniqueness checking
+        identifier_value = self._extract_identifier_value(media_data)
+        if identifier_value:
+            if identifier_value not in self.media_identifiers:
+                self.media_identifiers[identifier_value] = []
+            self.media_identifiers[identifier_value].append(media_id)
 
         try:
             Media.model_validate(media_data)
@@ -677,6 +732,9 @@ class OmekaValidator:
                     print(f"\n\rWarning: Could not fetch media for item {item_id}: {e}")
 
         print("\r" + " " * 80 + "\r", end="")  # Clear progress line
+
+        # Check for duplicate identifiers
+        self._check_duplicate_identifiers()
 
         # Show URI checking summary if enabled
         if self.check_uris and self.checked_uris > 0:
