@@ -793,6 +793,135 @@ class OmekaValidator:
 
         print(f"\nReport saved to: {output_file}")
 
+    def export_validation_csv(
+        self, output_dir: str | Path = "validation_reports"
+    ) -> None:
+        """Export validation results as CSV files per issue #17.
+
+        Creates three CSV files:
+        - items_validation.csv: validation results for items
+        - media_validation.csv: validation results for media
+        - validation_summary.csv: summary of validation results
+
+        Each row represents one item/media, each column a validation field.
+        Empty cells mean valid, non-empty cells contain error/warning messages.
+        Each CSV includes an edit_link column for direct access to Omeka admin.
+        """
+        import csv
+        from collections import defaultdict
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build admin base URL from API URL
+        # Replace /api with /admin, or add /admin if no /api present
+        if "/api" in self.base_url:
+            admin_base_url = self.base_url.replace("/api", "/admin")
+        else:
+            admin_base_url = f"{self.base_url.rstrip('/')}/admin"
+
+        # Organize errors and warnings by resource
+        item_issues: dict[int, dict[str, str]] = defaultdict(dict)
+        media_issues: dict[int, dict[str, str]] = defaultdict(dict)
+
+        # Process errors
+        for error in self.errors:
+            issue_dict = (
+                item_issues if error.resource_type == "Item" else media_issues
+            )
+            # Format: "error: <message>"
+            issue_dict[error.resource_id][error.field] = f"error: {error.error}"
+
+        # Process warnings
+        for warning in self.warnings:
+            issue_dict = (
+                item_issues if warning.resource_type == "Item" else media_issues
+            )
+            # Extract field name from warning message if possible
+            # Format: "warning: <message>"
+            # If message contains field name, use it as key, otherwise use "general"
+            field_name = "general"
+            message = warning.message
+            if ":" in message and not message.startswith("Missing"):
+                # Extract field from format "field: message"
+                parts = message.split(":", 1)
+                field_name = parts[0].strip()
+                message = parts[1].strip()
+            elif message.startswith("Missing "):
+                # Extract field from "Missing <field>"
+                field_name = message.replace("Missing ", "").strip()
+                message = "Missing field"
+
+            issue_dict[warning.resource_id][field_name] = f"warning: {message}"
+
+        # Get all unique field names for items and media
+        item_fields = set()
+        for issues in item_issues.values():
+            item_fields.update(issues.keys())
+        item_fields = sorted(item_fields)
+
+        media_fields = set()
+        for issues in media_issues.values():
+            media_fields.update(issues.keys())
+        media_fields = sorted(media_fields)
+
+        # Export items validation CSV
+        if item_issues:
+            items_csv = output_dir / "items_validation.csv"
+            with open(items_csv, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                # Header: resource_id, edit_link, then all field names
+                writer.writerow(["resource_id", "edit_link"] + item_fields)
+
+                # Write rows sorted by resource_id
+                for resource_id in sorted(item_issues.keys()):
+                    issues = item_issues[resource_id]
+                    edit_link = f"{admin_base_url}/items/{resource_id}"
+                    row = [resource_id, edit_link]
+                    # Add field values (empty if no issue)
+                    row.extend(issues.get(field, "") for field in item_fields)
+                    writer.writerow(row)
+
+            print(f"Items validation CSV saved to: {items_csv}")
+
+        # Export media validation CSV
+        if media_issues:
+            media_csv = output_dir / "media_validation.csv"
+            with open(media_csv, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                # Header: resource_id, edit_link, then all field names
+                writer.writerow(["resource_id", "edit_link"] + media_fields)
+
+                # Write rows sorted by resource_id
+                for resource_id in sorted(media_issues.keys()):
+                    issues = media_issues[resource_id]
+                    edit_link = f"{admin_base_url}/media/{resource_id}"
+                    row = [resource_id, edit_link]
+                    # Add field values (empty if no issue)
+                    row.extend(issues.get(field, "") for field in media_fields)
+                    writer.writerow(row)
+
+            print(f"Media validation CSV saved to: {media_csv}")
+
+        # Export summary CSV
+        summary_csv = output_dir / "validation_summary.csv"
+        with open(summary_csv, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["metric", "value"])
+            writer.writerow(["items_validated", self.validated_items])
+            writer.writerow(["media_validated", self.validated_media])
+            writer.writerow(["total_errors", len(self.errors)])
+            writer.writerow(["total_warnings", len(self.warnings)])
+            writer.writerow(["items_with_issues", len(item_issues)])
+            writer.writerow(["media_with_issues", len(media_issues)])
+            if self.check_uris:
+                writer.writerow(["uris_checked", self.checked_uris])
+                writer.writerow(["failed_uris", self.failed_uris])
+
+        print(f"Validation summary CSV saved to: {summary_csv}")
+        print(f"\nAll CSV reports saved to: {output_dir}/")
+
+
     def generate_profiling_reports(
         self, output_dir: str | Path = "analysis", minimal: bool = False
     ) -> None:
@@ -923,6 +1052,17 @@ def main() -> int:
         default="analysis",
         help="Directory for profiling outputs (default: analysis/)",
     )
+    parser.add_argument(
+        "--export-csv",
+        action="store_true",
+        help="Export validation results as CSV files (items, media, and summary)",
+    )
+    parser.add_argument(
+        "--csv-output",
+        type=Path,
+        default="validation_reports",
+        help="Directory for CSV validation reports (default: validation_reports/)",
+    )
 
     args = parser.parse_args()
 
@@ -935,6 +1075,8 @@ def main() -> int:
             print("Redirect checking: enabled")
     if args.profile:
         print(f"Data profiling: enabled (output: {args.profile_output}/)")
+    if args.export_csv:
+        print(f"CSV export: enabled (output: {args.csv_output}/)")
     print()
 
     validator = OmekaValidator(
@@ -960,6 +1102,9 @@ def main() -> int:
 
     if args.output:
         validator.save_report(args.output)
+
+    if args.export_csv:
+        validator.export_validation_csv(args.csv_output)
 
     if args.profile:
         validator.generate_profiling_reports(args.profile_output, args.profile_minimal)

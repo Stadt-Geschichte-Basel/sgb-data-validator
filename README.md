@@ -124,9 +124,45 @@ uv run python validate.py --profile --profile-minimal
 # Specify profiling output directory
 uv run python validate.py --profile --profile-output my_analysis/
 
+# Export validation results as CSV files
+uv run python validate.py --export-csv
+
+# Specify CSV export directory
+uv run python validate.py --export-csv --csv-output my_reports/
+
 # Get help
 uv run python validate.py --help
 ```
+
+#### CSV Validation Reports
+
+The validator can export validation results as CSV files for easier post-processing and review:
+
+- **`--export-csv`**: Export validation results as CSV files (items, media, and summary)
+- **`--csv-output`**: Specify output directory for CSV reports (default: `validation_reports/`)
+
+CSV export features:
+
+- **Separate files for items and media**: Creates `items_validation.csv` and `media_validation.csv`
+- **One row per resource**: Each row represents a single item or media object
+- **One column per field**: Each validation field is a separate column
+- **Empty cells for valid fields**: Valid fields have empty cells
+- **Error/warning messages in cells**: Invalid fields contain the error or warning message (prefixed with "error:" or "warning:")
+- **Edit links**: Each row includes a direct link to edit the resource in Omeka admin interface
+- **Summary report**: A `validation_summary.csv` file aggregates key metrics
+
+Example CSV output structure:
+
+```csv
+resource_id,edit_link,dcterms:identifier,dcterms:description,o:title
+121200,https://omeka.unibe.ch/admin/items/121200,error: Field is required,error: Field is required,
+121201,https://omeka.unibe.ch/admin/items/121201,,warning: Missing field,
+```
+
+The edit links allow direct navigation to problematic resources:
+- Items: `https://omeka.unibe.ch/admin/items/<item_id>`
+- Media: `https://omeka.unibe.ch/admin/media/<media_id>`
+
 
 #### URL/URI Checking
 
