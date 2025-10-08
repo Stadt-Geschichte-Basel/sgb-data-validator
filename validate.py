@@ -498,16 +498,6 @@ class OmekaValidator:
                 DataValidationWarning("Item", item_id, "Missing dcterms:isPartOf")
             )
 
-        if self._check_missing_field(item_data, "dcterms:creator"):
-            self.warnings.append(
-                DataValidationWarning("Item", item_id, "Missing dcterms:creator")
-            )
-
-        if self._check_missing_field(item_data, "dcterms:publisher"):
-            self.warnings.append(
-                DataValidationWarning("Item", item_id, "Missing dcterms:publisher")
-            )
-
     def _validate_media_additional_checks(
         self, media_data: dict[str, Any], media_id: int
     ) -> None:

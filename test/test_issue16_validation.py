@@ -93,24 +93,6 @@ def create_minimal_item(item_id: int) -> dict:
                 "@value": "Test Collection",
             }
         ],
-        "dcterms:creator": [
-            {
-                "type": "literal",
-                "property_id": 2,
-                "property_label": "Creator",
-                "is_public": True,
-                "@value": "Test Creator",
-            }
-        ],
-        "dcterms:publisher": [
-            {
-                "type": "literal",
-                "property_id": 5,
-                "property_label": "Publisher",
-                "is_public": True,
-                "@value": "Test Publisher",
-            }
-        ],
     }
 
 
@@ -353,22 +335,6 @@ def test_item_warnings() -> None:
     validator.validate_item(item)
     assert any("dcterms:isPartOf" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:isPartOf generates warning")
-
-    # Test missing dcterms:creator
-    validator = OmekaValidator("https://example.com")
-    item = create_minimal_item(8)
-    del item["dcterms:creator"]
-    validator.validate_item(item)
-    assert any("dcterms:creator" in str(w) for w in validator.warnings)
-    print("  ✓ Missing dcterms:creator generates warning")
-
-    # Test missing dcterms:publisher
-    validator = OmekaValidator("https://example.com")
-    item = create_minimal_item(9)
-    del item["dcterms:publisher"]
-    validator.validate_item(item)
-    assert any("dcterms:publisher" in str(w) for w in validator.warnings)
-    print("  ✓ Missing dcterms:publisher generates warning")
 
 
 def test_media_errors() -> None:
