@@ -426,9 +426,7 @@ class OmekaValidator:
             ]
             await asyncio.gather(*tasks)
 
-    def _check_missing_field(
-        self, data: dict[str, Any], field_name: str
-    ) -> bool:
+    def _check_missing_field(self, data: dict[str, Any], field_name: str) -> bool:
         """Check if a field is missing or empty"""
         value = data.get(field_name)
         if value is None:
@@ -446,18 +444,16 @@ class OmekaValidator:
                 return first_identifier.get("@value")
         return None
 
-    def _check_thumbnail_or_media(
-        self, data: dict[str, Any]
-    ) -> bool:
+    def _check_thumbnail_or_media(self, data: dict[str, Any]) -> bool:
         """Check if any thumbnails or media are missing"""
         # Check thumbnail_display_urls
         thumbnails = data.get("thumbnail_display_urls")
         has_thumbnails = False
         if thumbnails and isinstance(thumbnails, dict):
             has_thumbnails = bool(
-                thumbnails.get("large") or
-                thumbnails.get("medium") or
-                thumbnails.get("small")
+                thumbnails.get("large")
+                or thumbnails.get("medium")
+                or thumbnails.get("small")
             )
 
         # Check o:media for items
@@ -479,25 +475,32 @@ class OmekaValidator:
 
         if self._check_missing_field(item_data, "dcterms:identifier"):
             self.errors.append(
-                DataValidationError("Item", item_id, "dcterms:identifier", "Field is required")
+                DataValidationError(
+                    "Item", item_id, "dcterms:identifier", "Field is required"
+                )
             )
 
         if self._check_missing_field(item_data, "dcterms:description"):
             self.errors.append(
-                DataValidationError("Item", item_id, "dcterms:description", "Field is required")
+                DataValidationError(
+                    "Item", item_id, "dcterms:description", "Field is required"
+                )
             )
 
         if self._check_missing_field(item_data, "dcterms:temporal"):
             self.errors.append(
-                DataValidationError("Item", item_id, "dcterms:temporal", "Field is required")
+                DataValidationError(
+                    "Item", item_id, "dcterms:temporal", "Field is required"
+                )
             )
 
         # Warnings (missing recommended fields)
         if self._check_thumbnail_or_media(item_data):
             self.warnings.append(
                 DataValidationWarning(
-                    "Item", item_id,
-                    "Missing thumbnails (large, medium, small) or media"
+                    "Item",
+                    item_id,
+                    "Missing thumbnails (large, medium, small) or media",
                 )
             )
 
@@ -523,22 +526,30 @@ class OmekaValidator:
 
         if self._check_missing_field(media_data, "dcterms:identifier"):
             self.errors.append(
-                DataValidationError("Media", media_id, "dcterms:identifier", "Field is required")
+                DataValidationError(
+                    "Media", media_id, "dcterms:identifier", "Field is required"
+                )
             )
 
         if self._check_missing_field(media_data, "dcterms:description"):
             self.errors.append(
-                DataValidationError("Media", media_id, "dcterms:description", "Field is required")
+                DataValidationError(
+                    "Media", media_id, "dcterms:description", "Field is required"
+                )
             )
 
         if self._check_missing_field(media_data, "dcterms:rights"):
             self.errors.append(
-                DataValidationError("Media", media_id, "dcterms:rights", "Field is required")
+                DataValidationError(
+                    "Media", media_id, "dcterms:rights", "Field is required"
+                )
             )
 
         if self._check_missing_field(media_data, "dcterms:license"):
             self.errors.append(
-                DataValidationError("Media", media_id, "dcterms:license", "Field is required")
+                DataValidationError(
+                    "Media", media_id, "dcterms:license", "Field is required"
+                )
             )
 
         # Warnings (missing recommended fields)
@@ -549,16 +560,16 @@ class OmekaValidator:
         ):
             self.warnings.append(
                 DataValidationWarning(
-                    "Media", media_id,
-                    "Missing o:resource_template (@id and o:id)"
+                    "Media", media_id, "Missing o:resource_template (@id and o:id)"
                 )
             )
 
         if self._check_thumbnail_or_media(media_data):
             self.warnings.append(
                 DataValidationWarning(
-                    "Media", media_id,
-                    "Missing thumbnails (large, medium, small) or media"
+                    "Media",
+                    media_id,
+                    "Missing thumbnails (large, medium, small) or media",
                 )
             )
 
@@ -826,9 +837,7 @@ class OmekaValidator:
 
         # Process errors
         for error in self.errors:
-            issue_dict = (
-                item_issues if error.resource_type == "Item" else media_issues
-            )
+            issue_dict = item_issues if error.resource_type == "Item" else media_issues
             # Format: "error: <message>"
             issue_dict[error.resource_id][error.field] = f"error: {error.error}"
 
@@ -920,7 +929,6 @@ class OmekaValidator:
 
         print(f"Validation summary CSV saved to: {summary_csv}")
         print(f"\nAll CSV reports saved to: {output_dir}/")
-
 
     def generate_profiling_reports(
         self, output_dir: str | Path = "analysis", minimal: bool = False

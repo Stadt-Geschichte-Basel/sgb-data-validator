@@ -106,7 +106,7 @@ def analyze_items(
 
     # Save DataFrame
     df.to_csv(output_dir / "items.csv", index=False)
-    
+
     # Save as JSON with readable formatting (no escaped slashes, unicode preserved)
     with open(output_dir / "items.json", "w", encoding="utf-8") as f:
         json.dump(df.to_dict(orient="records"), f, indent=2, ensure_ascii=False)
@@ -145,7 +145,7 @@ def analyze_media(
 
     # Save DataFrame
     df.to_csv(output_dir / "media.csv", index=False)
-    
+
     # Save as JSON with readable formatting (no escaped slashes, unicode preserved)
     with open(output_dir / "media.json", "w", encoding="utf-8") as f:
         json.dump(df.to_dict(orient="records"), f, indent=2, ensure_ascii=False)
