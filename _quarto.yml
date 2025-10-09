@@ -26,12 +26,16 @@ website:
     left:
       - text: Readme
         href: index.qmd
+      - text: Validation Reports
+        href: validation-reports.qmd
 
   sidebar:
     contents:
       - section: sgb-data-validator
         href: index.qmd
         contents:
+          - text: Validation Reports
+            href: validation-reports.qmd
           - text: Changelog
             href: CHANGELOG.md
           - text: Code of Conduct
