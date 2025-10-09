@@ -13,10 +13,6 @@ on:
         required: false
         default: 'https://omeka.unibe.ch'
         type: string
-      api_key:
-        description: 'API key for authentication (optional)'
-        required: false
-        type: string
       check_uris:
         description: 'Check if URIs are reachable (may be slow)'
         required: false
@@ -58,15 +54,13 @@ jobs:
         run: uv sync
 
       - name: Run validation
+        env:
+          OMEKA_URL: ${{ github.event.inputs.base_url }}
+          ITEM_SET_ID: ${{ github.event.inputs.item_set_id }}
+          KEY_IDENTITY: ${{ secrets.KEY_IDENTITY }}
+          KEY_CREDENTIAL: ${{ secrets.KEY_CREDENTIAL }}
         run: |
-          CMD="uv run python validate.py \
-            --base-url \"${{ github.event.inputs.base_url }}\" \
-            --item-set-id \"${{ github.event.inputs.item_set_id }}\" \
-            --output validation_report.txt"
-
-          if [ -n "${{ github.event.inputs.api_key }}" ]; then
-            CMD="$CMD --api-key \"${{ github.event.inputs.api_key }}\""
-          fi
+          CMD="uv run python validate.py --output validation_report.txt"
 
           if [ "${{ github.event.inputs.check_uris }}" = "true" ]; then
             CMD="$CMD --check-uris"
