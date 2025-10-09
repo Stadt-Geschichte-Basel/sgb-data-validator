@@ -238,15 +238,18 @@ uv run python validate.py --profile --profile-output my_analysis/
 The validator automatically checks all literal-type fields for URLs and generates warnings if any are found. This helps prevent unintentional inclusion of links in fields that are intended to be plain text values.
 
 **What is checked:**
+
 - All `dcterms:*` fields with `type: "literal"`
 - Detects URLs starting with `http://`, `https://`, `ftp://`, or `www.`
 - Detects URLs embedded within text
 
 **What is NOT checked:**
+
 - URI-type fields (e.g., `dcterms:creator` with `type: "uri"`)
 - Fields that are supposed to contain URLs
 
 **Example warning:**
+
 ```
 [Item 10777] dcterms:description[0]: Literal field contains URL: Visit https://example.com for more
 ```

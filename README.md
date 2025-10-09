@@ -161,9 +161,9 @@ resource_id,edit_link,dcterms:identifier,dcterms:description,o:title
 ```
 
 The edit links allow direct navigation to problematic resources:
+
 - Items: `https://omeka.unibe.ch/admin/items/<item_id>`
 - Media: `https://omeka.unibe.ch/admin/media/<media_id>`
-
 
 #### URL/URI Checking
 
