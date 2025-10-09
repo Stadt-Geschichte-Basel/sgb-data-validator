@@ -134,6 +134,7 @@ sequenceDiagram
 - [x] URIs must be well-formed (http:// or https://)
 - [x] Reports unexpected fields (via pydantic's extra="allow")
 - [x] Summary report by item/media and field
+- [x] Warns if literal fields contain URLs (issue #22)
 
 ✅ **CLI Features**
 
@@ -231,6 +232,26 @@ uv run python validate.py --check-uris --check-redirects
 # Generate data profiling reports
 uv run python validate.py --profile --profile-output my_analysis/
 ```
+
+### URL Detection in Literal Fields
+
+The validator automatically checks all literal-type fields for URLs and generates warnings if any are found. This helps prevent unintentional inclusion of links in fields that are intended to be plain text values.
+
+**What is checked:**
+- All `dcterms:*` fields with `type: "literal"`
+- Detects URLs starting with `http://`, `https://`, `ftp://`, or `www.`
+- Detects URLs embedded within text
+
+**What is NOT checked:**
+- URI-type fields (e.g., `dcterms:creator` with `type: "uri"`)
+- Fields that are supposed to contain URLs
+
+**Example warning:**
+```
+[Item 10777] dcterms:description[0]: Literal field contains URL: Visit https://example.com for more
+```
+
+This feature was implemented in response to [issue #22](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues/22).
 
 ## Development
 
