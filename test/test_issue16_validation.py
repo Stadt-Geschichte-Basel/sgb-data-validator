@@ -287,7 +287,10 @@ def test_item_errors() -> None:
     item = create_minimal_item(2)
     del item["dcterms:identifier"]
     validator.validate_item(item)
-    assert any("dcterms:identifier" in str(e) and "required" in str(e).lower() for e in validator.errors)
+    assert any(
+        "dcterms:identifier" in str(e) and "required" in str(e).lower()
+        for e in validator.errors
+    )
     print("  ✓ Missing dcterms:identifier generates error")
 
     # Test missing dcterms:description
@@ -295,7 +298,10 @@ def test_item_errors() -> None:
     item = create_minimal_item(3)
     del item["dcterms:description"]
     validator.validate_item(item)
-    assert any("dcterms:description" in str(e) and "required" in str(e).lower() for e in validator.errors)
+    assert any(
+        "dcterms:description" in str(e) and "required" in str(e).lower()
+        for e in validator.errors
+    )
     print("  ✓ Missing dcterms:description generates error")
 
     # Test missing dcterms:temporal
@@ -303,7 +309,10 @@ def test_item_errors() -> None:
     item = create_minimal_item(4)
     del item["dcterms:temporal"]
     validator.validate_item(item)
-    assert any("dcterms:temporal" in str(e) and "required" in str(e).lower() for e in validator.errors)
+    assert any(
+        "dcterms:temporal" in str(e) and "required" in str(e).lower()
+        for e in validator.errors
+    )
     print("  ✓ Missing dcterms:temporal generates error")
 
 
@@ -317,7 +326,10 @@ def test_item_warnings() -> None:
     item["thumbnail_display_urls"] = None
     item["o:media"] = []
     validator.validate_item(item)
-    assert any("thumbnail" in str(w).lower() and "media" in str(w).lower() for w in validator.warnings)
+    assert any(
+        "thumbnail" in str(w).lower() and "media" in str(w).lower()
+        for w in validator.warnings
+    )
     print("  ✓ Missing thumbnails and media generates warning")
 
     # Test missing dcterms:language
@@ -346,7 +358,10 @@ def test_media_errors() -> None:
     media = create_minimal_media(1)
     del media["dcterms:identifier"]
     validator.validate_media(media)
-    assert any("dcterms:identifier" in str(e) and "required" in str(e).lower() for e in validator.errors)
+    assert any(
+        "dcterms:identifier" in str(e) and "required" in str(e).lower()
+        for e in validator.errors
+    )
     print("  ✓ Missing dcterms:identifier generates error")
 
     # Test missing dcterms:description
@@ -354,7 +369,10 @@ def test_media_errors() -> None:
     media = create_minimal_media(2)
     del media["dcterms:description"]
     validator.validate_media(media)
-    assert any("dcterms:description" in str(e) and "required" in str(e).lower() for e in validator.errors)
+    assert any(
+        "dcterms:description" in str(e) and "required" in str(e).lower()
+        for e in validator.errors
+    )
     print("  ✓ Missing dcterms:description generates error")
 
     # Test missing dcterms:rights
@@ -362,7 +380,10 @@ def test_media_errors() -> None:
     media = create_minimal_media(3)
     del media["dcterms:rights"]
     validator.validate_media(media)
-    assert any("dcterms:rights" in str(e) and "required" in str(e).lower() for e in validator.errors)
+    assert any(
+        "dcterms:rights" in str(e) and "required" in str(e).lower()
+        for e in validator.errors
+    )
     print("  ✓ Missing dcterms:rights generates error")
 
     # Test missing dcterms:license
@@ -370,7 +391,10 @@ def test_media_errors() -> None:
     media = create_minimal_media(4)
     del media["dcterms:license"]
     validator.validate_media(media)
-    assert any("dcterms:license" in str(e) and "required" in str(e).lower() for e in validator.errors)
+    assert any(
+        "dcterms:license" in str(e) and "required" in str(e).lower()
+        for e in validator.errors
+    )
     print("  ✓ Missing dcterms:license generates error")
 
 
@@ -501,7 +525,9 @@ def test_duplicate_identifiers() -> None:
 
     # Should have errors for both items
     duplicate_errors = [e for e in validator.errors if "Duplicate identifier" in str(e)]
-    assert len(duplicate_errors) == 2, f"Expected 2 duplicate errors, got {len(duplicate_errors)}"
+    assert len(duplicate_errors) == 2, (
+        f"Expected 2 duplicate errors, got {len(duplicate_errors)}"
+    )
     assert any("201" in str(e) for e in duplicate_errors), "Expected error for item 201"
     assert any("202" in str(e) for e in duplicate_errors), "Expected error for item 202"
     print("  ✓ Duplicate item identifiers generate errors for all affected items")
@@ -523,10 +549,18 @@ def test_duplicate_identifiers() -> None:
 
     # Should have errors for all three media
     duplicate_errors = [e for e in validator.errors if "Duplicate identifier" in str(e)]
-    assert len(duplicate_errors) == 3, f"Expected 3 duplicate errors, got {len(duplicate_errors)}"
-    assert any("301" in str(e) for e in duplicate_errors), "Expected error for media 301"
-    assert any("302" in str(e) for e in duplicate_errors), "Expected error for media 302"
-    assert any("303" in str(e) for e in duplicate_errors), "Expected error for media 303"
+    assert len(duplicate_errors) == 3, (
+        f"Expected 3 duplicate errors, got {len(duplicate_errors)}"
+    )
+    assert any("301" in str(e) for e in duplicate_errors), (
+        "Expected error for media 301"
+    )
+    assert any("302" in str(e) for e in duplicate_errors), (
+        "Expected error for media 302"
+    )
+    assert any("303" in str(e) for e in duplicate_errors), (
+        "Expected error for media 303"
+    )
     print("  ✓ Duplicate media identifiers generate errors for all affected media")
 
     # Test that unique identifiers don't generate errors
@@ -541,7 +575,9 @@ def test_duplicate_identifiers() -> None:
     validator._check_duplicate_identifiers()
 
     duplicate_errors = [e for e in validator.errors if "Duplicate identifier" in str(e)]
-    assert len(duplicate_errors) == 0, f"Expected no duplicate errors, got {duplicate_errors}"
+    assert len(duplicate_errors) == 0, (
+        f"Expected no duplicate errors, got {duplicate_errors}"
+    )
     print("  ✓ Unique identifiers do not generate duplicate errors")
 
 
@@ -561,5 +597,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n✗ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

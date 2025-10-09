@@ -1,6 +1,20 @@
 # sgb-data-validator
 
-This repository contains a data validator for the Stadt-Geschichte-Basel project.. The data in this repository is openly available to everyone and is intended to support reproducible research.
+This repository contains a data validator for the Stadt-Geschichte-Basel project. The data in this repository is openly available to everyone and is intended to support reproducible research.
+
+## Overview
+
+The sgb-data-validator is a Python-based tool that validates metadata quality for the "Stadt.Geschichte.Basel" project's [Omeka S](https://omeka.org/s/) instance. It ensures that cultural heritage items and media objects conform to a comprehensive data model with controlled vocabularies.
+
+**Key features:**
+
+- ✅ **Schema validation** using Pydantic models
+- 📚 **Controlled vocabularies** (Era, MIME types, Licenses, Iconclass)
+- 🔗 **URI validation** with reachability checks
+- 📊 **CSV reports** for easy data quality review  
+- 📈 **Data profiling** with interactive HTML reports
+- 🔌 **Python API** for programmatic access
+- 🚀 **Fast and efficient** with asynchronous processing
 
 [![GitHub issues](https://img.shields.io/github/issues/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)
 [![GitHub forks](https://img.shields.io/github/forks/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/network)
@@ -188,6 +202,8 @@ The edit links allow direct navigation to problematic resources:
 
 - Items: `https://omeka.unibe.ch/admin/items/<item_id>`
 - Media: `https://omeka.unibe.ch/admin/media/<media_id>`
+
+For detailed documentation on CSV reports, see the [Validation Reports](https://Stadt-Geschichte-Basel.github.io/sgb-data-validator/validation-reports.html) page.
 
 #### URL/URI Checking
 
