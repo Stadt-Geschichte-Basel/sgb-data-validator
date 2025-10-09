@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import os
 import random
+import re
 import sys
 from collections import OrderedDict
 from pathlib import Path
@@ -463,6 +464,47 @@ class OmekaValidator:
         # Return True if BOTH are missing
         return not has_thumbnails and not has_media
 
+    def _contains_url(self, text: str) -> bool:
+        """Check if text contains a URL pattern
+
+        Detects URLs starting with http://, https://, ftp://, or www.
+        """
+        if not text or not isinstance(text, str):
+            return False
+
+        # Pattern to match common URL formats
+        url_pattern = r"(?:https?://|ftp://|www\.)[^\s]+"
+        return bool(re.search(url_pattern, text, re.IGNORECASE))
+
+    def _check_literal_fields_for_urls(
+        self, data: dict[str, Any], resource_type: str, resource_id: int
+    ) -> None:
+        """Check if literal type fields contain URLs (issue #22)"""
+        # Check all dcterms fields
+        for key, value in data.items():
+            if not key.startswith("dcterms:"):
+                continue
+
+            if isinstance(value, list):
+                for idx, prop in enumerate(value):
+                    if isinstance(prop, dict):
+                        # Check if this is a literal type field
+                        field_type = prop.get("type")
+                        if field_type == "literal":
+                            field_value = prop.get("@value")
+                            if field_value and self._contains_url(field_value):
+                                display_value = field_value[:80]
+                                if len(field_value) > 80:
+                                    display_value += "..."
+                                self.warnings.append(
+                                    DataValidationWarning(
+                                        resource_type,
+                                        resource_id,
+                                        f"{key}[{idx}]: Literal field contains "
+                                        f"URL: {display_value}",
+                                    )
+                                )
+
     def _validate_item_additional_checks(
         self, item_data: dict[str, Any], item_id: int
     ) -> None:
@@ -666,6 +708,9 @@ class OmekaValidator:
             # Additional field presence checks (issue #16)
             self._validate_item_additional_checks(item_data, item_id)
 
+            # Check for URLs in literal fields (issue #22)
+            self._check_literal_fields_for_urls(item_data, "Item", item_id)
+
             # Check URIs if enabled
             if self.check_uris:
                 asyncio.run(self.check_uris_for_resource(item_data, "Item", item_id))
@@ -701,6 +746,9 @@ class OmekaValidator:
 
             # Additional field presence checks (issue #16)
             self._validate_media_additional_checks(media_data, media_id)
+
+            # Check for URLs in literal fields (issue #22)
+            self._check_literal_fields_for_urls(media_data, "Media", media_id)
 
             # Check URIs if enabled
             if self.check_uris:
