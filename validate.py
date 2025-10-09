@@ -387,7 +387,8 @@ class OmekaValidator:
                                 resource_type,
                                 resource_id,
                                 f"dcterms:language[{idx}]",
-                                f"Invalid language code (must be two-letter ISO-639-1 code: de, fr, es, or la): {value}",
+                                f"Invalid language code (must be valid ISO 639-1 "
+                                f"two-letter code): {value}",
                             )
                         )
 

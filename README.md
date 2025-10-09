@@ -10,6 +10,7 @@ The sgb-data-validator is a Python-based tool that validates metadata quality fo
 
 - ✅ **Schema validation** using Pydantic models
 - 📚 **Controlled vocabularies** (Era, MIME types, Licenses, Iconclass)
+- 🌍 **ISO 639-1 language validation** for all 184 two-letter codes
 - 🔗 **URI validation** with reachability checks
 - 📊 **CSV reports** for easy data quality review  
 - 📈 **Data profiling** with interactive HTML reports
@@ -66,6 +67,7 @@ This repository contains a Python script to validate data from the "Stadt.Geschi
 
 - Required fields (title, identifier, etc.)
 - Controlled vocabularies (Era, MIME types, Licenses, Iconclass)
+- ISO 639-1 language codes (all 184 two-letter codes)
 - Well-formed URIs
 - Empty or invalid field values
 - Unexpected fields
