@@ -31,6 +31,7 @@ This repository contains a Python script to validate data from the "Stadt.Geschi
 - Well-formed URIs
 - Empty or invalid field values
 - Unexpected fields
+- URLs in literal fields (warns if plain text fields contain URLs)
 
 The data models, including field names, descriptions, and controlled values, are documented in the `data/raw/vocabularies.json` file.
 
@@ -160,9 +161,9 @@ resource_id,edit_link,dcterms:identifier,dcterms:description,o:title
 ```
 
 The edit links allow direct navigation to problematic resources:
+
 - Items: `https://omeka.unibe.ch/admin/items/<item_id>`
 - Media: `https://omeka.unibe.ch/admin/media/<media_id>`
-
 
 #### URL/URI Checking
 
