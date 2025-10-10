@@ -1,5 +1,8 @@
 project:
   type: website
+  resources:
+    - "analysis/*.csv"
+    - "analysis/validation_report.txt"
 
 website:
   title: sgb-data-validator

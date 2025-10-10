@@ -59,6 +59,28 @@ jobs:
 
       # add software dependencies here and any libraries
 
+      # Setup Python for validation report generation
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install Python dependencies
+        run: |
+          uv sync
+
+      - name: Generate sample validation reports
+        run: |
+          uv run python generate_sample_reports.py
+          mkdir -p analysis
+          cp examples/sample_reports/*.csv analysis/
+          cp examples/sample_reports/validation_report.txt analysis/
+
       # From https://github.com/actions/setup-python
       # - name: Setup Python
       #   uses: actions/setup-python@v3

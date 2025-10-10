@@ -195,7 +195,15 @@ uv run python validate.py --output validation_report.txt \
 
 ::: {.callout-note}
 ## Sample Data
-The reports shown below are example outputs for demonstration purposes. They illustrate the structure and content you'll see when validating your own data. Sample files are available in [`examples/sample_reports/`](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/tree/main/examples/sample_reports).
+The reports shown below are example outputs for demonstration purposes. They illustrate the structure and content you'll see when validating your own data. 
+
+**Download sample files (auto-generated during site build):**
+- [items_validation.csv](analysis/items_validation.csv) - Sample items with validation issues
+- [media_validation.csv](analysis/media_validation.csv) - Sample media with validation issues
+- [validation_summary.csv](analysis/validation_summary.csv) - Summary statistics
+- [validation_report.txt](analysis/validation_report.txt) - Text report with errors and warnings
+
+Sample files are also available in the repository at [`examples/sample_reports/`](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/tree/main/examples/sample_reports).
 :::
 
 ### Text Report Output
