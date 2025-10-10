@@ -489,3 +489,7 @@ $RECYCLE.BIN/
 # API examples output
 examples/output/
 examples/backups/
+
+# Validation reports
+validation_reports/
+analysis/

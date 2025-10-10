@@ -57,7 +57,15 @@ graph TB
 3. **`src/vocabularies.py`** - Vocabulary loader
    - Loads controlled vocabularies from JSON
    - Validates Era, MIME types, Licenses, and Iconclass terms
+   - Uses ISO 639-1 standard for language code validation
    - Provides lookup methods for validation
+
+3a. **`src/iso639.py`** - ISO 639-1 language code validation
+
+- Complete set of 184 ISO 639-1 two-letter language codes
+- Case-insensitive validation
+- Immutable frozenset for efficient lookups
+- Standalone module for language code validation
 
 4. **`data/raw/vocabularies.json`** - Controlled vocabularies
    - Stadt.Geschichte.Basel Epoche (7 terms)
@@ -68,6 +76,12 @@ graph TB
 5. **`test/test_validation.py`** - Test suite
    - Tests validation with sample Omeka S data
    - Tests error handling for invalid data
+
+5a. **`test/test_iso639.py`** - ISO 639-1 test suite
+
+- Tests valid and invalid language codes
+- Tests case-insensitive validation
+- Tests edge cases and immutability
 
 ## Features Implemented
 
@@ -395,7 +409,7 @@ Potential improvements for future versions:
 
 1. ~~**URI Reachability Check**~~ - ✅ Implemented with `--check-uris` flag
 2. **EDTF Validation** - Validate dates conform to Extended Date/Time Format
-3. **ISO 639-1 Validation** - Validate language codes against ISO standard
+3. ~~**ISO 639-1 Validation**~~ - ✅ Implemented with full ISO 639-1 standard support
 4. **Batch Processing** - Support validating multiple item sets in one run
 5. **JSON Report Format** - Output reports in JSON for programmatic processing
 6. ~~**Statistics Dashboard**~~ - ✅ Implemented with `--profile` flag (ydata-profiling)

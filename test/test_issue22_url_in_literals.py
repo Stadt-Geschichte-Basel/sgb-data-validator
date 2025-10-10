@@ -5,7 +5,9 @@ import sys
 from validate import OmekaValidator
 
 
-def create_item_with_literal_field(item_id: int, field_name: str, field_value: str) -> dict:
+def create_item_with_literal_field(
+    item_id: int, field_name: str, field_value: str
+) -> dict:
     """Create a minimal item with a specific literal field value"""
     return {
         "@context": "https://omeka.unibe.ch/api-context",
@@ -83,7 +85,9 @@ def create_item_with_literal_field(item_id: int, field_name: str, field_value: s
     }
 
 
-def create_media_with_literal_field(media_id: int, field_name: str, field_value: str) -> dict:
+def create_media_with_literal_field(
+    media_id: int, field_name: str, field_value: str
+) -> dict:
     """Create a minimal media with a specific literal field value"""
     return {
         "@context": "https://omeka.unibe.ch/api-context",
@@ -204,7 +208,8 @@ def test_url_detection_in_literal_fields():
         validator.validate_item(item)
 
         has_url_warning = any(
-            "Literal field contains URL" in str(warning) for warning in validator.warnings
+            "Literal field contains URL" in str(warning)
+            for warning in validator.warnings
         )
 
         if should_warn and has_url_warning:
@@ -232,11 +237,13 @@ def test_url_in_item_fields():
     item = create_item_with_literal_field(
         2,
         "dcterms:description",
-        "This is a description with a URL: https://example.com/resource"
+        "This is a description with a URL: https://example.com/resource",
     )
     validator.validate_item(item)
 
-    url_warnings = [w for w in validator.warnings if "Literal field contains URL" in str(w)]
+    url_warnings = [
+        w for w in validator.warnings if "Literal field contains URL" in str(w)
+    ]
     if len(url_warnings) > 0:
         print("  ✓ Detected URL in dcterms:description")
         print(f"    Warning: {url_warnings[0]}")
@@ -248,13 +255,13 @@ def test_url_in_item_fields():
     validator.warnings = []
     validator.errors = []
     item = create_item_with_literal_field(
-        3,
-        "dcterms:isPartOf",
-        "See www.stadtgeschichtebasel.ch for details"
+        3, "dcterms:isPartOf", "See www.stadtgeschichtebasel.ch for details"
     )
     validator.validate_item(item)
 
-    url_warnings = [w for w in validator.warnings if "Literal field contains URL" in str(w)]
+    url_warnings = [
+        w for w in validator.warnings if "Literal field contains URL" in str(w)
+    ]
     if len(url_warnings) > 0:
         print("  ✓ Detected URL in dcterms:isPartOf")
     else:
@@ -273,13 +280,13 @@ def test_url_in_media_fields():
 
     # Test dcterms:creator with URL
     media = create_media_with_literal_field(
-        10,
-        "dcterms:creator",
-        "Visit http://artist-website.com for portfolio"
+        10, "dcterms:creator", "Visit http://artist-website.com for portfolio"
     )
     validator.validate_media(media)
 
-    url_warnings = [w for w in validator.warnings if "Literal field contains URL" in str(w)]
+    url_warnings = [
+        w for w in validator.warnings if "Literal field contains URL" in str(w)
+    ]
     if len(url_warnings) > 0:
         print("  ✓ Detected URL in dcterms:creator")
         print(f"    Warning: {url_warnings[0]}")
@@ -372,7 +379,9 @@ def test_no_warning_for_uri_fields():
 
     validator.validate_item(item)
 
-    url_warnings = [w for w in validator.warnings if "Literal field contains URL" in str(w)]
+    url_warnings = [
+        w for w in validator.warnings if "Literal field contains URL" in str(w)
+    ]
     if len(url_warnings) == 0:
         print("  ✓ No warnings for URI type fields (as expected)")
     else:
@@ -393,11 +402,13 @@ def test_multiple_urls_in_field():
     item = create_item_with_literal_field(
         5,
         "dcterms:description",
-        "Visit https://example.com and http://another.com for more information"
+        "Visit https://example.com and http://another.com for more information",
     )
     validator.validate_item(item)
 
-    url_warnings = [w for w in validator.warnings if "Literal field contains URL" in str(w)]
+    url_warnings = [
+        w for w in validator.warnings if "Literal field contains URL" in str(w)
+    ]
     if len(url_warnings) > 0:
         print("  ✓ Detected multiple URLs in field")
         print(f"    Warning: {url_warnings[0]}")

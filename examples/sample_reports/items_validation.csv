@@ -1,0 +1,5 @@
+resource_id,edit_link,dcterms:identifier,dcterms:description,dcterms:temporal,dcterms:subject,dcterms:language
+10780,https://omeka.unibe.ch/admin/items/10780,error: Field is required,,,,
+10781,https://omeka.unibe.ch/admin/items/10781,,warning: Missing field,,,
+10782,https://omeka.unibe.ch/admin/items/10782,,,,error: Invalid Iconclass code: XYZ123,
+10783,https://omeka.unibe.ch/admin/items/10783,,,,,error: Invalid language code (must be valid ISO 639-1 two-letter code): xyz

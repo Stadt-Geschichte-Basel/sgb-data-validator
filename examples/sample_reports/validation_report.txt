@@ -1,0 +1,25 @@
+================================================================================
+VALIDATION REPORT
+================================================================================
+Items validated: 150
+Media validated: 300
+Total errors: 12
+Total warnings: 45
+URIs checked: 450
+Failed URIs: 3
+================================================================================
+
+ERRORS:
+  [Item 10780] dcterms:identifier: Field is required
+  [Item 10782] dcterms:subject[0]: Invalid Iconclass code: XYZ123
+  [Item 10783] dcterms:language[0]: Invalid language code (must be valid ISO 639-1 two-letter code): xyz
+  [Media 10779] dcterms:identifier: Field is required
+  [Media 10779] o:media_type: Invalid MIME type: application/unknown
+
+WARNINGS (informational):
+  [Item 10781] dcterms:description: Missing field
+  [Media 10778] dcterms:creator: Missing field
+  [Item 10777] dcterms:description: Literal field contains URL: https://example.com/...
+  [Item 10785] dcterms:source: URI is not reachable: https://broken-link.example.com (404 Not Found)
+
+Report saved to: analysis/validation_report.txt

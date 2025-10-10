@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from src.iconclass import IconclassNotation
+from src.iso639 import is_valid_iso639_1_code
 
 
 class VocabularyLoader:
@@ -90,5 +91,25 @@ class VocabularyLoader:
         return value in self.types
 
     def is_valid_language(self, value: str) -> bool:
-        """Check if value is a valid language code"""
-        return value in self.languages
+        """Check if value is a valid ISO 639-1 language code
+
+        This method validates language codes against the complete ISO 639-1
+        standard (all 184 two-letter codes). This replaces the previous
+        limited validation that only checked against a small subset.
+
+        Args:
+            value: The language code to validate (case-insensitive)
+
+        Returns:
+            True if the code is a valid ISO 639-1 code, False otherwise
+
+        Examples:
+            >>> loader = VocabularyLoader(vocab_file)
+            >>> loader.is_valid_language("en")
+            True
+            >>> loader.is_valid_language("de")
+            True
+            >>> loader.is_valid_language("xyz")
+            False
+        """
+        return is_valid_iso639_1_code(value)

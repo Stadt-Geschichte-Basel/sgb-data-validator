@@ -1,0 +1,3 @@
+resource_id,edit_link,dcterms:identifier,dcterms:creator,dcterms:license,o:media_type
+10778,https://omeka.unibe.ch/admin/media/10778,,warning: Missing field,,
+10779,https://omeka.unibe.ch/admin/media/10779,error: Field is required,,,error: Invalid MIME type: application/unknown

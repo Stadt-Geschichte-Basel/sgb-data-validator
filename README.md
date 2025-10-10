@@ -1,6 +1,21 @@
 # sgb-data-validator
 
-This repository contains a data validator for the Stadt-Geschichte-Basel project.. The data in this repository is openly available to everyone and is intended to support reproducible research.
+This repository contains a data validator for the Stadt-Geschichte-Basel project. The data in this repository is openly available to everyone and is intended to support reproducible research.
+
+## Overview
+
+The sgb-data-validator is a Python-based tool that validates metadata quality for the "Stadt.Geschichte.Basel" project's [Omeka S](https://omeka.org/s/) instance. It ensures that cultural heritage items and media objects conform to a comprehensive data model with controlled vocabularies.
+
+**Key features:**
+
+- ✅ **Schema validation** using Pydantic models
+- 📚 **Controlled vocabularies** (Era, MIME types, Licenses, Iconclass)
+- 🌍 **ISO 639-1 language validation** for all 184 two-letter codes
+- 🔗 **URI validation** with reachability checks
+- 📊 **CSV reports** for easy data quality review
+- 📈 **Data profiling** with interactive HTML reports
+- 🔌 **Python API** for programmatic access
+- 🚀 **Fast and efficient** with asynchronous processing
 
 [![GitHub issues](https://img.shields.io/github/issues/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)
 [![GitHub forks](https://img.shields.io/github/forks/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/network)
@@ -13,14 +28,38 @@ This repository contains a data validator for the Stadt-Geschichte-Basel project
 
 The structure of this repository follows the [Advanced Structure for Data Analysis](https://the-turing-way.netlify.app/project-design/project-repo/project-repo-advanced.html) of _The Turing Way_ and is organized as follows:
 
-- `analysis/`: scripts and notebooks used to analyze the data
-- `assets/`: images, logos, etc. used in the README and other documentation
-- `build/`: scripts and notebooks used to build the data
-- `data/`: data files
-- `documentation/`: documentation for the data and the repository
-- `project-management/`: project management documents (e.g., meeting notes, project plans, etc.)
-- `src/`: source code for the data (e.g., scripts used to collect or process the data)
-- `test/`: tests for the data and source code
+```
+sgb-data-validator/
+├── src/                    # Source code modules
+│   ├── models.py          # Pydantic data models for validation
+│   ├── vocabularies.py    # Controlled vocabulary loader and validators
+│   ├── iconclass.py       # Iconclass notation parser and validator
+│   ├── profiling.py       # Data profiling and analysis utilities
+│   └── api.py             # Omeka S API client
+├── test/                   # Test suite with pytest
+│   ├── test_validation.py # Core validation tests
+│   ├── test_iconclass.py  # Iconclass-specific tests
+│   └── ...                # Additional test modules
+├── data/                   # Data files
+│   └── raw/               # Raw input data
+│       └── vocabularies.json  # Controlled vocabularies (Era, MIME, Licenses, Iconclass)
+├── examples/               # Usage examples and tutorials
+│   ├── api_usage.py       # API client examples
+│   └── iconclass_usage.py # Iconclass validation examples
+├── validate.py            # Main validation script (CLI)
+├── main.py                # Alternative entry point
+├── pyproject.toml         # Project dependencies and metadata
+├── README.md              # This file - main documentation
+├── IMPLEMENTATION.md      # Technical implementation details
+├── CONTRIBUTING.md        # Contribution guidelines
+└── CHANGELOG.md           # Version history and changes
+```
+
+### Generated Directories (not in version control)
+
+- `analysis/`: Generated data profiling reports (HTML, CSV)
+- `validation_reports/`: Generated validation CSV reports
+- `.venv/`: Python virtual environment (created by uv)
 
 ## Data Description
 
@@ -28,6 +67,7 @@ This repository contains a Python script to validate data from the "Stadt.Geschi
 
 - Required fields (title, identifier, etc.)
 - Controlled vocabularies (Era, MIME types, Licenses, Iconclass)
+- ISO 639-1 language codes (all 184 two-letter codes)
 - Well-formed URIs
 - Empty or invalid field values
 - Unexpected fields
@@ -165,6 +205,8 @@ The edit links allow direct navigation to problematic resources:
 - Items: `https://omeka.unibe.ch/admin/items/<item_id>`
 - Media: `https://omeka.unibe.ch/admin/media/<media_id>`
 
+For detailed documentation on CSV reports, see the [Validation Reports](https://Stadt-Geschichte-Basel.github.io/sgb-data-validator/validation-reports.html) page.
+
 #### URL/URI Checking
 
 The validator can check URLs and URIs in the data to ensure they are reachable:
@@ -246,7 +288,7 @@ uv run python test/test_validation.py
 
 ### API Usage
 
-The validator now provides a comprehensive API for programmatic interaction with Omeka S data:
+The validator provides a comprehensive API for programmatic interaction with Omeka S data:
 
 ```python
 from src.api import OmekaAPI
@@ -284,6 +326,81 @@ For complete examples, see `examples/api_usage.py`:
 ```bash
 uv run python examples/api_usage.py
 ```
+
+### Troubleshooting
+
+#### Installation Issues
+
+**Problem:** `uv: command not found`
+
+**Solution:** Install uv first:
+
+```bash
+pip install uv
+```
+
+**Problem:** Dependencies fail to install
+
+**Solution:** Try removing the lock file and re-syncing:
+
+```bash
+rm uv.lock
+uv sync
+```
+
+#### Validation Issues
+
+**Problem:** `KeyError` or `AttributeError` when validating
+
+**Solution:** Ensure you're using the correct Omeka S API version and that your `.env` file has valid credentials.
+
+**Problem:** URI checking is slow or times out
+
+**Solution:**
+
+- Use `--uri-check-severity warning` to make failed URIs non-blocking
+- Reduce concurrent requests by limiting network activity
+- Skip URI checking during initial validation runs
+
+**Problem:** 403 errors when checking URIs
+
+**Solution:** The validator already rotates User-Agent strings. If you still get 403 errors, the target server may be rate-limiting. Wait a few minutes and try again.
+
+#### Configuration Issues
+
+**Problem:** Environment variables not loaded from `.env`
+
+**Solution:** Ensure `.env` is in the root directory and not `.env.example`. Command-line parameters override `.env` values.
+
+**Problem:** Cannot connect to Omeka S API
+
+**Solution:**
+
+- Verify the `OMEKA_URL` in `.env` is correct
+- Check network connectivity
+- Ensure API credentials have appropriate permissions
+
+#### Performance Issues
+
+**Problem:** Validation is very slow
+
+**Solution:**
+
+- Disable URI checking (`--check-uris`) for faster validation
+- Use minimal profiling (`--profile-minimal`) instead of full profiling
+- Validate smaller item sets for testing
+
+#### Getting Help
+
+If you encounter issues not listed here:
+
+1. Check the [issue tracker](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues) for similar problems
+2. Review the [IMPLEMENTATION.md](IMPLEMENTATION.md) for technical details
+3. [Open a new issue](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues/new/choose) with:
+   - Your environment (OS, Python version)
+   - Steps to reproduce the problem
+   - Full error messages and logs
+   - What you've already tried
 
 ## Use
 

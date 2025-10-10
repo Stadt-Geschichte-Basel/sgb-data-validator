@@ -1,0 +1,9 @@
+metric,value
+items_validated,150
+media_validated,300
+total_errors,12
+total_warnings,45
+items_with_issues,4
+media_with_issues,2
+uris_checked,450
+failed_uris,3
