@@ -6,7 +6,7 @@ project:
 
 website:
   title: sgb-data-validator
-  favicon: android-chrome-512x512.png
+  favicon: _extensions/sgb-theme/favicon.png
   open-graph: true
   twitter-card: true
   site-url: https://Stadt-Geschichte-Basel.github.io/sgb-data-validator/
@@ -20,8 +20,8 @@ website:
     show-item-context: true
     type: overlay
   navbar:
-    logo: android-chrome-512x512.png
-    logo-alt: ''
+    logo: _extensions/sgb-theme/assets/img/logo.svg
+    logo-alt: 'Stadt.Geschichte.Basel Logo'
     title: sgb-data-validator
     tools:
       - icon: github
@@ -53,14 +53,7 @@ website:
             href: SECURITY.md
 
 format:
-  html:
-    toc: true
-    theme:
-      - brand
-      - cosmo
-    css: styles.css
-    code-copy: true
-    code-overflow: wrap
+  sgb-theme-html: default
 
 freeze: true
 
