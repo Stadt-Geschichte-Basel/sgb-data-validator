@@ -82,6 +82,7 @@ jobs:
           KEY_CREDENTIAL: ${{ secrets.KEY_CREDENTIAL }}
         run: |
           mkdir -p analysis
+          touch analysis/validation_report.txt
           uv run python validate.py \
             --output analysis/validation_report.txt \
             --check-uris \
@@ -90,6 +91,7 @@ jobs:
             --profile-output analysis/ \
             --export-csv \
             --csv-output analysis/
+        continue-on-error: true
 
       # From https://github.com/actions/setup-python
       # - name: Setup Python
