@@ -12,7 +12,7 @@ The sgb-data-validator is a Python-based tool that validates metadata quality fo
 - 📚 **Controlled vocabularies** (Era, MIME types, Licenses, Iconclass)
 - 🌍 **ISO 639-1 language validation** for all 184 two-letter codes
 - 🔗 **URI validation** with reachability checks
-- 📊 **CSV reports** for easy data quality review  
+- 📊 **CSV reports** for easy data quality review
 - 📈 **Data profiling** with interactive HTML reports
 - 🔌 **Python API** for programmatic access
 - 🚀 **Fast and efficient** with asynchronous processing
@@ -334,6 +334,7 @@ uv run python examples/api_usage.py
 **Problem:** `uv: command not found`
 
 **Solution:** Install uv first:
+
 ```bash
 pip install uv
 ```
@@ -341,6 +342,7 @@ pip install uv
 **Problem:** Dependencies fail to install
 
 **Solution:** Try removing the lock file and re-syncing:
+
 ```bash
 rm uv.lock
 uv sync
@@ -354,7 +356,8 @@ uv sync
 
 **Problem:** URI checking is slow or times out
 
-**Solution:** 
+**Solution:**
+
 - Use `--uri-check-severity warning` to make failed URIs non-blocking
 - Reduce concurrent requests by limiting network activity
 - Skip URI checking during initial validation runs
@@ -371,7 +374,8 @@ uv sync
 
 **Problem:** Cannot connect to Omeka S API
 
-**Solution:** 
+**Solution:**
+
 - Verify the `OMEKA_URL` in `.env` is correct
 - Check network connectivity
 - Ensure API credentials have appropriate permissions
@@ -381,6 +385,7 @@ uv sync
 **Problem:** Validation is very slow
 
 **Solution:**
+
 - Disable URI checking (`--check-uris`) for faster validation
 - Use minimal profiling (`--profile-minimal`) instead of full profiling
 - Validate smaller item sets for testing

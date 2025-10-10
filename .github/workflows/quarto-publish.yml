@@ -90,7 +90,6 @@ jobs:
             --profile-output analysis/ \
             --export-csv \
             --csv-output analysis/
-        continue-on-error: true
 
       # From https://github.com/actions/setup-python
       # - name: Setup Python

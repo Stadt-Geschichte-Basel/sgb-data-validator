@@ -51,13 +51,13 @@ See `examples/iso639_usage.py` for more examples.
 
 The validator accepts all 184 ISO 639-1 two-letter codes, including but not limited to:
 
-| Code | Language | Code | Language | Code | Language |
-|------|----------|------|----------|------|----------|
-| de   | German   | en   | English  | es   | Spanish  |
+| Code | Language | Code | Language | Code | Language   |
+| ---- | -------- | ---- | -------- | ---- | ---------- |
+| de   | German   | en   | English  | es   | Spanish    |
 | fr   | French   | it   | Italian  | pt   | Portuguese |
-| nl   | Dutch    | ru   | Russian  | zh   | Chinese  |
-| ja   | Japanese | ar   | Arabic   | hi   | Hindi    |
-| ko   | Korean   | la   | Latin    | el   | Greek    |
+| nl   | Dutch    | ru   | Russian  | zh   | Chinese    |
+| ja   | Japanese | ar   | Arabic   | hi   | Hindi      |
+| ko   | Korean   | la   | Latin    | el   | Greek      |
 
 For a complete list, see the [ISO 639-1 standard](https://www.loc.gov/standards/iso639-2/php/code_list.php).
 
@@ -81,6 +81,7 @@ uv run python test/test_iso639.py
 ```
 
 The test suite covers:
+
 - Valid and invalid codes
 - Case-insensitive validation
 - Edge cases (None, empty strings, non-strings)

@@ -53,7 +53,7 @@ Please note we have a [code of conduct](CODE_OF_CONDUCT.md). Please follow it in
 ### Making Changes
 
 1. **Write clear, focused commits**: Each commit should represent a single logical change
-2. **Follow the code style**: 
+2. **Follow the code style**:
    - Run `uv run ruff check .` to check for issues
    - Run `uv run ruff format .` to format code
 3. **Add tests**: Ensure your changes are covered by tests
@@ -112,7 +112,7 @@ uv run ruff check . --fix
    uv run python -m pytest test/
    ```
 
-3. **Update documentation**: 
+3. **Update documentation**:
    - Update README.md if you've changed functionality
    - Update CHANGELOG.md with a brief description of your changes
    - Update docstrings and code comments
@@ -218,5 +218,6 @@ Fixes #42
 ## License
 
 By contributing, you agree that your contributions will be licensed under the same licenses as the project:
+
 - Code: [AGPL-3.0](LICENSE-AGPL.md)
 - Data: [CC BY 4.0](LICENSE-CCBY.md)

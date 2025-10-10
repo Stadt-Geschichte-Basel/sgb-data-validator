@@ -61,10 +61,11 @@ graph TB
    - Provides lookup methods for validation
 
 3a. **`src/iso639.py`** - ISO 639-1 language code validation
-   - Complete set of 184 ISO 639-1 two-letter language codes
-   - Case-insensitive validation
-   - Immutable frozenset for efficient lookups
-   - Standalone module for language code validation
+
+- Complete set of 184 ISO 639-1 two-letter language codes
+- Case-insensitive validation
+- Immutable frozenset for efficient lookups
+- Standalone module for language code validation
 
 4. **`data/raw/vocabularies.json`** - Controlled vocabularies
    - Stadt.Geschichte.Basel Epoche (7 terms)
@@ -77,9 +78,10 @@ graph TB
    - Tests error handling for invalid data
 
 5a. **`test/test_iso639.py`** - ISO 639-1 test suite
-   - Tests valid and invalid language codes
-   - Tests case-insensitive validation
-   - Tests edge cases and immutability
+
+- Tests valid and invalid language codes
+- Tests case-insensitive validation
+- Tests edge cases and immutability
 
 ## Features Implemented
 
