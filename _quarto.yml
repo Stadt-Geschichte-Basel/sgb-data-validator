@@ -9,7 +9,7 @@ website:
   favicon: _extensions/Stadt-Geschichte-Basel/sgb-theme/favicon.png
   open-graph: true
   twitter-card: true
-  site-url: https://Stadt-Geschichte-Basel.github.io/sgb-data-validator/
+  site-url: https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/
   repo-url: https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/
   issue-url: https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues/new/choose
   repo-actions: [edit, issue]
@@ -52,9 +52,8 @@ website:
           - text: Security
             href: SECURITY.md
 
-format:
-  sgb-theme-html: default
+format: sgb-theme-html
 
-freeze: true
+freeze: auto
 
 editor: visual
