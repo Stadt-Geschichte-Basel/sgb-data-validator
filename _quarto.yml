@@ -52,7 +52,11 @@ website:
           - text: Security
             href: SECURITY.md
 
-format: sgb-theme-html
+format:
+  sgb-theme-html:
+    include-in-header:
+      text: |
+        <script defer data-domain="dokumentation.stadtgeschichtebasel.ch" src="https://plausible.io/js/script.outbound-links.js"></script>
 
 freeze: auto
 
