@@ -1,9 +1,0 @@
-meta:
-  name: sgb-data-validator
-  link:
-    home: https://Stadt-Geschichte-Basel.github.io/sgb-data-validator
-    github: https://github.com/Stadt-Geschichte-Basel
-  description: |
-    A data validator for the Stadt-Geschichte-Basel project.
-
-# Go to https://quarto.org/docs/authoring/brand.html to learn more about multiformat branding with brand.yml

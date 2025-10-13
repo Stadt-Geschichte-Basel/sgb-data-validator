@@ -1,7 +1,7 @@
 ---
-title: Open Research Data
+title: Stadt.Geschichte.Basel Data Validation and Management Suite for Omeka
 format:
-  html:
+  sgb-theme-html:
     embed-resources: true
 ---
 
