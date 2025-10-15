@@ -357,7 +357,123 @@ result = normalize_whitespace(text)
 
 For complete examples, see `examples/transformation_usage.py`.
 
-**Note:** Uploading transformed data back to Omeka S requires write access to the API (see [issue #27](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues/27)).
+### Offline Workflow (Issue #27)
+
+The validator supports a complete offline workflow for downloading, editing, and reuploading data:
+
+#### CLI Commands
+
+**1. Download and Transform:**
+
+```bash
+uv run python transform.py download \
+  --base-url https://omeka.unibe.ch \
+  --item-set-id 10780 \
+  --output data/
+```
+
+Creates directory structure:
+```
+data/transformed_itemset_10780_20250115_143022/
+├── items.json                    # All items in the set
+├── media.json                    # All media objects
+├── item_set.json                 # Item set metadata
+└── transformation_metadata.json  # Transformation info
+```
+
+**2. Edit Offline:**
+
+Edit JSON files with any text editor. The files are properly formatted for easy editing.
+
+**3. Validate Changes:**
+
+```bash
+uv run python transform.py validate data/transformed_itemset_10780_20250115_143022/
+```
+
+Validates all files against the data model before upload.
+
+**4. Upload with Dry Run:**
+
+```bash
+uv run python transform.py upload \
+  data/transformed_itemset_10780_20250115_143022/ \
+  --base-url https://omeka.unibe.ch \
+  --key-identity YOUR_KEY \
+  --key-credential YOUR_SECRET \
+  --dry-run
+```
+
+Tests upload without making changes. Default mode for safety.
+
+**5. Upload for Real:**
+
+```bash
+uv run python transform.py upload \
+  data/transformed_itemset_10780_20250115_143022/ \
+  --base-url https://omeka.unibe.ch \
+  --key-identity YOUR_KEY \
+  --key-credential YOUR_SECRET \
+  --no-dry-run
+```
+
+Actually uploads the changes. **Use with caution!**
+
+#### API Methods
+
+The offline workflow is also available via the API:
+
+```python
+from src.api import OmekaAPI
+
+with OmekaAPI(
+    "https://omeka.unibe.ch",
+    key_identity="YOUR_KEY",
+    key_credential="YOUR_SECRET"
+) as api:
+    # Download and transform
+    result = api.transform_item_set(10780, output_dir="data/")
+    
+    # Edit files offline...
+    
+    # Validate offline files
+    validation = api.validate_offline_files("data/transformed_itemset_10780_*/")
+    
+    # Upload (dry run)
+    upload_result = api.upload_transformed_data(
+        "data/transformed_itemset_10780_*/",
+        dry_run=True
+    )
+    
+    # Upload for real
+    if validation["overall_valid"]:
+        upload_result = api.upload_transformed_data(
+            "data/transformed_itemset_10780_*/",
+            dry_run=False
+        )
+```
+
+#### Use Cases
+
+**Batch Corrections:**
+1. Download item set
+2. Use find/replace in text editor to fix systematic issues
+3. Validate and upload
+
+**Complex Editing:**
+1. Download item set
+2. Use Python/jq/other tools to process JSON
+3. Validate and upload
+
+**Quality Assurance:**
+1. Download item set
+2. Review and manually fix issues in editor
+3. Validate before upload ensures no errors
+
+**Collaborative Editing:**
+1. Download item set
+2. Share JSON files with team
+3. Review changes before upload
 
 ## Development
 

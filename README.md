@@ -392,7 +392,121 @@ For complete examples, see `examples/transformation_usage.py`:
 uv run python examples/transformation_usage.py
 ```
 
-**Note:** The transformation feature currently supports downloading and transforming data. Uploading transformed data back to Omeka S requires write access to the API and appropriate permissions (see Issue #27).
+### Offline Workflow: Download, Edit, and Upload
+
+The validator supports a complete offline workflow for data transformation and batch updates:
+
+#### 1. Download and Transform
+
+Download an item set and apply transformations:
+
+```bash
+# Download and transform data
+uv run python transform.py download \
+  --base-url https://omeka.unibe.ch \
+  --item-set-id 10780 \
+  --output data/
+
+# This creates a directory like: data/transformed_itemset_10780_20250115_143022/
+# containing: items.json, media.json, item_set.json, and transformation_metadata.json
+```
+
+#### 2. Edit Offline
+
+Edit the JSON files with any text editor:
+
+- **`items.json`** - Contains all items in the item set
+- **`media.json`** - Contains all media objects
+- **`item_set.json`** - Contains the item set metadata
+
+You can:
+- Fix typos and formatting issues
+- Update metadata fields
+- Add or remove values
+- Make bulk changes with find/replace
+
+**Example:** Open `items.json` in your editor and fix description fields, update dates, etc.
+
+#### 3. Validate Changes
+
+Before uploading, validate your changes:
+
+```bash
+# Validate offline files
+uv run python transform.py validate data/transformed_itemset_10780_20250115_143022/
+
+# Output shows any validation errors
+# ✓ All files are valid and ready for upload
+```
+
+#### 4. Upload (Dry Run)
+
+Test the upload without making changes:
+
+```bash
+# Dry run (validates but doesn't upload)
+uv run python transform.py upload \
+  data/transformed_itemset_10780_20250115_143022/ \
+  --base-url https://omeka.unibe.ch \
+  --key-identity YOUR_KEY \
+  --key-credential YOUR_SECRET \
+  --dry-run
+
+# Reviews what would be updated
+```
+
+#### 5. Upload (For Real)
+
+When you're ready, upload the changes:
+
+```bash
+# Actually upload (use with caution!)
+uv run python transform.py upload \
+  data/transformed_itemset_10780_20250115_143022/ \
+  --base-url https://omeka.unibe.ch \
+  --key-identity YOUR_KEY \
+  --key-credential YOUR_SECRET \
+  --no-dry-run
+
+# ✓ Upload completed successfully
+```
+
+#### Complete Workflow Example
+
+```bash
+# 1. Download and transform
+uv run python transform.py download \
+  --base-url https://omeka.unibe.ch \
+  --item-set-id 10780 \
+  --output my_edits/
+
+# 2. Edit files offline
+# (Open my_edits/transformed_itemset_10780_*/items.json in your editor)
+
+# 3. Validate
+uv run python transform.py validate my_edits/transformed_itemset_10780_*/
+
+# 4. Dry run
+uv run python transform.py upload my_edits/transformed_itemset_10780_*/ \
+  --base-url https://omeka.unibe.ch \
+  --key-identity YOUR_KEY \
+  --key-credential YOUR_SECRET
+
+# 5. Upload for real
+uv run python transform.py upload my_edits/transformed_itemset_10780_*/ \
+  --base-url https://omeka.unibe.ch \
+  --key-identity YOUR_KEY \
+  --key-credential YOUR_SECRET \
+  --no-dry-run
+```
+
+**Security Note:** API credentials are required for uploading. Store them in a `.env` file:
+
+```bash
+# .env file
+KEY_IDENTITY=your_key_identity
+KEY_CREDENTIAL=your_key_credential
+```
 
 ### Troubleshooting
 

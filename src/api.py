@@ -473,11 +473,11 @@ class OmekaAPI:
         self, item_id: int, data: dict[str, Any], dry_run: bool = True
     ) -> dict[str, Any]:
         """
-        Update an item (placeholder - requires write access).
+        Update an item in Omeka S.
 
         Args:
             item_id: The ID of the item to update
-            data: The data to update
+            data: The item data to update
             dry_run: If True, only validate without updating
 
         Returns:
@@ -494,11 +494,26 @@ class OmekaAPI:
             "updated": False,
         }
 
-        if not dry_run and is_valid:
-            result["message"] = (
-                "Update requires write access to Omeka S API. "
-                "This feature needs to be implemented based on your API permissions."
-            )
+        if not is_valid:
+            return result
+
+        if dry_run:
+            result["message"] = "Dry run - validation passed, no changes made"
+            return result
+
+        # Perform the actual update
+        url = f"{self.base_url}/api/items/{item_id}"
+        params = self._add_auth_params({})
+
+        try:
+            response = self.client.put(url, json=data, params=params)
+            response.raise_for_status()
+            result["updated"] = True
+            result["message"] = "Item updated successfully"
+        except httpx.HTTPStatusError as e:
+            result["message"] = f"Failed to update item: {e}"
+        except Exception as e:
+            result["message"] = f"Error updating item: {e}"
 
         return result
 
@@ -506,11 +521,11 @@ class OmekaAPI:
         self, media_id: int, data: dict[str, Any], dry_run: bool = True
     ) -> dict[str, Any]:
         """
-        Update a media resource (placeholder - requires write access).
+        Update a media resource in Omeka S.
 
         Args:
             media_id: The ID of the media to update
-            data: The data to update
+            data: The media data to update
             dry_run: If True, only validate without updating
 
         Returns:
@@ -527,11 +542,26 @@ class OmekaAPI:
             "updated": False,
         }
 
-        if not dry_run and is_valid:
-            result["message"] = (
-                "Update requires write access to Omeka S API. "
-                "This feature needs to be implemented based on your API permissions."
-            )
+        if not is_valid:
+            return result
+
+        if dry_run:
+            result["message"] = "Dry run - validation passed, no changes made"
+            return result
+
+        # Perform the actual update
+        url = f"{self.base_url}/api/media/{media_id}"
+        params = self._add_auth_params({})
+
+        try:
+            response = self.client.put(url, json=data, params=params)
+            response.raise_for_status()
+            result["updated"] = True
+            result["message"] = "Media updated successfully"
+        except httpx.HTTPStatusError as e:
+            result["message"] = f"Failed to update media: {e}"
+        except Exception as e:
+            result["message"] = f"Error updating media: {e}"
 
         return result
 
@@ -646,5 +676,210 @@ class OmekaAPI:
                 "media": media_file,
                 "metadata": metadata_file,
             }
+
+        return result
+
+    # =========================================================================
+    # OFFLINE FILE OPERATIONS
+    # =========================================================================
+
+    def validate_offline_files(self, directory: Path | str) -> dict[str, Any]:
+        """
+        Validate transformed data from offline JSON files.
+
+        Args:
+            directory: Directory containing the transformed data files
+                      (items.json, media.json, and optionally item_set.json)
+
+        Returns:
+            Dictionary with validation results:
+            {
+                "items_validated": int,
+                "items_valid": int,
+                "items_errors": list[dict],
+                "media_validated": int,
+                "media_valid": int,
+                "media_errors": list[dict],
+                "overall_valid": bool,
+            }
+        """
+        directory = Path(directory)
+
+        result = {
+            "items_validated": 0,
+            "items_valid": 0,
+            "items_errors": [],
+            "media_validated": 0,
+            "media_valid": 0,
+            "media_errors": [],
+            "overall_valid": True,
+        }
+
+        # Validate items
+        items_file = directory / "items.json"
+        if items_file.exists():
+            items = self.load_from_file(items_file)
+            if not isinstance(items, list):
+                items = [items]
+
+            for item in items:
+                result["items_validated"] += 1
+                is_valid, errors = self.validate_item(item)
+                if is_valid:
+                    result["items_valid"] += 1
+                else:
+                    result["overall_valid"] = False
+                    result["items_errors"].append(
+                        {
+                            "item_id": item.get("o:id"),
+                            "errors": errors,
+                        }
+                    )
+
+        # Validate media
+        media_file = directory / "media.json"
+        if media_file.exists():
+            media_list = self.load_from_file(media_file)
+            if not isinstance(media_list, list):
+                media_list = [media_list]
+
+            for media in media_list:
+                result["media_validated"] += 1
+                is_valid, errors = self.validate_media(media)
+                if is_valid:
+                    result["media_valid"] += 1
+                else:
+                    result["overall_valid"] = False
+                    result["media_errors"].append(
+                        {
+                            "media_id": media.get("o:id"),
+                            "errors": errors,
+                        }
+                    )
+
+        return result
+
+    def upload_transformed_data(
+        self,
+        directory: Path | str,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Upload transformed data from offline files back to Omeka S.
+
+        Args:
+            directory: Directory containing the transformed data files
+            dry_run: If True, only validate without uploading (default: True)
+
+        Returns:
+            Dictionary with upload results:
+            {
+                "items_processed": int,
+                "items_updated": int,
+                "items_failed": int,
+                "media_processed": int,
+                "media_updated": int,
+                "media_failed": int,
+                "errors": list[dict],
+                "dry_run": bool,
+            }
+        """
+        directory = Path(directory)
+
+        result = {
+            "items_processed": 0,
+            "items_updated": 0,
+            "items_failed": 0,
+            "media_processed": 0,
+            "media_updated": 0,
+            "media_failed": 0,
+            "errors": [],
+            "dry_run": dry_run,
+        }
+
+        # First validate all files
+        validation = self.validate_offline_files(directory)
+        if not validation["overall_valid"]:
+            result["errors"].append(
+                {
+                    "type": "validation_failed",
+                    "message": "Validation failed - cannot proceed with upload",
+                    "validation_errors": {
+                        "items": validation["items_errors"],
+                        "media": validation["media_errors"],
+                    },
+                }
+            )
+            return result
+
+        # Upload items
+        items_file = directory / "items.json"
+        if items_file.exists():
+            items = self.load_from_file(items_file)
+            if not isinstance(items, list):
+                items = [items]
+
+            for item in items:
+                result["items_processed"] += 1
+                item_id = item.get("o:id")
+                if not item_id:
+                    result["items_failed"] += 1
+                    result["errors"].append(
+                        {
+                            "type": "item",
+                            "message": "Item missing o:id field",
+                        }
+                    )
+                    continue
+
+                update_result = self.update_item(item_id, item, dry_run=dry_run)
+                if update_result["updated"] or (
+                    dry_run and update_result["validation_passed"]
+                ):
+                    result["items_updated"] += 1
+                else:
+                    result["items_failed"] += 1
+                    result["errors"].append(
+                        {
+                            "type": "item",
+                            "item_id": item_id,
+                            "message": update_result.get("message", "Unknown error"),
+                        }
+                    )
+
+        # Upload media
+        media_file = directory / "media.json"
+        if media_file.exists():
+            media_list = self.load_from_file(media_file)
+            if not isinstance(media_list, list):
+                media_list = [media_list]
+
+            for media in media_list:
+                result["media_processed"] += 1
+                media_id = media.get("o:id")
+                if not media_id:
+                    result["media_failed"] += 1
+                    result["errors"].append(
+                        {
+                            "type": "media",
+                            "message": "Media missing o:id field",
+                        }
+                    )
+                    continue
+
+                update_result = self.update_media(media_id, media, dry_run=dry_run)
+                if update_result["updated"] or (
+                    dry_run and update_result["validation_passed"]
+                ):
+                    result["media_updated"] += 1
+                else:
+                    result["media_failed"] += 1
+                    result["errors"].append(
+                        {
+                            "type": "media",
+                            "media_id": media_id,
+                            "message": update_result.get("message", "Unknown error"),
+                        }
+                    )
 
         return result

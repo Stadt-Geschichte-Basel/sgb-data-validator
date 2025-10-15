@@ -1,0 +1,302 @@
+"""
+CLI for transforming, validating, and uploading Omeka S data.
+
+This script provides commands for:
+- Downloading and transforming data from Omeka S
+- Validating offline JSON files
+- Uploading transformed data back to Omeka S
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+from src.api import OmekaAPI
+
+# Load environment variables
+load_dotenv()
+
+
+def download_and_transform(args: argparse.Namespace) -> int:
+    """Download data from Omeka and apply transformations."""
+    print("=" * 80)
+    print("DOWNLOAD AND TRANSFORM DATA")
+    print("=" * 80)
+    print(f"Base URL: {args.base_url}")
+    print(f"Item Set ID: {args.item_set_id}")
+    print(f"Output directory: {args.output}")
+    print()
+
+    with OmekaAPI(
+        args.base_url,
+        key_identity=args.key_identity,
+        key_credential=args.key_credential,
+    ) as api:
+        result = api.transform_item_set(
+            item_set_id=args.item_set_id,
+            output_dir=args.output,
+            apply_whitespace_normalization=not args.no_whitespace_normalization,
+        )
+
+        print(f"✓ Downloaded and transformed {result['items_transformed']} items")
+        print(f"✓ Downloaded and transformed {result['media_transformed']} media")
+        transformations = ", ".join(result["transformations_applied"])
+        print(f"✓ Transformations applied: {transformations}")
+
+        if result["saved_to"]:
+            print()
+            print("Files saved to:")
+            print(f"  Directory: {result['saved_to']['directory']}")
+            print(f"  Items: {result['saved_to']['items']}")
+            print(f"  Media: {result['saved_to']['media']}")
+            print(f"  Metadata: {result['saved_to']['metadata']}")
+            print()
+            print("You can now edit these JSON files offline with any text editor.")
+            directory = result["saved_to"]["directory"]
+            print(f"To validate: python transform.py validate {directory}")
+            print(
+                f"To upload: python transform.py upload {directory} "
+                f"--base-url {args.base_url}"
+            )
+
+    return 0
+
+
+def validate_offline(args: argparse.Namespace) -> int:
+    """Validate offline JSON files."""
+    print("=" * 80)
+    print("VALIDATE OFFLINE FILES")
+    print("=" * 80)
+    print(f"Directory: {args.directory}")
+    print()
+
+    with OmekaAPI(args.base_url or "https://omeka.unibe.ch") as api:
+        result = api.validate_offline_files(args.directory)
+
+        print(f"Items validated: {result['items_validated']}")
+        print(f"Items valid: {result['items_valid']}")
+        if result["items_errors"]:
+            print(f"Items with errors: {len(result['items_errors'])}")
+
+        print()
+        print(f"Media validated: {result['media_validated']}")
+        print(f"Media valid: {result['media_valid']}")
+        if result["media_errors"]:
+            print(f"Media with errors: {len(result['media_errors'])}")
+
+        if result["overall_valid"]:
+            print()
+            print("✓ All files are valid and ready for upload")
+            return 0
+        else:
+            print()
+            print("✗ Validation errors found:")
+            for item_error in result["items_errors"]:
+                print(f"  Item {item_error['item_id']}:")
+                for error in item_error["errors"]:
+                    print(f"    - {error}")
+            for media_error in result["media_errors"]:
+                print(f"  Media {media_error['media_id']}:")
+                for error in media_error["errors"]:
+                    print(f"    - {error}")
+            return 1
+
+
+def upload_data(args: argparse.Namespace) -> int:
+    """Upload transformed data back to Omeka S."""
+    print("=" * 80)
+    print("UPLOAD TRANSFORMED DATA")
+    print("=" * 80)
+    print(f"Base URL: {args.base_url}")
+    print(f"Directory: {args.directory}")
+    print(f"Dry run: {args.dry_run}")
+    print()
+
+    if args.dry_run:
+        print("⚠ DRY RUN MODE - No changes will be made")
+        print()
+
+    if not args.key_identity or not args.key_credential:
+        print("✗ Error: API credentials required for upload")
+        print("  Use --key-identity and --key-credential")
+        print("  Or set KEY_IDENTITY and KEY_CREDENTIAL in .env file")
+        return 1
+
+    with OmekaAPI(
+        args.base_url,
+        key_identity=args.key_identity,
+        key_credential=args.key_credential,
+    ) as api:
+        result = api.upload_transformed_data(
+            directory=args.directory,
+            dry_run=args.dry_run,
+        )
+
+        print(f"Items processed: {result['items_processed']}")
+        print(f"Items updated: {result['items_updated']}")
+        print(f"Items failed: {result['items_failed']}")
+        print()
+        print(f"Media processed: {result['media_processed']}")
+        print(f"Media updated: {result['media_updated']}")
+        print(f"Media failed: {result['media_failed']}")
+
+        if result["errors"]:
+            print()
+            print("Errors:")
+            for error in result["errors"]:
+                error_type = error.get("type", "unknown")
+                error_msg = error.get("message", "Unknown error")
+                print(f"  {error_type}: {error_msg}")
+
+        if args.dry_run:
+            print()
+            print("✓ Dry run completed - no changes were made")
+            print("  To actually upload, run again with --no-dry-run")
+            return 0
+        elif result["items_failed"] == 0 and result["media_failed"] == 0:
+            print()
+            print("✓ Upload completed successfully")
+            return 0
+        else:
+            print()
+            print("✗ Upload completed with errors")
+            return 1
+
+
+def main() -> int:
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Transform, validate, and upload Omeka S data",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Download and transform data
+  python transform.py download --item-set-id 10780 --output data/
+
+  # Validate offline files
+  python transform.py validate data/transformed_itemset_10780_20250115/
+
+  # Upload with dry-run (validate only, no changes)
+  python transform.py upload data/transformed_itemset_10780_20250115/ --base-url https://omeka.unibe.ch
+
+  # Upload for real (requires API credentials)
+  python transform.py upload data/transformed_itemset_10780_20250115/ \\
+    --base-url https://omeka.unibe.ch \\
+    --key-identity YOUR_KEY \\
+    --key-credential YOUR_SECRET \\
+    --no-dry-run
+
+For more information, see the documentation.
+        """,
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+
+    # Download command
+    download_parser = subparsers.add_parser(
+        "download",
+        help="Download and transform data from Omeka S",
+    )
+    download_parser.add_argument(
+        "--base-url",
+        required=True,
+        help="Base URL of the Omeka S instance",
+    )
+    download_parser.add_argument(
+        "--item-set-id",
+        type=int,
+        required=True,
+        help="Item set ID to download",
+    )
+    download_parser.add_argument(
+        "--output",
+        type=Path,
+        default="transformations",
+        help="Output directory for transformed data (default: transformations/)",
+    )
+    download_parser.add_argument(
+        "--key-identity",
+        help="API key identity for authentication (optional)",
+    )
+    download_parser.add_argument(
+        "--key-credential",
+        help="API key credential for authentication (optional)",
+    )
+    download_parser.add_argument(
+        "--no-whitespace-normalization",
+        action="store_true",
+        help="Skip whitespace normalization",
+    )
+
+    # Validate command
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="Validate offline JSON files",
+    )
+    validate_parser.add_argument(
+        "directory",
+        type=Path,
+        help="Directory containing the JSON files to validate",
+    )
+    validate_parser.add_argument(
+        "--base-url",
+        help="Base URL (not required for offline validation)",
+    )
+
+    # Upload command
+    upload_parser = subparsers.add_parser(
+        "upload",
+        help="Upload transformed data back to Omeka S",
+    )
+    upload_parser.add_argument(
+        "directory",
+        type=Path,
+        help="Directory containing the JSON files to upload",
+    )
+    upload_parser.add_argument(
+        "--base-url",
+        required=True,
+        help="Base URL of the Omeka S instance",
+    )
+    upload_parser.add_argument(
+        "--key-identity",
+        help="API key identity for authentication (required for upload)",
+    )
+    upload_parser.add_argument(
+        "--key-credential",
+        help="API key credential for authentication (required for upload)",
+    )
+    upload_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="Validate only, do not upload (default)",
+    )
+    upload_parser.add_argument(
+        "--no-dry-run",
+        action="store_false",
+        dest="dry_run",
+        help="Actually upload the data (use with caution!)",
+    )
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return 1
+
+    if args.command == "download":
+        return download_and_transform(args)
+    elif args.command == "validate":
+        return validate_offline(args)
+    elif args.command == "upload":
+        return upload_data(args)
+    else:
+        print(f"Unknown command: {args.command}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
