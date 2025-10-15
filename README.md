@@ -14,6 +14,7 @@ The sgb-data-validator is a Python-based tool that validates metadata quality fo
 - 🔗 **URI validation** with reachability checks
 - 📊 **CSV reports** for easy data quality review
 - 📈 **Data profiling** with interactive HTML reports
+- 🔄 **Data transformation** with whitespace normalization
 - 🔌 **Python API** for programmatic access
 - 🚀 **Fast and efficient** with asynchronous processing
 
@@ -35,17 +36,20 @@ sgb-data-validator/
 │   ├── vocabularies.py    # Controlled vocabulary loader and validators
 │   ├── iconclass.py       # Iconclass notation parser and validator
 │   ├── profiling.py       # Data profiling and analysis utilities
+│   ├── transformations.py # Data transformation utilities
 │   └── api.py             # Omeka S API client
 ├── test/                   # Test suite with pytest
 │   ├── test_validation.py # Core validation tests
 │   ├── test_iconclass.py  # Iconclass-specific tests
+│   ├── test_transformations.py # Transformation tests
 │   └── ...                # Additional test modules
 ├── data/                   # Data files
 │   └── raw/               # Raw input data
 │       └── vocabularies.json  # Controlled vocabularies (Era, MIME, Licenses, Iconclass)
 ├── examples/               # Usage examples and tutorials
 │   ├── api_usage.py       # API client examples
-│   └── iconclass_usage.py # Iconclass validation examples
+│   ├── iconclass_usage.py # Iconclass validation examples
+│   └── transformation_usage.py # Data transformation examples
 ├── validate.py            # Main validation script (CLI)
 ├── main.py                # Alternative entry point
 ├── pyproject.toml         # Project dependencies and metadata
@@ -326,6 +330,69 @@ For complete examples, see `examples/api_usage.py`:
 ```bash
 uv run python examples/api_usage.py
 ```
+
+### Data Transformation
+
+The validator can transform and clean data by applying various transformations. This feature is useful for:
+
+- **Normalizing whitespace**: Removes non-standard Unicode whitespace characters (Issue #28)
+- **Data cleaning**: Preparing data for upload or migration
+- **Batch operations**: Applying consistent transformations across all items and media
+
+#### Whitespace Normalization (Issue #28)
+
+The whitespace normalization feature addresses common data quality issues found when copy-pasting text from PDFs:
+
+- **Soft hyphens** (U+00AD): Removed entirely
+- **Non-breaking spaces** (U+00A0, U+202F): Converted to regular spaces
+- **Zero-width characters** (U+200B, U+200C, U+200D, U+FEFF): Removed
+- **Directional formatting** (U+202A, U+202B, U+202C, U+202D, U+202E): Removed
+- **Multiple spaces**: Collapsed to single spaces
+- **Multiple line breaks**: Normalized to maximum of two (preserves paragraphs)
+
+#### Basic Usage
+
+```python
+from src.api import OmekaAPI
+
+# Initialize the API
+with OmekaAPI("https://omeka.unibe.ch") as api:
+    # Transform an item set and save to files
+    result = api.transform_item_set(
+        item_set_id=10780,
+        output_dir="transformations",
+        apply_whitespace_normalization=True
+    )
+    
+    print(f"Items transformed: {result['items_transformed']}")
+    print(f"Media transformed: {result['media_transformed']}")
+```
+
+#### Direct Whitespace Normalization
+
+You can also normalize whitespace in text directly:
+
+```python
+from src.transformations import normalize_whitespace
+
+# Example with soft hyphens and double spaces
+text = "lange Ge\u00ADschichte  mit doppelten Leerzeichen"
+normalized = normalize_whitespace(text)
+# Result: "lange Geschichte mit doppelten Leerzeichen"
+
+# Example with directional formatting
+text = "text\u202Awith\u202Cformatting"
+normalized = normalize_whitespace(text)
+# Result: "textwithformatting"
+```
+
+For complete examples, see `examples/transformation_usage.py`:
+
+```bash
+uv run python examples/transformation_usage.py
+```
+
+**Note:** The transformation feature currently supports downloading and transforming data. Uploading transformed data back to Omeka S requires write access to the API and appropriate permissions (see Issue #27).
 
 ### Troubleshooting
 

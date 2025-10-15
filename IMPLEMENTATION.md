@@ -161,6 +161,23 @@ sequenceDiagram
 - [x] Progress indicators during validation
 - [x] URI checking with configurable severity
 - [x] Data profiling with ydata-profiling
+- [x] Data transformation with whitespace normalization
+
+✅ **Data Transformation Features (Issues #27, #28)**
+
+- [x] Download entire item sets with all items and media
+- [x] Transform data locally with configurable transformations
+- [x] Whitespace normalization to fix copy-paste artifacts:
+  - [x] Remove soft hyphens (U+00AD)
+  - [x] Normalize non-breaking spaces (U+00A0, U+202F, etc.)
+  - [x] Remove zero-width characters (U+200B, U+200C, U+200D, U+FEFF)
+  - [x] Remove directional formatting (U+202A-U+202E)
+  - [x] Collapse multiple spaces to single space
+  - [x] Normalize multiple line breaks
+  - [x] Remove trailing whitespace from lines
+- [x] Save transformed data to JSON files with metadata
+- [x] Validate transformed data before export
+- [x] API methods for programmatic transformation
 
 ## Configuration
 
@@ -269,6 +286,78 @@ The validator automatically checks all literal-type fields for URLs and generate
 ```
 
 This feature was implemented in response to [issue #22](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues/22).
+
+### Data Transformation
+
+The validator provides data transformation capabilities to download, clean, and prepare data for migration or batch updates.
+
+**Transformation Features:**
+
+- Download entire item sets with all associated items and media
+- Apply transformations to clean and normalize data
+- Save transformed data to JSON files for review or upload
+- Validate transformed data before saving
+
+**Whitespace Normalization (Issue #28):**
+
+The most common transformation is whitespace normalization, which addresses data quality issues from copy-pasting text from PDFs:
+
+```python
+from src.api import OmekaAPI
+
+# Transform an item set with whitespace normalization
+with OmekaAPI("https://omeka.unibe.ch") as api:
+    result = api.transform_item_set(
+        item_set_id=10780,
+        output_dir="transformations",
+        apply_whitespace_normalization=True
+    )
+    
+    print(f"Transformed {result['items_transformed']} items")
+    print(f"Transformed {result['media_transformed']} media")
+    print(f"Saved to: {result['saved_to']['directory']}")
+```
+
+**Characters Normalized:**
+
+| Character | Code | Action |
+|-----------|------|--------|
+| Soft hyphen | U+00AD | Removed |
+| Non-breaking space | U+00A0 | → space |
+| Narrow no-break space | U+202F | → space |
+| Zero-width space | U+200B | Removed |
+| Zero-width non-joiner | U+200C | Removed |
+| Zero-width joiner | U+200D | Removed |
+| Left-to-right embedding | U+202A | Removed |
+| Right-to-left embedding | U+202B | Removed |
+| Pop directional formatting | U+202C | Removed |
+| Left-to-right override | U+202D | Removed |
+| Right-to-left override | U+202E | Removed |
+| Line separator | U+2028 | → newline |
+| Paragraph separator | U+2029 | → newline |
+| Em/en/thin spaces | U+2000-U+200A | → space |
+
+**Additional Normalizations:**
+
+- Multiple consecutive spaces → single space
+- Multiple line breaks (3+) → maximum two (preserves paragraph breaks)
+- Trailing whitespace removed from each line
+- Leading/trailing whitespace removed from entire text
+
+**Example Usage:**
+
+```python
+from src.transformations import normalize_whitespace
+
+# Real-world example from issue #28
+text = "lange Ge\u00ADschichte  mit doppelten Leerzeichen"
+result = normalize_whitespace(text)
+# Result: "lange Geschichte mit doppelten Leerzeichen"
+```
+
+For complete examples, see `examples/transformation_usage.py`.
+
+**Note:** Uploading transformed data back to Omeka S requires write access to the API (see [issue #27](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues/27)).
 
 ## Development
 
