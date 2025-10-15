@@ -534,3 +534,117 @@ class OmekaAPI:
             )
 
         return result
+
+    # =========================================================================
+    # TRANSFORMATION OPERATIONS
+    # =========================================================================
+
+    def transform_item_set(
+        self,
+        item_set_id: int,
+        output_dir: Path | str | None = None,
+        apply_whitespace_normalization: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Transform all items and media in an item set.
+
+        Downloads all data from the item set, applies transformations,
+        and optionally saves the transformed data to files.
+
+        Args:
+            item_set_id: The ID of the item set to transform
+            output_dir: Optional directory to save transformed data.
+                       If None, returns transformed data without saving.
+            apply_whitespace_normalization: Apply whitespace normalization
+                (default: True)
+
+        Returns:
+            Dictionary with transformation summary and results:
+            {
+                "item_set_id": int,
+                "items_transformed": int,
+                "media_transformed": int,
+                "transformations_applied": list[str],
+                "item_set": dict,  # transformed item set data
+                "items": list[dict],  # transformed items
+                "media": list[dict],  # transformed media
+                "saved_to": dict | None,  # file paths if saved
+            }
+        """
+        from src.transformations import transform_item_set_data
+
+        # Get the item set data
+        item_set = self.get_item_set(item_set_id)
+
+        # Get all items and media
+        items = self.get_items_from_set(item_set_id)
+
+        # Get all media for all items
+        all_media = []
+        for item in items:
+            item_id = item.get("o:id")
+            if item_id:
+                media = self.get_media_from_item(item_id)
+                all_media.extend(media)
+
+        # Apply transformations
+        transformations_applied = []
+        if apply_whitespace_normalization:
+            item_set, items, all_media = transform_item_set_data(
+                item_set, items, all_media
+            )
+            transformations_applied.append("whitespace_normalization")
+
+        result = {
+            "item_set_id": item_set_id,
+            "items_transformed": len(items),
+            "media_transformed": len(all_media),
+            "transformations_applied": transformations_applied,
+            "item_set": item_set,
+            "items": items,
+            "media": all_media,
+            "saved_to": None,
+        }
+
+        # Save to files if output directory is provided
+        if output_dir:
+            output_path = Path(output_dir)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dir_name = f"transformed_itemset_{item_set_id}_{timestamp}"
+            transform_dir = output_path / dir_name
+            transform_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save transformed data
+            item_set_file = transform_dir / "item_set.json"
+            items_file = transform_dir / "items.json"
+            media_file = transform_dir / "media.json"
+
+            self.save_to_file(item_set, item_set_file)
+            self.save_to_file(items, items_file)
+            self.save_to_file(all_media, media_file)
+
+            # Save transformation metadata
+            metadata = {
+                "item_set_id": item_set_id,
+                "timestamp": timestamp,
+                "items_count": len(items),
+                "media_count": len(all_media),
+                "transformations_applied": transformations_applied,
+                "files": {
+                    "item_set": str(item_set_file.relative_to(output_path)),
+                    "items": str(items_file.relative_to(output_path)),
+                    "media": str(media_file.relative_to(output_path)),
+                },
+            }
+            metadata_file = transform_dir / "transformation_metadata.json"
+            self.save_to_file(metadata, metadata_file)
+
+            result["saved_to"] = {
+                "directory": transform_dir,
+                "item_set": item_set_file,
+                "items": items_file,
+                "media": media_file,
+                "metadata": metadata_file,
+            }
+
+        return result
