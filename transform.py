@@ -19,10 +19,13 @@ from src.api import OmekaAPI
 load_dotenv()
 
 
-def download_and_transform(args: argparse.Namespace) -> int:
-    """Download data from Omeka and apply transformations."""
+def download_data(args: argparse.Namespace) -> int:
+    """Download raw data from Omeka without applying transformations.
+
+    Raw files are saved with *_raw.json suffix to clearly indicate their status.
+    """
     print("=" * 80)
-    print("DOWNLOAD AND TRANSFORM DATA")
+    print("DOWNLOAD DATA")
     print("=" * 80)
     print(f"Base URL: {args.base_url}")
     print(f"Item Set ID: {args.item_set_id}")
@@ -34,31 +37,68 @@ def download_and_transform(args: argparse.Namespace) -> int:
         key_identity=args.key_identity,
         key_credential=args.key_credential,
     ) as api:
-        result = api.transform_item_set(
+        result = api.download_item_set(
             item_set_id=args.item_set_id,
+            output_dir=args.output,
+        )
+
+        print(f"✓ Downloaded {result['items_downloaded']} items (raw)")
+        print(f"✓ Downloaded {result['media_downloaded']} media (raw)")
+
+        if result["saved_to"]:
+            print()
+            print("Raw data saved to:")
+            print(f"  Directory: {result['saved_to']['directory']}")
+            print(f"  Items (raw): {result['saved_to']['items']}")
+            print(f"  Media (raw): {result['saved_to']['media']}")
+            print(f"  Metadata: {result['saved_to']['metadata']}")
+            print()
+            print("Next steps:")
+            directory = result["saved_to"]["directory"]
+            print(f"  To transform: python transform.py transform {directory}")
+            print(f"  To validate: python transform.py validate {directory}")
+
+    return 0
+
+
+def transform_data(args: argparse.Namespace) -> int:
+    """Apply transformations to previously downloaded raw data.
+
+    Transformed files are saved with *_transformed.json suffix.
+    """
+    print("=" * 80)
+    print("TRANSFORM DATA")
+    print("=" * 80)
+    print(f"Input directory: {args.input_dir}")
+    print(f"Output directory: {args.output or 'same as input parent'}")
+    print()
+
+    with OmekaAPI(args.base_url or "https://omeka.unibe.ch") as api:
+        result = api.apply_transformations(
+            input_dir=args.input_dir,
             output_dir=args.output,
             apply_whitespace_normalization=not args.no_whitespace_normalization,
         )
 
-        print(f"✓ Downloaded and transformed {result['items_transformed']} items")
-        print(f"✓ Downloaded and transformed {result['media_transformed']} media")
+        print(f"✓ Transformed {result['items_transformed']} items (transformed)")
+        print(f"✓ Transformed {result['media_transformed']} media (transformed)")
         transformations = ", ".join(result["transformations_applied"])
         print(f"✓ Transformations applied: {transformations}")
 
         if result["saved_to"]:
             print()
-            print("Files saved to:")
+            print("Transformed data saved to:")
             print(f"  Directory: {result['saved_to']['directory']}")
-            print(f"  Items: {result['saved_to']['items']}")
-            print(f"  Media: {result['saved_to']['media']}")
+            print(f"  Items (transformed): {result['saved_to']['items']}")
+            print(f"  Media (transformed): {result['saved_to']['media']}")
             print(f"  Metadata: {result['saved_to']['metadata']}")
             print()
-            print("You can now edit these JSON files offline with any text editor.")
+            print("Next steps:")
             directory = result["saved_to"]["directory"]
-            print(f"To validate: python transform.py validate {directory}")
+            print(f"  To validate: python transform.py validate {directory}")
             print(
-                f"To upload: python transform.py upload {directory} "
-                f"--base-url {args.base_url}"
+                f"  To upload: python transform.py upload {directory} "
+                f"--base-url {args.base_url or 'https://omeka.unibe.ch'}"
             )
 
     return 0
@@ -168,12 +208,15 @@ def upload_data(args: argparse.Namespace) -> int:
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Transform, validate, and upload Omeka S data",
+        description="Download, transform, validate, and upload Omeka S data",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Download and transform data
-  python transform.py download --item-set-id 10780 --output data/
+  # Download raw data (no transformations)
+  python transform.py download --item-set-id 10780 --output data/ --base-url https://omeka.unibe.ch
+
+  # Transform downloaded data
+  python transform.py transform data/raw_itemset_10780_20250115/
 
   # Validate offline files
   python transform.py validate data/transformed_itemset_10780_20250115/
@@ -197,7 +240,7 @@ For more information, see the documentation.
     # Download command
     download_parser = subparsers.add_parser(
         "download",
-        help="Download and transform data from Omeka S",
+        help="Download raw data from Omeka S (no transformations)",
     )
     download_parser.add_argument(
         "--base-url",
@@ -213,8 +256,8 @@ For more information, see the documentation.
     download_parser.add_argument(
         "--output",
         type=Path,
-        default="transformations",
-        help="Output directory for transformed data (default: transformations/)",
+        default="data",
+        help="Output directory for raw data (default: data/)",
     )
     download_parser.add_argument(
         "--key-identity",
@@ -224,7 +267,27 @@ For more information, see the documentation.
         "--key-credential",
         help="API key credential for authentication (optional)",
     )
-    download_parser.add_argument(
+
+    # Transform command
+    transform_parser = subparsers.add_parser(
+        "transform",
+        help="Apply transformations to downloaded data",
+    )
+    transform_parser.add_argument(
+        "input_dir",
+        type=Path,
+        help="Directory containing raw data files to transform",
+    )
+    transform_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Output directory for transformed data (default: parent of input_dir)",
+    )
+    transform_parser.add_argument(
+        "--base-url",
+        help="Base URL (not required for transformation)",
+    )
+    transform_parser.add_argument(
         "--no-whitespace-normalization",
         action="store_true",
         help="Skip whitespace normalization",
@@ -288,7 +351,9 @@ For more information, see the documentation.
         return 1
 
     if args.command == "download":
-        return download_and_transform(args)
+        return download_data(args)
+    elif args.command == "transform":
+        return transform_data(args)
     elif args.command == "validate":
         return validate_offline(args)
     elif args.command == "upload":

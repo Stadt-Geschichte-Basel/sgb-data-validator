@@ -29,7 +29,7 @@ The sgb-data-validator is a Python-based tool that validates metadata quality fo
 
 The structure of this repository follows the [Advanced Structure for Data Analysis](https://the-turing-way.netlify.app/project-design/project-repo/project-repo-advanced.html) of _The Turing Way_ and is organized as follows:
 
-```
+```text
 sgb-data-validator/
 ├── src/                    # Source code modules
 │   ├── models.py          # Pydantic data models for validation
@@ -251,7 +251,7 @@ Profiling features:
 
 Example profiling output:
 
-```
+```text
 analysis/
 ├── items.csv                   # Flattened items data
 ├── items_profile.html          # Interactive items report
@@ -350,22 +350,25 @@ The whitespace normalization feature addresses common data quality issues found 
 - **Multiple spaces**: Collapsed to single spaces
 - **Multiple line breaks**: Normalized to maximum of two (preserves paragraphs)
 
-#### Basic Usage
+#### Basic Usage (two-step)
 
 ```python
 from src.api import OmekaAPI
 
-# Initialize the API
 with OmekaAPI("https://omeka.unibe.ch") as api:
-    # Transform an item set and save to files
-    result = api.transform_item_set(
-        item_set_id=10780,
-        output_dir="transformations",
-        apply_whitespace_normalization=True
-    )
-    
-    print(f"Items transformed: {result['items_transformed']}")
-    print(f"Media transformed: {result['media_transformed']}")
+  # 1) Download raw data (no transformations)
+  download = api.download_item_set(item_set_id=10780, output_dir="data/")
+  raw_dir = download["saved_to"]["directory"]
+
+  # 2) Apply transformations to the downloaded directory
+  transform = api.apply_transformations(
+    input_dir=raw_dir,
+    output_dir="data/",
+    apply_whitespace_normalization=True,
+  )
+
+print(f"Items transformed: {transform['items_transformed']}")
+print(f"Media transformed: {transform['media_transformed']}")
 ```
 
 #### Direct Whitespace Normalization
@@ -392,61 +395,63 @@ For complete examples, see `examples/transformation_usage.py`:
 uv run python examples/transformation_usage.py
 ```
 
-### Offline Workflow: Download, Edit, and Upload
+### Offline Workflow: Download, Transform, Edit, and Upload
 
 The validator supports a complete offline workflow for data transformation and batch updates:
 
-#### 1. Download and Transform
+#### 1. Download (raw)
 
-Download an item set and apply transformations:
+Download an item set as-is. Files are saved with a raw suffix to indicate status:
 
 ```bash
-# Download and transform data
 uv run python transform.py download \
   --base-url https://omeka.unibe.ch \
   --item-set-id 10780 \
   --output data/
 
-# This creates a directory like: data/transformed_itemset_10780_20250115_143022/
-# containing: items.json, media.json, item_set.json, and transformation_metadata.json
+# Produces e.g. data/raw_itemset_10780_YYYYMMDD_HHMMSS/
+# Files: items_raw.json, media_raw.json, item_set_raw.json, download_metadata.json
 ```
 
-#### 2. Edit Offline
+#### 2. Transform
+
+Apply transformations to a previously downloaded raw directory:
+
+```bash
+uv run python transform.py transform data/raw_itemset_10780_*/
+
+# Produces e.g. data/transformed_itemset_10780_YYYYMMDD_HHMMSS/
+# Files: items_transformed.json, media_transformed.json, item_set_transformed.json, transformation_metadata.json
+```
+
+#### 3. Edit Offline
 
 Edit the JSON files with any text editor:
 
-- **`items.json`** - Contains all items in the item set
-- **`media.json`** - Contains all media objects
-- **`item_set.json`** - Contains the item set metadata
+- items_transformed.json — all items in the item set
+- media_transformed.json — all media objects
+- item_set_transformed.json — item set metadata
 
-You can:
-- Fix typos and formatting issues
-- Update metadata fields
-- Add or remove values
-- Make bulk changes with find/replace
-
-**Example:** Open `items.json` in your editor and fix description fields, update dates, etc.
-
-#### 3. Validate Changes
+#### 4. Validate Changes
 
 Before uploading, validate your changes:
 
 ```bash
 # Validate offline files
-uv run python transform.py validate data/transformed_itemset_10780_20250115_143022/
+uv run python transform.py validate data/transformed_itemset_10780_*/
 
 # Output shows any validation errors
 # ✓ All files are valid and ready for upload
 ```
 
-#### 4. Upload (Dry Run)
+#### 5. Upload (Dry Run)
 
 Test the upload without making changes:
 
 ```bash
 # Dry run (validates but doesn't upload)
 uv run python transform.py upload \
-  data/transformed_itemset_10780_20250115_143022/ \
+  data/transformed_itemset_10780_*/ \
   --base-url https://omeka.unibe.ch \
   --key-identity YOUR_KEY \
   --key-credential YOUR_SECRET \
@@ -455,14 +460,14 @@ uv run python transform.py upload \
 # Reviews what would be updated
 ```
 
-#### 5. Upload (For Real)
+#### 6. Upload (For Real)
 
 When you're ready, upload the changes:
 
 ```bash
 # Actually upload (use with caution!)
 uv run python transform.py upload \
-  data/transformed_itemset_10780_20250115_143022/ \
+  data/transformed_itemset_10780_*/ \
   --base-url https://omeka.unibe.ch \
   --key-identity YOUR_KEY \
   --key-credential YOUR_SECRET \
@@ -474,25 +479,28 @@ uv run python transform.py upload \
 #### Complete Workflow Example
 
 ```bash
-# 1. Download and transform
+# 1. Download raw data
 uv run python transform.py download \
   --base-url https://omeka.unibe.ch \
   --item-set-id 10780 \
   --output my_edits/
 
-# 2. Edit files offline
-# (Open my_edits/transformed_itemset_10780_*/items.json in your editor)
+# 2. Transform the raw directory
+uv run python transform.py transform my_edits/raw_itemset_10780_*/
 
-# 3. Validate
+# 3. Edit files offline
+# (Open my_edits/transformed_itemset_10780_*/items_transformed.json in your editor)
+
+# 4. Validate
 uv run python transform.py validate my_edits/transformed_itemset_10780_*/
 
-# 4. Dry run
+# 5. Dry run
 uv run python transform.py upload my_edits/transformed_itemset_10780_*/ \
   --base-url https://omeka.unibe.ch \
   --key-identity YOUR_KEY \
   --key-credential YOUR_SECRET
 
-# 5. Upload for real
+# 6. Upload for real
 uv run python transform.py upload my_edits/transformed_itemset_10780_*/ \
   --base-url https://omeka.unibe.ch \
   --key-identity YOUR_KEY \

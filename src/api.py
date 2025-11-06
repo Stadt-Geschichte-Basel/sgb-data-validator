@@ -566,43 +566,33 @@ class OmekaAPI:
         return result
 
     # =========================================================================
-    # TRANSFORMATION OPERATIONS
+    # DOWNLOAD OPERATIONS
     # =========================================================================
 
-    def transform_item_set(
+    def download_item_set(
         self,
         item_set_id: int,
-        output_dir: Path | str | None = None,
-        apply_whitespace_normalization: bool = True,
+        output_dir: Path | str,
     ) -> dict[str, Any]:
         """
-        Transform all items and media in an item set.
+        Download all items and media in an item set without transformations.
 
-        Downloads all data from the item set, applies transformations,
-        and optionally saves the transformed data to files.
+        Downloads raw data from the item set and saves it to files with
+        'raw' prefix to indicate untransformed status.
 
         Args:
-            item_set_id: The ID of the item set to transform
-            output_dir: Optional directory to save transformed data.
-                       If None, returns transformed data without saving.
-            apply_whitespace_normalization: Apply whitespace normalization
-                (default: True)
+            item_set_id: The ID of the item set to download
+            output_dir: Directory to save downloaded data
 
         Returns:
-            Dictionary with transformation summary and results:
+            Dictionary with download summary:
             {
                 "item_set_id": int,
-                "items_transformed": int,
-                "media_transformed": int,
-                "transformations_applied": list[str],
-                "item_set": dict,  # transformed item set data
-                "items": list[dict],  # transformed items
-                "media": list[dict],  # transformed media
-                "saved_to": dict | None,  # file paths if saved
+                "items_downloaded": int,
+                "media_downloaded": int,
+                "saved_to": dict,  # file paths
             }
         """
-        from src.transformations import transform_item_set_data
-
         # Get the item set data
         item_set = self.get_item_set(item_set_id)
 
@@ -617,6 +607,129 @@ class OmekaAPI:
                 media = self.get_media_from_item(item_id)
                 all_media.extend(media)
 
+        # Save to files
+        output_path = Path(output_dir)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dir_name = f"raw_itemset_{item_set_id}_{timestamp}"
+        download_dir = output_path / dir_name
+        download_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save raw data (status indicated in filenames)
+        item_set_file = download_dir / "item_set_raw.json"
+        items_file = download_dir / "items_raw.json"
+        media_file = download_dir / "media_raw.json"
+
+        self.save_to_file(item_set, item_set_file)
+        self.save_to_file(items, items_file)
+        self.save_to_file(all_media, media_file)
+
+        # Save download metadata
+        metadata = {
+            "item_set_id": item_set_id,
+            "timestamp": timestamp,
+            "status": "raw",
+            "items_count": len(items),
+            "media_count": len(all_media),
+            "files": {
+                "item_set": str(item_set_file.relative_to(output_path)),
+                "items": str(items_file.relative_to(output_path)),
+                "media": str(media_file.relative_to(output_path)),
+            },
+        }
+        metadata_file = download_dir / "download_metadata.json"
+        self.save_to_file(metadata, metadata_file)
+
+        return {
+            "item_set_id": item_set_id,
+            "items_downloaded": len(items),
+            "media_downloaded": len(all_media),
+            "saved_to": {
+                "directory": download_dir,
+                "item_set": item_set_file,
+                "items": items_file,
+                "media": media_file,
+                "metadata": metadata_file,
+            },
+        }
+
+    # =========================================================================
+    # TRANSFORMATION OPERATIONS
+    # =========================================================================
+
+    def apply_transformations(
+        self,
+        input_dir: Path | str,
+        output_dir: Path | str | None = None,
+        apply_whitespace_normalization: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Apply transformations to downloaded data files.
+
+        Loads data from input files, applies transformations,
+        and saves transformed data to output files with 'transformed' prefix.
+
+        Args:
+            input_dir: Directory containing raw data files (items.json, media.json)
+            output_dir: Directory to save transformed data.
+                       If None, saves in parent directory of input_dir.
+            apply_whitespace_normalization: Apply whitespace normalization
+                (default: True)
+
+        Returns:
+            Dictionary with transformation summary:
+            {
+                "items_transformed": int,
+                "media_transformed": int,
+                "transformations_applied": list[str],
+                "saved_to": dict,  # file paths
+            }
+        """
+        from src.transformations import transform_item_set_data
+
+        input_path = Path(input_dir)
+
+        # Load raw data from files (support multiple naming conventions)
+        # Prefer explicitly suffixed raw files, then generic names
+        item_set_file = (
+            input_path / "item_set_raw.json"
+            if (input_path / "item_set_raw.json").exists()
+            else input_path / "item_set.json"
+        )
+        items_file = (
+            input_path / "items_raw.json"
+            if (input_path / "items_raw.json").exists()
+            else input_path / "items.json"
+        )
+        media_file = (
+            input_path / "media_raw.json"
+            if (input_path / "media_raw.json").exists()
+            else input_path / "media.json"
+        )
+
+        if not items_file.exists():
+            raise FileNotFoundError(f"Items file not found: {items_file}")
+
+        # Load the data
+        item_set = self.load_from_file(item_set_file) if item_set_file.exists() else {}
+        items = self.load_from_file(items_file)
+        all_media = self.load_from_file(media_file) if media_file.exists() else []
+
+        # Ensure items and media are lists
+        if not isinstance(items, list):
+            items = [items]
+        if not isinstance(all_media, list):
+            all_media = [all_media]
+
+        # Load metadata to get item_set_id
+        metadata_file = input_path / "download_metadata.json"
+        item_set_id = None
+        if metadata_file.exists():
+            metadata = self.load_from_file(metadata_file)
+            item_set_id = metadata.get("item_set_id")
+        else:
+            # Try to get from item_set data
+            item_set_id = item_set.get("o:id") if item_set else None
+
         # Apply transformations
         transformations_applied = []
         if apply_whitespace_normalization:
@@ -625,59 +738,62 @@ class OmekaAPI:
             )
             transformations_applied.append("whitespace_normalization")
 
-        result = {
+        # Determine output directory
+        if output_dir is None:
+            output_path = input_path.parent
+        else:
+            output_path = Path(output_dir)
+
+        # Create output directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if item_set_id:
+            dir_name = f"transformed_itemset_{item_set_id}_{timestamp}"
+        else:
+            dir_name = f"transformed_{timestamp}"
+        transform_dir = output_path / dir_name
+        transform_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save transformed data
+        # Use suffixed filenames to indicate transformed status
+        out_item_set_file = transform_dir / "item_set_transformed.json"
+        out_items_file = transform_dir / "items_transformed.json"
+        out_media_file = transform_dir / "media_transformed.json"
+
+        if item_set:
+            self.save_to_file(item_set, out_item_set_file)
+        self.save_to_file(items, out_items_file)
+        self.save_to_file(all_media, out_media_file)
+
+        # Save transformation metadata
+        metadata = {
             "item_set_id": item_set_id,
+            "timestamp": timestamp,
+            "status": "transformed",
+            "source_directory": str(input_path),
+            "items_count": len(items),
+            "media_count": len(all_media),
+            "transformations_applied": transformations_applied,
+            "files": {
+                "item_set": str(out_item_set_file.relative_to(output_path)),
+                "items": str(out_items_file.relative_to(output_path)),
+                "media": str(out_media_file.relative_to(output_path)),
+            },
+        }
+        metadata_file = transform_dir / "transformation_metadata.json"
+        self.save_to_file(metadata, metadata_file)
+
+        return {
             "items_transformed": len(items),
             "media_transformed": len(all_media),
             "transformations_applied": transformations_applied,
-            "item_set": item_set,
-            "items": items,
-            "media": all_media,
-            "saved_to": None,
-        }
-
-        # Save to files if output directory is provided
-        if output_dir:
-            output_path = Path(output_dir)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            dir_name = f"transformed_itemset_{item_set_id}_{timestamp}"
-            transform_dir = output_path / dir_name
-            transform_dir.mkdir(parents=True, exist_ok=True)
-
-            # Save transformed data
-            item_set_file = transform_dir / "item_set.json"
-            items_file = transform_dir / "items.json"
-            media_file = transform_dir / "media.json"
-
-            self.save_to_file(item_set, item_set_file)
-            self.save_to_file(items, items_file)
-            self.save_to_file(all_media, media_file)
-
-            # Save transformation metadata
-            metadata = {
-                "item_set_id": item_set_id,
-                "timestamp": timestamp,
-                "items_count": len(items),
-                "media_count": len(all_media),
-                "transformations_applied": transformations_applied,
-                "files": {
-                    "item_set": str(item_set_file.relative_to(output_path)),
-                    "items": str(items_file.relative_to(output_path)),
-                    "media": str(media_file.relative_to(output_path)),
-                },
-            }
-            metadata_file = transform_dir / "transformation_metadata.json"
-            self.save_to_file(metadata, metadata_file)
-
-            result["saved_to"] = {
+            "saved_to": {
                 "directory": transform_dir,
-                "item_set": item_set_file,
-                "items": items_file,
-                "media": media_file,
+                "item_set": out_item_set_file if item_set else None,
+                "items": out_items_file,
+                "media": out_media_file,
                 "metadata": metadata_file,
-            }
-
-        return result
+            },
+        }
 
     # =========================================================================
     # OFFLINE FILE OPERATIONS
@@ -715,9 +831,24 @@ class OmekaAPI:
             "overall_valid": True,
         }
 
+        # Helper to choose among multiple candidate filenames
+        def choose_file(dirpath: Path, candidates: list[str]) -> Path | None:
+            for name in candidates:
+                p = dirpath / name
+                if p.exists():
+                    return p
+            return None
+
         # Validate items
-        items_file = directory / "items.json"
-        if items_file.exists():
+        items_file = choose_file(
+            directory,
+            [
+                "items_transformed.json",
+                "items.json",
+                "items_raw.json",
+            ],
+        )
+        if items_file and items_file.exists():
             items = self.load_from_file(items_file)
             if not isinstance(items, list):
                 items = [items]
@@ -737,8 +868,15 @@ class OmekaAPI:
                     )
 
         # Validate media
-        media_file = directory / "media.json"
-        if media_file.exists():
+        media_file = choose_file(
+            directory,
+            [
+                "media_transformed.json",
+                "media.json",
+                "media_raw.json",
+            ],
+        )
+        if media_file and media_file.exists():
             media_list = self.load_from_file(media_file)
             if not isinstance(media_list, list):
                 media_list = [media_list]
@@ -812,9 +950,24 @@ class OmekaAPI:
             )
             return result
 
+        # Helper to choose among multiple candidate filenames
+        def choose_file(dirpath: Path, candidates: list[str]) -> Path | None:
+            for name in candidates:
+                p = dirpath / name
+                if p.exists():
+                    return p
+            return None
+
         # Upload items
-        items_file = directory / "items.json"
-        if items_file.exists():
+        items_file = choose_file(
+            directory,
+            [
+                "items_transformed.json",
+                "items.json",
+                "items_raw.json",
+            ],
+        )
+        if items_file and items_file.exists():
             items = self.load_from_file(items_file)
             if not isinstance(items, list):
                 items = [items]
@@ -848,8 +1001,15 @@ class OmekaAPI:
                     )
 
         # Upload media
-        media_file = directory / "media.json"
-        if media_file.exists():
+        media_file = choose_file(
+            directory,
+            [
+                "media_transformed.json",
+                "media.json",
+                "media_raw.json",
+            ],
+        )
+        if media_file and media_file.exists():
             media_list = self.load_from_file(media_file)
             if not isinstance(media_list, list):
                 media_list = [media_list]

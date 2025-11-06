@@ -21,31 +21,32 @@ def example_basic_transformation() -> None:
     print("=" * 60)
 
     # Initialize the API (replace with your credentials)
-    with OmekaAPI(
-        "https://omeka.unibe.ch",
-        # Optional: Add API credentials for private resources
-        # key_identity="YOUR_KEY_IDENTITY",
-        # key_credential="YOUR_KEY_CREDENTIAL",
-    ) as api:
-        # Transform an item set and save to files
-        result = api.transform_item_set(
-            item_set_id=10780,
+    with OmekaAPI("https://omeka.unibe.ch") as api:
+        # Download raw data first
+        download = api.download_item_set(item_set_id=10780, output_dir="transformations")
+        raw_dir = download["saved_to"]["directory"]
+        print(f"Downloaded raw data to: {raw_dir}")
+        print(
+            f"Items downloaded: {download['items_downloaded']} | Media downloaded: {download['media_downloaded']}"
+        )
+
+        # Apply transformations to the downloaded directory
+        transform = api.apply_transformations(
+            input_dir=raw_dir,
             output_dir="transformations",
             apply_whitespace_normalization=True,
         )
-
-        print(f"Item Set ID: {result['item_set_id']}")
-        print(f"Items transformed: {result['items_transformed']}")
-        print(f"Media transformed: {result['media_transformed']}")
-        transformations = ", ".join(result["transformations_applied"])
+        print(f"Items transformed: {transform['items_transformed']}")
+        print(f"Media transformed: {transform['media_transformed']}")
+        transformations = ", ".join(transform["transformations_applied"]) or "(none)"
         print(f"Transformations applied: {transformations}")
 
-        if result["saved_to"]:
+        if transform["saved_to"]:
             print("\nTransformed data saved to:")
-            print(f"  Directory: {result['saved_to']['directory']}")
-            print(f"  Items: {result['saved_to']['items']}")
-            print(f"  Media: {result['saved_to']['media']}")
-            print(f"  Metadata: {result['saved_to']['metadata']}")
+            print(f"  Directory: {transform['saved_to']['directory']}")
+            print(f"  Items: {transform['saved_to']['items']}")
+            print(f"  Media: {transform['saved_to']['media']}")
+            print(f"  Metadata: {transform['saved_to']['metadata']}")
 
 
 def example_transformation_in_memory() -> None:
@@ -55,22 +56,28 @@ def example_transformation_in_memory() -> None:
     print("=" * 60)
 
     with OmekaAPI("https://omeka.unibe.ch") as api:
-        # Transform without saving to files
-        result = api.transform_item_set(
-            item_set_id=10780,
-            output_dir=None,  # Don't save to files
-            apply_whitespace_normalization=True,
+        # For in-memory demonstration, download raw data then transform using functions
+        download = api.download_item_set(item_set_id=10780, output_dir="transformations")
+        raw_dir = download["saved_to"]["directory"]
+
+        import json
+        from pathlib import Path
+        from src.transformations import transform_item_set_data
+
+        item_set = {}
+        items = json.load(open(Path(raw_dir) / "items_raw.json"))
+        media = json.load(open(Path(raw_dir) / "media_raw.json"))
+        if not isinstance(items, list):
+            items = [items]
+        if not isinstance(media, list):
+            media = [media]
+        _, transformed_items, transformed_media = transform_item_set_data(
+            item_set, items, media
         )
 
-        print(f"Transformed {result['items_transformed']} items in memory")
-        print(f"Transformed {result['media_transformed']} media in memory")
-
-        # Access transformed data directly
-        transformed_items = result["items"]
-        transformed_media = result["media"]
-
+        print(f"Transformed {len(transformed_items)} items in memory")
+        print(f"Transformed {len(transformed_media)} media in memory")
         print(f"\nFirst item title: {transformed_items[0]['o:title']}")
-        print(f"First media title: {transformed_media[0]['o:title']}")
 
 
 def example_whitespace_normalization() -> None:
@@ -104,22 +111,30 @@ def example_transformation_workflow() -> None:
     with OmekaAPI("https://omeka.unibe.ch") as api:
         item_set_id = 10780
 
-        print(f"Step 1: Downloading data from item set {item_set_id}...")
-        # Transform and save
-        result = api.transform_item_set(
-            item_set_id=item_set_id,
+        print(f"Step 1: Downloading raw data from item set {item_set_id}...")
+        download = api.download_item_set(item_set_id=item_set_id, output_dir="transformations")
+        raw_dir = download["saved_to"]["directory"]
+        print(f"Raw directory: {raw_dir}")
+        print(f"Items: {download['items_downloaded']} | Media: {download['media_downloaded']}")
+
+        print("\nStep 2: Applying transformations...")
+        transform = api.apply_transformations(
+            input_dir=raw_dir,
             output_dir="transformations",
             apply_whitespace_normalization=True,
         )
-
-        print(f"Step 2: Applied transformations: {result['transformations_applied']}")
-        print(f"Step 3: Saved transformed data to: {result['saved_to']['directory']}")
+        print(f"Step 3: Saved transformed data to: {transform['saved_to']['directory']}")
+        print(f"Step 4: Applied transformations: {transform['transformations_applied']}")
 
         print("\nStep 4: Validating transformed data...")
-        # Validate a sample of transformed items
-        sample_size = min(5, len(result["items"]))
+        # Validate a sample of transformed items from file
+        import json, os
+        transformed_dir = transform["saved_to"]["directory"]
+        items_path = os.path.join(transformed_dir, "items_transformed.json")
+        items_list = json.load(open(items_path))
+        sample_size = min(5, len(items_list))
         valid_count = 0
-        for item in result["items"][:sample_size]:
+        for item in items_list[:sample_size]:
             is_valid, errors = api.validate_item(item)
             if is_valid:
                 valid_count += 1
