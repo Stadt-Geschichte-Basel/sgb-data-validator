@@ -13,9 +13,7 @@ def load_json(filepath: Path) -> Any:
         return json.load(f)
 
 
-def compare_resources(
-    transformed: list[dict], downloaded: list[dict], resource_type: str
-) -> dict:
+def compare_resources(transformed: list[dict], downloaded: list[dict]) -> dict:
     """Compare transformed data with re-downloaded data."""
     result = {
         "total": len(transformed),
@@ -152,8 +150,8 @@ def main() -> None:
     down_media = load_json(downloaded_dir / "media_raw.json")
 
     print("Comparing data...")
-    items_result = compare_resources(trans_items, down_items, "items")
-    media_result = compare_resources(trans_media, down_media, "media")
+    items_result = compare_resources(trans_items, down_items)
+    media_result = compare_resources(trans_media, down_media)
 
     print_report(items_result, media_result)
 

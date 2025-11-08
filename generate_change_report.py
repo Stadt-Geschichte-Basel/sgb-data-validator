@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate a detailed report of all changed items and media."""
 
+import itertools
 import json
 import sys
 from pathlib import Path
@@ -19,7 +20,55 @@ def find_changed_resources(
     """Find all resources that were changed during transformation."""
     changed = []
 
-    for raw_item, trans_item in zip(raw_data, transformed_data, strict=True):
+    for raw_item, trans_item in itertools.zip_longest(raw_data, transformed_data):
+        # Handle missing resources
+        if raw_item is None and trans_item is not None:
+            # Resource added
+            resource_id = trans_item.get("o:id", "unknown")
+            title = trans_item.get("o:title", "Untitled")
+            changed.append(
+                {
+                    "id": resource_id,
+                    "title": title[:80] if len(title) > 80 else title,
+                    "changes": [
+                        {
+                            "field": "RESOURCE_ADDED",
+                            "before_length": 0,
+                            "after_length": len(str(trans_item)),
+                            "chars_removed": -len(str(trans_item)),
+                        }
+                    ],
+                    "total_changes": 1,
+                    "total_chars_removed": -len(str(trans_item)),
+                }
+            )
+            continue
+
+        if trans_item is None and raw_item is not None:
+            # Resource removed
+            resource_id = raw_item.get("o:id", "unknown")
+            title = raw_item.get("o:title", "Untitled")
+            changed.append(
+                {
+                    "id": resource_id,
+                    "title": title[:80] if len(title) > 80 else title,
+                    "changes": [
+                        {
+                            "field": "RESOURCE_REMOVED",
+                            "before_length": len(str(raw_item)),
+                            "after_length": 0,
+                            "chars_removed": len(str(raw_item)),
+                        }
+                    ],
+                    "total_changes": 1,
+                    "total_chars_removed": len(str(raw_item)),
+                }
+            )
+            continue
+
+        if raw_item is None or trans_item is None:
+            continue
+
         resource_id = raw_item.get("o:id", "unknown")
         title = trans_item.get("o:title", "Untitled")
         changes_in_resource = []
@@ -35,8 +84,34 @@ def find_changed_resources(
             # Handle nested structures (like dcterms fields)
             if isinstance(raw_val, list) and isinstance(trans_val, list):
                 for idx, (raw_entry, trans_entry) in enumerate(
-                    zip(raw_val, trans_val, strict=False)
+                    itertools.zip_longest(raw_val, trans_val)
                 ):
+                    # Handle missing entries
+                    if raw_entry is None and trans_entry is not None:
+                        changes_in_resource.append(
+                            {
+                                "field": f"{key}[{idx}].ADDED",
+                                "before_length": 0,
+                                "after_length": len(str(trans_entry)),
+                                "chars_removed": -len(str(trans_entry)),
+                            }
+                        )
+                        continue
+
+                    if trans_entry is None and raw_entry is not None:
+                        changes_in_resource.append(
+                            {
+                                "field": f"{key}[{idx}].REMOVED",
+                                "before_length": len(str(raw_entry)),
+                                "after_length": 0,
+                                "chars_removed": len(str(raw_entry)),
+                            }
+                        )
+                        continue
+
+                    if raw_entry is None or trans_entry is None:
+                        continue
+
                     if isinstance(raw_entry, dict) and isinstance(trans_entry, dict):
                         for field_key in ["@value", "o:label"]:
                             if field_key in raw_entry and field_key in trans_entry:
@@ -82,7 +157,11 @@ def find_changed_resources(
 
 
 def print_report(
-    items_changed: list[dict], media_changed: list[dict], output_file: str
+    items_changed: list[dict],
+    media_changed: list[dict],
+    output_file: str,
+    total_items: int,
+    total_media: int,
 ) -> None:
     """Print and save a detailed report of all changes."""
     lines = []
@@ -92,7 +171,7 @@ def print_report(
     lines.append("")
 
     # Items section
-    lines.append(f"ITEMS CHANGED: {len(items_changed)} out of 802")
+    lines.append(f"ITEMS CHANGED: {len(items_changed)} out of {total_items}")
     lines.append("=" * 100)
     lines.append("")
 
@@ -109,7 +188,7 @@ def print_report(
 
     # Media section
     lines.append("")
-    lines.append(f"MEDIA CHANGED: {len(media_changed)} out of 993")
+    lines.append(f"MEDIA CHANGED: {len(media_changed)} out of {total_media}")
     lines.append("=" * 100)
     lines.append("")
 
@@ -171,7 +250,13 @@ def main() -> None:
     media_changed = find_changed_resources(raw_media, transformed_media)
 
     # Print report
-    print_report(items_changed, media_changed, output_file)
+    print_report(
+        items_changed,
+        media_changed,
+        output_file,
+        total_items=len(raw_items),
+        total_media=len(raw_media),
+    )
 
 
 if __name__ == "__main__":

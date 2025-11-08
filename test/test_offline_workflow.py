@@ -113,16 +113,11 @@ def test_validate_offline_files() -> bool:
         api = OmekaAPI("https://omeka.unibe.ch")
         result = api.validate_offline_files(tmppath)
 
-        if result["overall_valid"]:
-            print(f"  ✓ Validated {result['items_validated']} items")
-            print(f"  ✓ Validated {result['media_validated']} media")
-            print("  ✓ All files are valid")
-            return True
-        else:
-            print("  ✗ Validation failed")
-            print(f"    Item errors: {result['items_errors']}")
-            print(f"    Media errors: {result['media_errors']}")
-            return False
+        # Assert validation passed
+        assert result["overall_valid"], f"Validation should pass. Errors: items={result['items_errors']}, media={result['media_errors']}"
+        print(f"  ✓ Validated {result['items_validated']} items")
+        print(f"  ✓ Validated {result['media_validated']} media")
+        print("  ✓ All files are valid")
 
 
 def test_validate_invalid_files() -> bool:
@@ -176,14 +171,12 @@ def test_validate_invalid_files() -> bool:
         api = OmekaAPI("https://omeka.unibe.ch")
         result = api.validate_offline_files(tmppath)
 
-        if not result["overall_valid"] and len(result["items_errors"]) > 0:
-            print(
-                f"  ✓ Correctly detected {len(result['items_errors'])} invalid item(s)"
-            )
-            return True
-        else:
-            print("  ✗ Failed to detect invalid items")
-            return False
+        # Assert validation detected errors
+        assert not result["overall_valid"], "Validation should have failed for invalid items"
+        assert (
+            len(result["items_errors"]) > 0 or len(result["media_errors"]) > 0
+        ), "Should have detected validation errors"
+        print(f"  ✓ Correctly detected {len(result['items_errors'])} invalid item(s)")
 
 
 def test_update_methods_dry_run() -> bool:
@@ -233,13 +226,11 @@ def test_update_methods_dry_run() -> bool:
     api = OmekaAPI("https://omeka.unibe.ch")
     result = api.update_item(1, item_data, dry_run=True)
 
-    if result["validation_passed"] and result["dry_run"] and not result["updated"]:
-        print("  ✓ Dry run validation passed")
-        print("  ✓ No changes were made")
-        return True
-    else:
-        print("  ✗ Dry run test failed")
-        return False
+    assert result["validation_passed"], "Dry run validation should pass"
+    assert result["dry_run"], "Should be marked as dry run"
+    assert not result["updated"], "No changes should be made in dry run"
+    print("  ✓ Dry run validation passed")
+    print("  ✓ No changes were made")
 
 
 if __name__ == "__main__":

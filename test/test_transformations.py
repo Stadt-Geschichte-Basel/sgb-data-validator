@@ -1,6 +1,5 @@
 """Tests for data transformation utilities."""
 
-import sys
 
 from src.transformations import (
     normalize_whitespace,
@@ -10,7 +9,7 @@ from src.transformations import (
 )
 
 
-def test_normalize_whitespace_basic() -> bool:
+def test_normalize_whitespace_basic() -> None:
     """Test basic whitespace normalization."""
     print("\nTest 1: Basic whitespace normalization")
     print("=" * 60)
@@ -25,21 +24,13 @@ def test_normalize_whitespace_basic() -> bool:
         ("multiple   \t  spaces", "multiple spaces", "Mixed spaces normalized"),
     ]
 
-    all_passed = True
     for input_text, expected, description in test_cases:
         result = normalize_whitespace(input_text)
-        if result == expected:
-            print(f"  ✓ {description}")
-        else:
-            print(f"  ✗ {description}")
-            print(f"    Expected: {repr(expected)}")
-            print(f"    Got: {repr(result)}")
-            all_passed = False
-
-    return all_passed
+        assert result == expected, f"{description} failed: expected {repr(expected)}, got {repr(result)}"
+        print(f"  ✓ {description}")
 
 
-def test_normalize_whitespace_unicode() -> bool:
+def test_normalize_whitespace_unicode() -> None:
     """Test Unicode whitespace normalization (Issue #28)."""
     print("\nTest 2: Unicode whitespace normalization")
     print("=" * 60)
@@ -76,22 +67,13 @@ def test_normalize_whitespace_unicode() -> bool:
         ("thin\u2009space", "thin space", "Thin space normalized"),
     ]
 
-    all_passed = True
     for input_text, expected, description in test_cases:
         result = normalize_whitespace(input_text)
-        if result == expected:
-            print(f"  ✓ {description}")
-        else:
-            print(f"  ✗ {description}")
-            print(f"    Input: {repr(input_text)}")
-            print(f"    Expected: {repr(expected)}")
-            print(f"    Got: {repr(result)}")
-            all_passed = False
-
-    return all_passed
+        assert result == expected, f"{description} failed: input {repr(input_text)}, expected {repr(expected)}, got {repr(result)}"
+        print(f"  ✓ {description}")
 
 
-def test_normalize_whitespace_multiline() -> bool:
+def test_normalize_whitespace_multiline() -> None:
     """Test multiline text normalization."""
     print("\nTest 3: Multiline text normalization")
     print("=" * 60)
@@ -121,27 +103,16 @@ def test_normalize_whitespace_multiline() -> bool:
         ),
     ]
 
-    all_passed = True
     for input_text, expected, description in test_cases:
         result = normalize_whitespace(input_text)
-        if result == expected:
-            print(f"  ✓ {description}")
-        else:
-            print(f"  ✗ {description}")
-            print(f"    Input: {repr(input_text)}")
-            print(f"    Expected: {repr(expected)}")
-            print(f"    Got: {repr(result)}")
-            all_passed = False
-
-    return all_passed
+        assert result == expected, f"{description} failed: input {repr(input_text)}, expected {repr(expected)}, got {repr(result)}"
+        print(f"  ✓ {description}")
 
 
-def test_transform_property_value() -> bool:
+def test_transform_property_value() -> None:
     """Test transformation of Omeka property values."""
     print("\nTest 4: Property value transformation")
     print("=" * 60)
-
-    all_passed = True
 
     # Test literal property with whitespace issues
     literal_prop = {
@@ -151,13 +122,9 @@ def test_transform_property_value() -> bool:
     }
     result = transform_property_value(literal_prop)
     expected_value = "text with double spaces"
-    if result.get("@value") == expected_value and result.get("type") == "literal":
-        print("  ✓ Literal property value normalized")
-    else:
-        print("  ✗ Literal property value not normalized correctly")
-        print(f"    Expected: {expected_value}")
-        print(f"    Got: {result.get('@value')}")
-        all_passed = False
+    assert result.get("@value") == expected_value, f"Literal value normalization failed: expected {expected_value}, got {result.get('@value')}"
+    assert result.get("type") == "literal", "Type should remain literal"
+    print("  ✓ Literal property value normalized")
 
     # Test URI property (should not be transformed)
     uri_prop = {
@@ -166,25 +133,17 @@ def test_transform_property_value() -> bool:
         "property_id": 2,
     }
     result = transform_property_value(uri_prop)
-    if result == uri_prop:
-        print("  ✓ URI property unchanged")
-    else:
-        print("  ✗ URI property was modified")
-        all_passed = False
+    assert result == uri_prop, "URI property should not be modified"
+    print("  ✓ URI property unchanged")
 
     # Test property without @value
     empty_prop = {"type": "literal", "property_id": 3}
     result = transform_property_value(empty_prop)
-    if result == empty_prop:
-        print("  ✓ Property without @value unchanged")
-    else:
-        print("  ✗ Property without @value was modified")
-        all_passed = False
-
-    return all_passed
+    assert result == empty_prop, "Property without @value should not be modified"
+    print("  ✓ Property without @value unchanged")
 
 
-def test_transform_item() -> bool:
+def test_transform_item() -> None:
     """Test transformation of complete item data."""
     print("\nTest 5: Complete item transformation")
     print("=" * 60)
@@ -210,48 +169,28 @@ def test_transform_item() -> bool:
 
     result = transform_item(item_data)
 
-    all_passed = True
-
     # Check title was normalized
     expected_title = "Test Item with spaces"
-    if result.get("o:title") == expected_title:
-        print("  ✓ Item title normalized")
-    else:
-        print("  ✗ Item title not normalized correctly")
-        print(f"    Expected: {expected_title}")
-        print(f"    Got: {result.get('o:title')}")
-        all_passed = False
+    assert result.get("o:title") == expected_title, f"Title normalization failed: expected {expected_title}, got {result.get('o:title')}"
+    print("  ✓ Item title normalized")
 
     # Check description was normalized
     desc_value = result.get("dcterms:description", [{}])[0].get("@value")
     expected_desc = "Description with doublespaces and softhyphen"
-    if desc_value == expected_desc:
-        print("  ✓ Description normalized")
-    else:
-        print("  ✗ Description not normalized correctly")
-        print(f"    Expected: {expected_desc}")
-        print(f"    Got: {desc_value}")
-        all_passed = False
+    assert desc_value == expected_desc, f"Description normalization failed: expected {expected_desc}, got {desc_value}"
+    print("  ✓ Description normalized")
 
     # Check URI property was not modified
     creator_uri = result.get("dcterms:creator", [{}])[0].get("@id")
-    if creator_uri == "http://example.com/creator":
-        print("  ✓ URI property preserved")
-    else:
-        print("  ✗ URI property was modified")
-        all_passed = False
+    assert creator_uri == "http://example.com/creator", "URI property should be preserved"
+    print("  ✓ URI property preserved")
 
     # Check o:id was preserved
-    if result.get("o:id") == 12385:
-        print("  ✓ Item ID preserved")
-    else:
-        print("  ✗ Item ID was modified")
-        all_passed = False
-
-    return all_passed
+    assert result.get("o:id") == 12385, "Item ID should be preserved"
+    print("  ✓ Item ID preserved")
 
 
-def test_transform_media() -> bool:
+def test_transform_media() -> None:
     """Test transformation of media data."""
     print("\nTest 6: Media transformation")
     print("=" * 60)
@@ -270,99 +209,55 @@ def test_transform_media() -> bool:
 
     result = transform_media(media_data)
 
-    all_passed = True
-
     # Check title was normalized
     expected_title = "Media withformatting"
-    if result.get("o:title") == expected_title:
-        print("  ✓ Media title normalized")
-    else:
-        print("  ✗ Media title not normalized correctly")
-        print(f"    Expected: {expected_title}")
-        print(f"    Got: {result.get('o:title')}")
-        all_passed = False
+    assert result.get("o:title") == expected_title, f"Media title normalization failed: expected {expected_title}, got {result.get('o:title')}"
+    print("  ✓ Media title normalized")
 
     # Check extent was normalized
     extent_value = result.get("dcterms:extent", [{}])[0].get("@value")
     expected_extent = "sizewithdirection"
-    if extent_value == expected_extent:
-        print("  ✓ Extent normalized")
-    else:
-        print("  ✗ Extent not normalized correctly")
-        print(f"    Expected: {expected_extent}")
-        print(f"    Got: {extent_value}")
-        all_passed = False
-
-    return all_passed
+    assert extent_value == expected_extent, f"Extent normalization failed: expected {expected_extent}, got {extent_value}"
+    print("  ✓ Extent normalized")
 
 
-def test_real_world_examples() -> bool:
+def test_real_world_examples() -> None:
     """Test with real-world examples from Issue #28."""
     print("\nTest 7: Real-world examples from Issue #28")
     print("=" * 60)
-
-    all_passed = True
-
     # Example from abb93285 - double spaces and soft hyphen
     text1 = "eine  lange Ge\u00adschichte  mit doppelten Leerzeichen"
     result1 = normalize_whitespace(text1)
     expected1 = "eine lange Geschichte mit doppelten Leerzeichen"
-    if result1 == expected1:
-        print("  ✓ abb93285 description cleaned")
-    else:
-        print("  ✗ abb93285 description not cleaned correctly")
-        print(f"    Input: {repr(text1)}")
-        print(f"    Expected: {repr(expected1)}")
-        print(f"    Got: {repr(result1)}")
-        all_passed = False
+    assert result1 == expected1, f"abb93285 description failed: input {repr(text1)}, expected {repr(expected1)}, got {repr(result1)}"
+    print("  ✓ abb93285 description cleaned")
 
     # Example with U+202C and U+202A (from m37979 extent field)
     text2 = "text\u202awith\u202cdirectional formatting"
     result2 = normalize_whitespace(text2)
     expected2 = "textwithdirectional formatting"
-    if result2 == expected2:
-        print("  ✓ m37979 extent field cleaned")
-    else:
-        print("  ✗ m37979 extent field not cleaned correctly")
-        print(f"    Input: {repr(text2)}")
-        print(f"    Expected: {repr(expected2)}")
-        print(f"    Got: {repr(result2)}")
-        all_passed = False
+    assert result2 == expected2, f"m37979 extent field failed: input {repr(text2)}, expected {repr(expected2)}, got {repr(result2)}"
+    print("  ✓ m37979 extent field cleaned")
 
     # Example with multiple line breaks
     text3 = "text\n\n\n\nwith\n\n\ntoo many breaks"
     result3 = normalize_whitespace(text3)
     expected3 = "text\n\nwith\n\ntoo many breaks"
-    if result3 == expected3:
-        print("  ✓ Multiple line breaks normalized")
-    else:
-        print("  ✗ Multiple line breaks not normalized correctly")
-        print(f"    Input: {repr(text3)}")
-        print(f"    Expected: {repr(expected3)}")
-        print(f"    Got: {repr(result3)}")
-        all_passed = False
-
-    return all_passed
+    assert result3 == expected3, f"Multiple line breaks failed: input {repr(text3)}, expected {repr(expected3)}, got {repr(result3)}"
+    print("  ✓ Multiple line breaks normalized")
 
 
 if __name__ == "__main__":
     print("Testing data transformation utilities")
     print("=" * 60)
 
-    all_passed = True
-
-    all_passed &= test_normalize_whitespace_basic()
-    all_passed &= test_normalize_whitespace_unicode()
-    all_passed &= test_normalize_whitespace_multiline()
-    all_passed &= test_transform_property_value()
-    all_passed &= test_transform_item()
-    all_passed &= test_transform_media()
-    all_passed &= test_real_world_examples()
+    test_normalize_whitespace_basic()
+    test_normalize_whitespace_unicode()
+    test_normalize_whitespace_multiline()
+    test_transform_property_value()
+    test_transform_item()
+    test_transform_media()
+    test_real_world_examples()
 
     print("\n" + "=" * 60)
-    if all_passed:
-        print("✓ All transformation tests passed!")
-        sys.exit(0)
-    else:
-        print("✗ Some transformation tests failed")
-        sys.exit(1)
+    print("✓ All transformation tests passed!")

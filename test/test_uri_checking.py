@@ -4,6 +4,8 @@ import asyncio
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -48,6 +50,7 @@ def test_extract_media_uri():
     assert ("o:original_url", "https://example.com/media/image.jpg") in uris
 
 
+@pytest.mark.asyncio
 async def test_check_valid_uri():
     """Test checking a valid URI"""
     validator = OmekaValidator(
@@ -64,15 +67,16 @@ async def test_check_valid_uri():
     # Note: might have warnings if there's a redirect, but that's expected
 
 
+@pytest.mark.asyncio
 async def test_check_invalid_uri():
     """Test checking an invalid URI (404)"""
     validator = OmekaValidator(
         "https://omeka.unibe.ch", check_uris=True, uri_check_severity="warning"
     )
 
-    # Check a URI that returns 404
+    # Check a URI that definitely doesn't exist (invalid domain)
     await validator.check_uri_async(
-        "https://example.com/nonexistent-page-12345",
+        "https://this-domain-definitely-does-not-exist-12345.com/test",
         "Item",
         12345,
         "dcterms:source[0].@id",
@@ -83,15 +87,16 @@ async def test_check_invalid_uri():
     assert len(validator.warnings) == 1
 
 
+@pytest.mark.asyncio
 async def test_check_invalid_uri_as_error():
     """Test checking an invalid URI with error severity"""
     validator = OmekaValidator(
         "https://omeka.unibe.ch", check_uris=True, uri_check_severity="error"
     )
 
-    # Check a URI that returns 404
+    # Check a URI that definitely doesn't exist (invalid domain)
     await validator.check_uri_async(
-        "https://example.com/nonexistent-page-67890",
+        "https://another-nonexistent-domain-67890.invalid/test",
         "Media",
         67890,
         "o:original_url",

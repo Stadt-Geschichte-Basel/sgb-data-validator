@@ -73,6 +73,22 @@ class OmekaAPI:
             params["key_credential"] = self.key_credential
         return params
 
+    def _choose_file(self, directory: Path, candidates: list[str]) -> Path | None:
+        """Choose the first existing file from a list of candidates.
+        
+        Args:
+            directory: Directory to search in
+            candidates: List of candidate filenames
+            
+        Returns:
+            Path to first existing file, or None if none exist
+        """
+        for name in candidates:
+            p = directory / name
+            if p.exists():
+                return p
+        return None
+
     def get_item_set(self, item_set_id: int) -> dict[str, Any]:
         """
         Get a single item set by ID.
@@ -604,8 +620,12 @@ class OmekaAPI:
         for item in items:
             item_id = item.get("o:id")
             if item_id:
-                media = self.get_media_from_item(item_id)
-                all_media.extend(media)
+                try:
+                    media = self.get_media_from_item(item_id)
+                    all_media.extend(media)
+                except httpx.HTTPStatusError as e:
+                    print(f"⚠️  Failed to fetch media for item {item_id}: {e}")
+                    continue
 
         # Save to files
         output_path = Path(output_dir)
@@ -831,16 +851,8 @@ class OmekaAPI:
             "overall_valid": True,
         }
 
-        # Helper to choose among multiple candidate filenames
-        def choose_file(dirpath: Path, candidates: list[str]) -> Path | None:
-            for name in candidates:
-                p = dirpath / name
-                if p.exists():
-                    return p
-            return None
-
         # Validate items
-        items_file = choose_file(
+        items_file = self._choose_file(
             directory,
             [
                 "items_transformed.json",
@@ -868,7 +880,7 @@ class OmekaAPI:
                     )
 
         # Validate media
-        media_file = choose_file(
+        media_file = self._choose_file(
             directory,
             [
                 "media_transformed.json",
@@ -960,16 +972,8 @@ class OmekaAPI:
                 }
             )
 
-        # Helper to choose among multiple candidate filenames
-        def choose_file(dirpath: Path, candidates: list[str]) -> Path | None:
-            for name in candidates:
-                p = dirpath / name
-                if p.exists():
-                    return p
-            return None
-
         # Upload items
-        items_file = choose_file(
+        items_file = self._choose_file(
             directory,
             [
                 "items_transformed.json",
@@ -1011,7 +1015,7 @@ class OmekaAPI:
                     )
 
         # Upload media
-        media_file = choose_file(
+        media_file = self._choose_file(
             directory,
             [
                 "media_transformed.json",

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Analyze differences between raw and transformed data."""
 
+import itertools
 import json
 import sys
 from pathlib import Path
@@ -16,13 +17,43 @@ def load_json(filepath: Path) -> Any:
 def find_differences(raw_data: list[dict], transformed_data: list[dict]) -> dict:
     """Find differences between raw and transformed data."""
     changes = {
-        "total_resources": len(raw_data),
+        "total_resources": max(len(raw_data), len(transformed_data)),
         "fields_changed": 0,
         "changes_by_field": {},
         "examples": [],
+        "missing_resources": 0,
+        "added_resources": 0,
     }
 
-    for raw_item, trans_item in zip(raw_data, transformed_data, strict=True):
+    for raw_item, trans_item in itertools.zip_longest(raw_data, transformed_data):
+        # Handle missing resources
+        if raw_item is None:
+            changes["added_resources"] += 1
+            if trans_item:
+                changes["examples"].append(
+                    {
+                        "resource_id": trans_item.get("o:id", "unknown"),
+                        "field": "RESOURCE_ADDED",
+                        "before": None,
+                        "after": f"New resource: {trans_item.get('o:title', 'N/A')}",
+                        "diff_chars": 0,
+                    }
+                )
+            continue
+
+        if trans_item is None:
+            changes["missing_resources"] += 1
+            changes["examples"].append(
+                {
+                    "resource_id": raw_item.get("o:id", "unknown"),
+                    "field": "RESOURCE_REMOVED",
+                    "before": f"Removed resource: {raw_item.get('o:title', 'N/A')}",
+                    "after": None,
+                    "diff_chars": 0,
+                }
+            )
+            continue
+
         resource_id = raw_item.get("o:id", "unknown")
 
         # Compare all fields
@@ -35,7 +66,50 @@ def find_differences(raw_data: list[dict], transformed_data: list[dict]) -> dict
 
             # Handle nested structures (like dcterms fields)
             if isinstance(raw_val, list) and isinstance(trans_val, list):
-                for raw_entry, trans_entry in zip(raw_val, trans_val, strict=True):
+                for raw_entry, trans_entry in itertools.zip_longest(
+                    raw_val, trans_val
+                ):
+                    # Handle missing entries in nested lists
+                    if raw_entry is None:
+                        changes["fields_changed"] += 1
+                        field_name = f"{key}[ADDED_ENTRY]"
+                        changes["changes_by_field"][field_name] = (
+                            changes["changes_by_field"].get(field_name, 0) + 1
+                        )
+                        if len(changes["examples"]) < 50:
+                            changes["examples"].append(
+                                {
+                                    "resource_id": resource_id,
+                                    "field": field_name,
+                                    "before": None,
+                                    "after": str(trans_entry)[:100]
+                                    if trans_entry
+                                    else "N/A",
+                                    "diff_chars": 0,
+                                }
+                            )
+                        continue
+
+                    if trans_entry is None:
+                        changes["fields_changed"] += 1
+                        field_name = f"{key}[REMOVED_ENTRY]"
+                        changes["changes_by_field"][field_name] = (
+                            changes["changes_by_field"].get(field_name, 0) + 1
+                        )
+                        if len(changes["examples"]) < 50:
+                            changes["examples"].append(
+                                {
+                                    "resource_id": resource_id,
+                                    "field": field_name,
+                                    "before": str(raw_entry)[:100]
+                                    if raw_entry
+                                    else "N/A",
+                                    "after": None,
+                                    "diff_chars": 0,
+                                }
+                            )
+                        continue
+
                     if isinstance(raw_entry, dict) and isinstance(trans_entry, dict):
                         for field_key in ["@value", "o:label"]:
                             if field_key in raw_entry and field_key in trans_entry:
@@ -103,6 +177,10 @@ def print_report(items_changes: dict, media_changes: dict) -> None:
     print("ITEMS:")
     print(f"  Total items: {items_changes['total_resources']}")
     print(f"  Fields changed: {items_changes['fields_changed']}")
+    if items_changes.get("missing_resources", 0) > 0:
+        print(f"  Resources removed: {items_changes['missing_resources']}")
+    if items_changes.get("added_resources", 0) > 0:
+        print(f"  Resources added: {items_changes['added_resources']}")
     print()
 
     if items_changes["changes_by_field"]:
@@ -126,6 +204,10 @@ def print_report(items_changes: dict, media_changes: dict) -> None:
     print("MEDIA:")
     print(f"  Total media: {media_changes['total_resources']}")
     print(f"  Fields changed: {media_changes['fields_changed']}")
+    if media_changes.get("missing_resources", 0) > 0:
+        print(f"  Resources removed: {media_changes['missing_resources']}")
+    if media_changes.get("added_resources", 0) > 0:
+        print(f"  Resources added: {media_changes['added_resources']}")
     print()
 
     if media_changes["changes_by_field"]:
