@@ -4,10 +4,13 @@ This module provides functions to transform and clean Omeka S data,
 including normalization of whitespace characters and other data cleaning operations.
 """
 
+import asyncio
 import html
 import re
 import unicodedata
 from typing import Any
+
+import httpx
 
 
 def normalize_whitespace(text: str) -> str:
@@ -201,9 +204,11 @@ def normalize_wikidata_url(text: str) -> str:
 
 
 def normalize_urls(text: str) -> str:
-    """Normalize URLs by standardizing www. prefix and trailing slashes.
+    """Normalize URLs by removing redundant trailing slashes only.
 
-    This helps with URL deduplication by making equivalent URLs identical.
+    Per updated requirements: never add a "www." prefix to any domain.
+    Specialized canonicalization (e.g. Wikidata mobile -> www.wikidata.org)
+    is handled in dedicated functions, not here.
 
     Args:
         text: The text containing URLs
@@ -214,28 +219,123 @@ def normalize_urls(text: str) -> str:
     if not text:
         return text
 
-    # Add www. to URLs that don't have it (for consistency)
-    # Match https?://domain.tld but not https?://www.domain.tld
-    text = re.sub(
-        r"(https?://)(?!www\.)([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,})",
-        r"\1www.\2",
-        text,
-    )
-
-    # Remove trailing slashes from URLs (except after domain)
-    # Match URLs ending with / but not just domain/
-    text = re.sub(r"(https?://[^/\s]+)/+(\s|$)", r"\1\2", text)
+    # Remove trailing slashes from URLs (except after domain) at token end
+    text = re.sub(r"(https?://[^/\s]+)/+(?=\s|$)", r"\1", text)
 
     return text
 
 
-def apply_text_transformations(text: str) -> str:
+async def check_https_available(url: str, timeout: float = 5.0) -> bool:
+    """Check if HTTPS version of an HTTP URL is available.
+
+    Args:
+        url: The HTTP URL to check
+        timeout: Request timeout in seconds
+
+    Returns:
+        True if HTTPS version is available and responds with 2xx or 3xx status,
+        False otherwise
+    """
+    if not url.startswith("http://"):
+        return False
+
+    https_url = url.replace("http://", "https://", 1)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.head(https_url)
+            # Consider 2xx and 3xx as success
+            return 200 <= response.status_code < 400
+    except (httpx.RequestError, httpx.HTTPError):
+        # If HTTPS fails, keep HTTP
+        return False
+
+
+async def upgrade_http_to_https_async(text: str) -> str:
+    """Upgrade HTTP URLs to HTTPS where available (async version).
+
+    Finds all HTTP URLs in the text and checks if HTTPS is available.
+    If HTTPS works, replaces the HTTP URL with the HTTPS version.
+
+    Args:
+        text: The text containing URLs
+
+    Returns:
+        The text with HTTP URLs upgraded to HTTPS where possible
+    """
+    if not text:
+        return text
+
+    # Find all HTTP URLs (not already HTTPS)
+    http_urls = re.findall(r"http://[^\s<>\[\]{}|\\^`]+", text)
+
+    if not http_urls:
+        return text
+
+    # Check all URLs concurrently
+    checks = [check_https_available(url) for url in http_urls]
+    results = await asyncio.gather(*checks)
+
+    # Replace HTTP with HTTPS for URLs where HTTPS is available
+    for url, https_available in zip(http_urls, results, strict=True):
+        if https_available:
+            https_url = url.replace("http://", "https://", 1)
+            text = text.replace(url, https_url)
+
+    return text
+
+
+def upgrade_http_to_https(text: str) -> str:
+    """Upgrade HTTP URLs to HTTPS where available (sync wrapper).
+
+    This is a synchronous wrapper around upgrade_http_to_https_async.
+    Use this in non-async contexts.
+
+    Args:
+        text: The text containing URLs
+
+    Returns:
+        The text with HTTP URLs upgraded to HTTPS where possible
+    """
+    if not text:
+        return text
+
+    # Run the async function in an event loop
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If we're already in an event loop, create a new one
+            import threading
+
+            result = [text]
+
+            def run_in_thread():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                result[0] = new_loop.run_until_complete(
+                    upgrade_http_to_https_async(text)
+                )
+                new_loop.close()
+
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join()
+            return result[0]
+        else:
+            return loop.run_until_complete(upgrade_http_to_https_async(text))
+    except RuntimeError:
+        # No event loop exists, create one
+        return asyncio.run(upgrade_http_to_https_async(text))
+
+
+def apply_text_transformations(text: str, upgrade_https: bool = True) -> str:
     """Apply all text transformations in the correct order.
 
     This is the main function that combines all text transformations.
 
     Args:
         text: The text to transform
+        upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
 
     Returns:
         The transformed text
@@ -262,20 +362,25 @@ def apply_text_transformations(text: str) -> str:
     # 6. Normalize Wikidata URLs
     text = normalize_wikidata_url(text)
 
-    # 7. Normalize other URLs
+    # 7. Upgrade HTTP to HTTPS where available (before URL normalization)
+    if upgrade_https:
+        text = upgrade_http_to_https(text)
+
+    # 8. Normalize other URLs
     text = normalize_urls(text)
 
     return text
 
 
 def transform_property_value(
-    prop: dict[str, Any], apply_all: bool = False
+    prop: dict[str, Any], apply_all: bool = False, upgrade_https: bool = True
 ) -> dict[str, Any]:
     """Transform a single Omeka property.
 
     Args:
         prop: The property dictionary to transform
         apply_all: If True, apply all transformations; if False, only whitespace
+        upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
 
     Returns:
         The transformed property
@@ -288,7 +393,9 @@ def transform_property_value(
         value = prop["@value"]
         if isinstance(value, str):
             if apply_all:
-                normalized = apply_text_transformations(value)
+                normalized = apply_text_transformations(
+                    value, upgrade_https=upgrade_https
+                )
             else:
                 normalized = normalize_whitespace(value)
             # Create a new dict to avoid modifying the original
@@ -300,13 +407,14 @@ def transform_property_value(
 
 
 def transform_item(
-    item_data: dict[str, Any], apply_all: bool = False
+    item_data: dict[str, Any], apply_all: bool = False, upgrade_https: bool = True
 ) -> dict[str, Any]:
     """Transform an item's data by normalizing text in all text fields.
 
     Args:
         item_data: The item data dictionary
         apply_all: If True, apply all transformations; if False, only whitespace
+        upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
 
     Returns:
         A new dictionary with transformed data
@@ -321,13 +429,18 @@ def transform_item(
         if key == "o:title" and isinstance(value, str):
             # Transform the title directly
             if apply_all:
-                result[key] = apply_text_transformations(value)
+                result[key] = apply_text_transformations(
+                    value, upgrade_https=upgrade_https
+                )
             else:
                 result[key] = normalize_whitespace(value)
         elif key.startswith("dcterms:") and isinstance(value, list):
             # Transform Dublin Core properties
             result[key] = [
-                transform_property_value(prop, apply_all=apply_all) for prop in value
+                transform_property_value(
+                    prop, apply_all=apply_all, upgrade_https=upgrade_https
+                )
+                for prop in value
             ]
         else:
             # Keep other fields as-is
@@ -337,19 +450,20 @@ def transform_item(
 
 
 def transform_media(
-    media_data: dict[str, Any], apply_all: bool = False
+    media_data: dict[str, Any], apply_all: bool = False, upgrade_https: bool = True
 ) -> dict[str, Any]:
     """Transform a media object's data by normalizing text in all text fields.
 
     Args:
         media_data: The media data dictionary
         apply_all: If True, apply all transformations; if False, only whitespace
+        upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
 
     Returns:
         A new dictionary with transformed data
     """
     # Media has the same structure as items for the fields we care about
-    return transform_item(media_data, apply_all=apply_all)
+    return transform_item(media_data, apply_all=apply_all, upgrade_https=upgrade_https)
 
 
 def transform_item_set_data(
@@ -357,6 +471,7 @@ def transform_item_set_data(
     items: list[dict[str, Any]],
     media: list[dict[str, Any]],
     apply_all: bool = False,
+    upgrade_https: bool = True,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     """Transform an entire item set with all its items and media.
 
@@ -365,18 +480,27 @@ def transform_item_set_data(
         items: List of item data dictionaries
         media: List of media data dictionaries
         apply_all: If True, apply all transformations; if False, only whitespace
+        upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
 
     Returns:
         Tuple of (transformed_item_set, transformed_items, transformed_media)
     """
     # Transform the item set itself (though it usually doesn't have much text)
-    transformed_item_set = transform_item(item_set_data, apply_all=apply_all)
+    transformed_item_set = transform_item(
+        item_set_data, apply_all=apply_all, upgrade_https=upgrade_https
+    )
 
     # Transform all items
-    transformed_items = [transform_item(item, apply_all=apply_all) for item in items]
+    transformed_items = [
+        transform_item(item, apply_all=apply_all, upgrade_https=upgrade_https)
+        for item in items
+    ]
 
     # Transform all media
-    transformed_media = [transform_media(m, apply_all=apply_all) for m in media]
+    transformed_media = [
+        transform_media(m, apply_all=apply_all, upgrade_https=upgrade_https)
+        for m in media
+    ]
 
     return transformed_item_set, transformed_items, transformed_media
 

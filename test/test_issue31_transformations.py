@@ -178,13 +178,13 @@ def test_normalize_urls() -> None:
     test_cases = [
         (
             "https://example.com",
-            "https://www.example.com",
-            "Add www prefix",
+            "https://example.com",
+            "Do not add www prefix",
         ),
         (
             "http://example.com",
-            "http://www.example.com",
-            "Add www prefix to http",
+            "http://example.com",
+            "Do not add www prefix to http",
         ),
         (
             "https://www.example.com",
@@ -234,8 +234,8 @@ def test_apply_text_transformations() -> None:
         ),
         (
             "[label] https://example.com",
-            "[label](https://www.example.com)",
-            "Markdown link formatted and URL normalized",
+            "[label](https://example.com)",
+            "Markdown link formatted without adding www",
         ),
         (
             "&uuml;ber  d.j.  with  spaces",

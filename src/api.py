@@ -682,6 +682,7 @@ class OmekaAPI:
         output_dir: Path | str | None = None,
         apply_whitespace_normalization: bool = True,
         apply_all_transformations: bool = False,
+        upgrade_https: bool = True,
     ) -> dict[str, Any]:
         """
         Apply transformations to downloaded data files.
@@ -698,6 +699,8 @@ class OmekaAPI:
             apply_all_transformations: Apply all comprehensive transformations
                 including Unicode NFC, HTML entities, Markdown links,
                 abbreviations, URL normalization, etc. (default: False)
+            upgrade_https: Upgrade HTTP URLs to HTTPS where available
+                (default: True, only applies when apply_all_transformations=True)
 
         Returns:
             Dictionary with transformation summary:
@@ -759,7 +762,7 @@ class OmekaAPI:
         if apply_all_transformations:
             # Apply comprehensive transformations (includes whitespace)
             item_set, items, all_media = transform_item_set_data(
-                item_set, items, all_media, apply_all=True
+                item_set, items, all_media, apply_all=True, upgrade_https=upgrade_https
             )
             transformations_applied.extend(
                 [
@@ -769,13 +772,15 @@ class OmekaAPI:
                     "abbreviation_normalization",
                     "markdown_link_formatting",
                     "wikidata_url_normalization",
-                    "url_normalization",
                 ]
             )
+            if upgrade_https:
+                transformations_applied.append("http_to_https_upgrade")
+            transformations_applied.append("url_normalization")
         elif apply_whitespace_normalization:
             # Apply only whitespace normalization
             item_set, items, all_media = transform_item_set_data(
-                item_set, items, all_media, apply_all=False
+                item_set, items, all_media, apply_all=False, upgrade_https=False
             )
             transformations_applied.append("whitespace_normalization")
 
