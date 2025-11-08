@@ -935,20 +935,30 @@ class OmekaAPI:
             "dry_run": dry_run,
         }
 
-        # First validate all files
+        # First validate all files (non-blocking; log but continue)
         validation = self.validate_offline_files(directory)
+        result["pre_validation"] = {
+            "items_validated": validation["items_validated"],
+            "items_valid": validation["items_valid"],
+            "media_validated": validation["media_validated"],
+            "media_valid": validation["media_valid"],
+            "items_errors_count": len(validation["items_errors"]),
+            "media_errors_count": len(validation["media_errors"]),
+            "overall_valid": validation["overall_valid"],
+        }
         if not validation["overall_valid"]:
             result["errors"].append(
                 {
-                    "type": "validation_failed",
-                    "message": "Validation failed - cannot proceed with upload",
+                    "type": "pre_validation",
+                    "message": (
+                        "Offline validation found issues; proceeding with upload"
+                    ),
                     "validation_errors": {
                         "items": validation["items_errors"],
                         "media": validation["media_errors"],
                     },
                 }
             )
-            return result
 
         # Helper to choose among multiple candidate filenames
         def choose_file(dirpath: Path, candidates: list[str]) -> Path | None:

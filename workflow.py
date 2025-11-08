@@ -15,6 +15,7 @@ Notes:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -31,15 +32,23 @@ def download_data(args: argparse.Namespace) -> int:
     print("=" * 80)
     print("DOWNLOAD DATA")
     print("=" * 80)
-    print(f"Base URL: {args.base_url}")
+    base_url = args.base_url or os.getenv("OMEKA_URL")
+    if not base_url:
+        print("✗ Error: Base URL not provided. Use --base-url or set OMEKA_URL in .env")
+        return 1
+    print(f"Base URL: {base_url}")
     print(f"Item Set ID: {args.item_set_id}")
     print(f"Output directory: {args.output}")
     print()
 
+    # Credentials optional for download; pull from env if not provided
+    key_identity = args.key_identity or os.getenv("KEY_IDENTITY")
+    key_credential = args.key_credential or os.getenv("KEY_CREDENTIAL")
+
     with OmekaAPI(
-        args.base_url,
-        key_identity=args.key_identity,
-        key_credential=args.key_credential,
+        base_url,
+        key_identity=key_identity,
+        key_credential=key_credential,
     ) as api:
         result = api.download_item_set(
             item_set_id=args.item_set_id,
@@ -74,7 +83,9 @@ def transform_data(args: argparse.Namespace) -> int:
     print(f"Output directory: {args.output or 'same as input parent'}")
     print()
 
-    with OmekaAPI(args.base_url or "https://omeka.unibe.ch") as api:
+    with OmekaAPI(
+        args.base_url or os.getenv("OMEKA_URL") or "https://omeka.unibe.ch"
+    ) as api:
         result = api.apply_transformations(
             input_dir=args.input_dir,
             output_dir=args.output,
@@ -150,7 +161,9 @@ def upload_data(args: argparse.Namespace) -> int:
     print("=" * 80)
     print("UPLOAD TRANSFORMED DATA")
     print("=" * 80)
-    print(f"Base URL: {args.base_url}")
+    # Determine base URL and credentials (prefer args, fall back to env)
+    base_url = args.base_url or os.getenv("OMEKA_URL")
+    print(f"Base URL: {base_url}")
     print(f"Directory: {args.directory}")
     print(f"Dry run: {args.dry_run}")
     print()
@@ -159,16 +172,22 @@ def upload_data(args: argparse.Namespace) -> int:
         print("⚠ DRY RUN MODE - No changes will be made")
         print()
 
-    if not args.key_identity or not args.key_credential:
-        print("✗ Error: API credentials required for upload")
-        print("  Use --key-identity and --key-credential")
-        print("  Or set KEY_IDENTITY and KEY_CREDENTIAL in .env file")
+    env_key_identity = os.getenv("KEY_IDENTITY")
+    env_key_credential = os.getenv("KEY_CREDENTIAL")
+
+    key_identity = args.key_identity or env_key_identity
+    key_credential = args.key_credential or env_key_credential
+
+    if not key_identity or not key_credential or not base_url:
+        print("✗ Error: API credentials and base URL required for upload")
+        print("  Provide --base-url, --key-identity, --key-credential")
+        print("  Or set OMEKA_URL[_V4], KEY_IDENTITY[_V4], KEY_CREDENTIAL[_V4] in .env")
         return 1
 
     with OmekaAPI(
-        args.base_url,
-        key_identity=args.key_identity,
-        key_credential=args.key_credential,
+        base_url,
+        key_identity=key_identity,
+        key_credential=key_credential,
     ) as api:
         result = api.upload_transformed_data(
             directory=args.directory,
@@ -183,9 +202,23 @@ def upload_data(args: argparse.Namespace) -> int:
         print(f"Media updated: {result['media_updated']}")
         print(f"Media failed: {result['media_failed']}")
 
+        # Show pre-validation summary if available
+        pre = result.get("pre_validation")
+        if pre:
+            print()
+            print("Pre-validation summary (non-blocking):")
+            print(
+                f"  Items: {pre['items_valid']}/{pre['items_validated']} valid; "
+                f"Errors: {pre['items_errors_count']}"
+            )
+            print(
+                f"  Media: {pre['media_valid']}/{pre['media_validated']} valid; "
+                f"Errors: {pre['media_errors_count']}"
+            )
+
         if result["errors"]:
             print()
-            print("Errors:")
+            print("Warnings/Errors:")
             for error in result["errors"]:
                 error_type = error.get("type", "unknown")
                 error_msg = error.get("message", "Unknown error")
@@ -196,7 +229,11 @@ def upload_data(args: argparse.Namespace) -> int:
             print("✓ Dry run completed - no changes were made")
             print("  To actually upload, run again with --no-dry-run")
             return 0
-        elif result["items_failed"] == 0 and result["media_failed"] == 0:
+        elif (
+            result["items_failed"] == 0
+            and result["media_failed"] == 0
+            and not result["errors"]
+        ):
             print()
             print("✓ Upload completed successfully")
             return 0
@@ -245,8 +282,7 @@ For more information, see the documentation.
     )
     download_parser.add_argument(
         "--base-url",
-        required=True,
-        help="Base URL of the Omeka S instance",
+        help="Base URL of the Omeka S instance (defaults to $OMEKA_URL)",
     )
     download_parser.add_argument(
         "--item-set-id",
@@ -321,8 +357,9 @@ For more information, see the documentation.
     )
     upload_parser.add_argument(
         "--base-url",
-        required=True,
-        help="Base URL of the Omeka S instance",
+        help=(
+            "Base URL of the Omeka S instance (defaults to $OMEKA_URL)"
+        ),
     )
     upload_parser.add_argument(
         "--key-identity",

@@ -508,6 +508,61 @@ uv run python workflow.py upload my_edits/transformed_itemset_10780_*/ \
   --no-dry-run
 ```
 
+#### End-to-end with .env (v3 ➜ v4)
+
+Use environment variables to avoid passing flags. Populate `.env` with both v3 and v4 credentials:
+
+```env
+# Source (v3)
+OMEKA_URL="https://omeka.unibe.ch/"
+KEY_IDENTITY=your_v3_key
+KEY_CREDENTIAL=your_v3_secret
+
+# Target (v4)
+OMEKA_URL_V4="https://omeka.unibe.ch/v4/"
+KEY_IDENTITY_V4=your_v4_key
+KEY_CREDENTIAL_V4=your_v4_secret
+```
+
+Then run the full workflow without flags (the CLI reads .env automatically):
+
+```bash
+# 1) Download raw data from v3 using $OMEKA_URL, $KEY_IDENTITY, $KEY_CREDENTIAL
+uv run python workflow.py download --item-set-id 10780 --output data/
+
+# 2) Transform the downloaded directory (auto-detects latest raw folder)
+latest_raw_dir=$(ls -dt data/raw_itemset_10780_* | head -n 1)
+uv run python workflow.py transform "$latest_raw_dir"
+
+# 3) Optional: Validate transformed files
+latest_tx_dir=$(ls -dt data/transformed_itemset_10780_* | head -n 1)
+uv run python workflow.py validate "$latest_tx_dir"
+
+# 4) Upload to v4 using $OMEKA_URL_V4, $KEY_IDENTITY_V4, $KEY_CREDENTIAL_V4
+#    Start with a dry-run to preview changes
+uv run python workflow.py upload "$latest_tx_dir" --dry-run --base-url "$OMEKA_URL_V4" --key-identity "$KEY_IDENTITY_V4" --key-credential "$KEY_CREDENTIAL_V4"
+
+# 5) Upload for real (non-blocking validation; logs errors, continues)
+uv run python workflow.py upload "$latest_tx_dir" --no-dry-run --base-url "$OMEKA_URL_V4" --key-identity "$KEY_IDENTITY_V4" --key-credential "$KEY_CREDENTIAL_V4"
+```
+
+### Notes
+
+- Download and transform are read-only and can omit credentials.
+- Upload requires credentials; the CLI prefers v4 env vars when the base URL contains `/v4` or when `$OMEKA_URL_V4` is set.
+- Validation during upload is non-blocking: errors are logged and the upload proceeds. Review the pre-validation summary and warnings in the output.
+
+### Important: v3 to v4 Migration Limitations
+
+⚠️ **The upload workflow updates existing resources by ID.** It does **not** create new items or media in the target instance.
+
+If you're migrating from v3 to v4:
+
+- Items/media must already exist in v4 with the same IDs from v3
+- Upload will return 404 errors for any IDs that don't exist in v4
+- To migrate to a fresh v4 instance, you need to **create** resources first (not covered by this tool)
+- This workflow is designed for updating/syncing existing resources, not full data migration
+
 **Security Note:** API credentials are required for uploading. Store them in a `.env` file:
 
 ```bash
