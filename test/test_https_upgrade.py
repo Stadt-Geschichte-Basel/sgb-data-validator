@@ -75,17 +75,12 @@ def test_upgrade_http_to_https_in_markdown_links():
 def test_upgrade_http_to_https_multiple_urls():
     """Test upgrading multiple HTTP URLs in the same text."""
     text = (
-        "Visit http://www.example.com and http://www.example.org "
-        "for more information"
+        "Visit http://www.example.com and http://www.example.org for more information"
     )
     result = upgrade_http_to_https(text)
     # Both should be upgraded if HTTPS is available
-    assert (
-        "https://www.example.com" in result or "http://www.example.com" in result
-    )
-    assert (
-        "https://www.example.org" in result or "http://www.example.org" in result
-    )
+    assert "https://www.example.com" in result or "http://www.example.com" in result
+    assert "https://www.example.org" in result or "http://www.example.org" in result
 
 
 @pytest.mark.slow

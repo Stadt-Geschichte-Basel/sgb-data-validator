@@ -51,7 +51,7 @@ def unified_inline_diff(a: str, b: str, max_len: int = 300) -> str:
     )
     joined = "".join(diff_lines)
     if len(joined) > max_len:
-        return joined[: max_len] + "... (truncated)"
+        return joined[:max_len] + "... (truncated)"
     return joined
 
 

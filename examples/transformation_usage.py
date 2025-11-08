@@ -134,15 +134,16 @@ def example_transformation_workflow() -> None:
             output_dir="transformations",
             apply_whitespace_normalization=True,
         )
-        tx_dir = transform['saved_to']['directory']
+        tx_dir = transform["saved_to"]["directory"]
         print(f"Step 3: Saved transformed data to: {tx_dir}")
-        tx_list = transform['transformations_applied']
+        tx_list = transform["transformations_applied"]
         print(f"Step 4: Applied transformations: {tx_list}")
 
         print("\nStep 4: Validating transformed data...")
         # Validate a sample of transformed items from file
         import json
         import os
+
         transformed_dir = transform["saved_to"]["directory"]
         items_path = os.path.join(transformed_dir, "items_transformed.json")
         items_list = json.load(open(items_path))

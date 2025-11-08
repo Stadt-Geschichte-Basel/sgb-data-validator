@@ -114,7 +114,9 @@ def test_validate_offline_files() -> bool:
         result = api.validate_offline_files(tmppath)
 
         # Assert validation passed
-        assert result["overall_valid"], f"Validation should pass. Errors: items={result['items_errors']}, media={result['media_errors']}"
+        assert result["overall_valid"], (
+            f"Validation should pass. Errors: items={result['items_errors']}, media={result['media_errors']}"
+        )
         print(f"  ✓ Validated {result['items_validated']} items")
         print(f"  ✓ Validated {result['media_validated']} media")
         print("  ✓ All files are valid")
@@ -172,10 +174,12 @@ def test_validate_invalid_files() -> bool:
         result = api.validate_offline_files(tmppath)
 
         # Assert validation detected errors
-        assert not result["overall_valid"], "Validation should have failed for invalid items"
-        assert (
-            len(result["items_errors"]) > 0 or len(result["media_errors"]) > 0
-        ), "Should have detected validation errors"
+        assert not result["overall_valid"], (
+            "Validation should have failed for invalid items"
+        )
+        assert len(result["items_errors"]) > 0 or len(result["media_errors"]) > 0, (
+            "Should have detected validation errors"
+        )
         print(f"  ✓ Correctly detected {len(result['items_errors'])} invalid item(s)")
 
 

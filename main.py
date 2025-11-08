@@ -101,7 +101,7 @@ def main() -> int:
     print()
     print("=" * 80)
     print()
-    
+
     return 0
 
 

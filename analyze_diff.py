@@ -66,9 +66,7 @@ def find_differences(raw_data: list[dict], transformed_data: list[dict]) -> dict
 
             # Handle nested structures (like dcterms fields)
             if isinstance(raw_val, list) and isinstance(trans_val, list):
-                for raw_entry, trans_entry in itertools.zip_longest(
-                    raw_val, trans_val
-                ):
+                for raw_entry, trans_entry in itertools.zip_longest(raw_val, trans_val):
                     # Handle missing entries in nested lists
                     if raw_entry is None:
                         changes["fields_changed"] += 1
