@@ -404,7 +404,7 @@ The validator supports a complete offline workflow for data transformation and b
 Download an item set as-is. Files are saved with a raw suffix to indicate status:
 
 ```bash
-uv run python transform.py download \
+uv run python workflow.py download \
   --base-url https://omeka.unibe.ch \
   --item-set-id 10780 \
   --output data/
@@ -418,7 +418,7 @@ uv run python transform.py download \
 Apply transformations to a previously downloaded raw directory:
 
 ```bash
-uv run python transform.py transform data/raw_itemset_10780_*/
+uv run python workflow.py transform data/raw_itemset_10780_*/
 
 # Produces e.g. data/transformed_itemset_10780_YYYYMMDD_HHMMSS/
 # Files: items_transformed.json, media_transformed.json, item_set_transformed.json, transformation_metadata.json
@@ -438,7 +438,7 @@ Before uploading, validate your changes:
 
 ```bash
 # Validate offline files
-uv run python transform.py validate data/transformed_itemset_10780_*/
+uv run python workflow.py validate data/transformed_itemset_10780_*/
 
 # Output shows any validation errors
 # ✓ All files are valid and ready for upload
@@ -450,7 +450,7 @@ Test the upload without making changes:
 
 ```bash
 # Dry run (validates but doesn't upload)
-uv run python transform.py upload \
+uv run python workflow.py upload \
   data/transformed_itemset_10780_*/ \
   --base-url https://omeka.unibe.ch \
   --key-identity YOUR_KEY \
@@ -466,7 +466,7 @@ When you're ready, upload the changes:
 
 ```bash
 # Actually upload (use with caution!)
-uv run python transform.py upload \
+uv run python workflow.py upload \
   data/transformed_itemset_10780_*/ \
   --base-url https://omeka.unibe.ch \
   --key-identity YOUR_KEY \
@@ -480,28 +480,28 @@ uv run python transform.py upload \
 
 ```bash
 # 1. Download raw data
-uv run python transform.py download \
+uv run python workflow.py download \
   --base-url https://omeka.unibe.ch \
   --item-set-id 10780 \
   --output my_edits/
 
 # 2. Transform the raw directory
-uv run python transform.py transform my_edits/raw_itemset_10780_*/
+uv run python workflow.py transform my_edits/raw_itemset_10780_*/
 
 # 3. Edit files offline
 # (Open my_edits/transformed_itemset_10780_*/items_transformed.json in your editor)
 
 # 4. Validate
-uv run python transform.py validate my_edits/transformed_itemset_10780_*/
+uv run python workflow.py validate my_edits/transformed_itemset_10780_*/
 
 # 5. Dry run
-uv run python transform.py upload my_edits/transformed_itemset_10780_*/ \
+uv run python workflow.py upload my_edits/transformed_itemset_10780_*/ \
   --base-url https://omeka.unibe.ch \
   --key-identity YOUR_KEY \
   --key-credential YOUR_SECRET
 
 # 6. Upload for real
-uv run python transform.py upload my_edits/transformed_itemset_10780_*/ \
+uv run python workflow.py upload my_edits/transformed_itemset_10780_*/ \
   --base-url https://omeka.unibe.ch \
   --key-identity YOUR_KEY \
   --key-credential YOUR_SECRET \

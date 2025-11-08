@@ -366,7 +366,7 @@ The validator supports a complete offline workflow for downloading, editing, and
 **1. Download and Transform:**
 
 ```bash
-uv run python transform.py download \
+uv run python workflow.py download \
   --base-url https://omeka.unibe.ch \
   --item-set-id 10780 \
   --output data/
@@ -389,7 +389,7 @@ Edit JSON files with any text editor. The files are properly formatted for easy 
 **3. Validate Changes:**
 
 ```bash
-uv run python transform.py validate data/transformed_itemset_10780_20250115_143022/
+uv run python workflow.py validate data/transformed_itemset_10780_20250115_143022/
 ```
 
 Validates all files against the data model before upload.
@@ -397,7 +397,7 @@ Validates all files against the data model before upload.
 **4. Upload with Dry Run:**
 
 ```bash
-uv run python transform.py upload \
+uv run python workflow.py upload \
   data/transformed_itemset_10780_20250115_143022/ \
   --base-url https://omeka.unibe.ch \
   --key-identity YOUR_KEY \
@@ -410,7 +410,7 @@ Tests upload without making changes. Default mode for safety.
 **5. Upload for Real:**
 
 ```bash
-uv run python transform.py upload \
+uv run python workflow.py upload \
   data/transformed_itemset_10780_20250115_143022/ \
   --base-url https://omeka.unibe.ch \
   --key-identity YOUR_KEY \

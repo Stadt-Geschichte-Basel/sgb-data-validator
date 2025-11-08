@@ -1,10 +1,17 @@
 """
-CLI for transforming, validating, and uploading Omeka S data.
+SGB Data Workflow CLI
 
-This script provides commands for:
-- Downloading and transforming data from Omeka S
-- Validating offline JSON files
-- Uploading transformed data back to Omeka S
+Unified CLI for downloading, transforming, validating, and uploading Omeka S data.
+
+Commands:
+- download  Download raw data (no transformations) from Omeka S
+- transform Apply transformations to previously downloaded raw data
+- validate  Validate offline JSON files (raw or transformed)
+- upload    Upload transformed data back to Omeka S
+
+Notes:
+- Raw files are saved with *_raw.json
+- Transformed files are saved with *_transformed.json
 """
 
 import argparse
@@ -20,10 +27,7 @@ load_dotenv()
 
 
 def download_data(args: argparse.Namespace) -> int:
-    """Download raw data from Omeka without applying transformations.
-
-    Raw files are saved with *_raw.json suffix to clearly indicate their status.
-    """
+    """Download raw data from Omeka without applying transformations."""
     print("=" * 80)
     print("DOWNLOAD DATA")
     print("=" * 80)
@@ -55,17 +59,14 @@ def download_data(args: argparse.Namespace) -> int:
             print()
             print("Next steps:")
             directory = result["saved_to"]["directory"]
-            print(f"  To transform: python transform.py transform {directory}")
-            print(f"  To validate: python transform.py validate {directory}")
+            print(f"  To transform: python workflow.py transform {directory}")
+            print(f"  To validate: python workflow.py validate {directory}")
 
     return 0
 
 
 def transform_data(args: argparse.Namespace) -> int:
-    """Apply transformations to previously downloaded raw data.
-
-    Transformed files are saved with *_transformed.json suffix.
-    """
+    """Apply transformations to previously downloaded raw data."""
     print("=" * 80)
     print("TRANSFORM DATA")
     print("=" * 80)
@@ -82,7 +83,7 @@ def transform_data(args: argparse.Namespace) -> int:
 
         print(f"✓ Transformed {result['items_transformed']} items (transformed)")
         print(f"✓ Transformed {result['media_transformed']} media (transformed)")
-        transformations = ", ".join(result["transformations_applied"])
+        transformations = ", ".join(result["transformations_applied"]) or "(none)"
         print(f"✓ Transformations applied: {transformations}")
 
         if result["saved_to"]:
@@ -95,9 +96,9 @@ def transform_data(args: argparse.Namespace) -> int:
             print()
             print("Next steps:")
             directory = result["saved_to"]["directory"]
-            print(f"  To validate: python transform.py validate {directory}")
+            print(f"  To validate: python workflow.py validate {directory}")
             print(
-                f"  To upload: python transform.py upload {directory} "
+                f"  To upload: python workflow.py upload {directory} "
                 f"--base-url {args.base_url or 'https://omeka.unibe.ch'}"
             )
 
@@ -208,27 +209,27 @@ def upload_data(args: argparse.Namespace) -> int:
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Download, transform, validate, and upload Omeka S data",
+        description="SGB data workflow: download, transform, validate, upload",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Download raw data (no transformations)
-  python transform.py download --item-set-id 10780 --output data/ --base-url https://omeka.unibe.ch
+  python workflow.py download --item-set-id 10780 --output data/ --base-url https://omeka.unibe.ch
 
   # Transform downloaded data
-  python transform.py transform data/raw_itemset_10780_20250115/
+  python workflow.py transform data/raw_itemset_10780_20250115/
 
   # Validate offline files
-  python transform.py validate data/transformed_itemset_10780_20250115/
+  python workflow.py validate data/transformed_itemset_10780_20250115/
 
   # Upload with dry-run (validate only, no changes)
-  python transform.py upload data/transformed_itemset_10780_20250115/ --base-url https://omeka.unibe.ch
+  python workflow.py upload data/transformed_itemset_10780_20250115/ --base-url https://omeka.unibe.ch
 
   # Upload for real (requires API credentials)
-  python transform.py upload data/transformed_itemset_10780_20250115/ \\
-    --base-url https://omeka.unibe.ch \\
-    --key-identity YOUR_KEY \\
-    --key-credential YOUR_SECRET \\
+  python workflow.py upload data/transformed_itemset_10780_20250115/ \
+    --base-url https://omeka.unibe.ch \
+    --key-identity YOUR_KEY \
+    --key-credential YOUR_SECRET \
     --no-dry-run
 
 For more information, see the documentation.
