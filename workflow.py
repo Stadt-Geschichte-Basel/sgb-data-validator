@@ -90,6 +90,7 @@ def transform_data(args: argparse.Namespace) -> int:
             input_dir=args.input_dir,
             output_dir=args.output,
             apply_whitespace_normalization=not args.no_whitespace_normalization,
+            apply_all_transformations=args.all,
         )
 
         print(f"✓ Transformed {result['items_transformed']} items (transformed)")
@@ -329,6 +330,12 @@ For more information, see the documentation.
         action="store_true",
         help="Skip whitespace normalization",
     )
+    transform_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Apply all comprehensive transformations (Unicode NFC, HTML entities, "
+        "Markdown links, abbreviations, URL normalization, etc.)",
+    )
 
     # Validate command
     validate_parser = subparsers.add_parser(
@@ -357,9 +364,7 @@ For more information, see the documentation.
     )
     upload_parser.add_argument(
         "--base-url",
-        help=(
-            "Base URL of the Omeka S instance (defaults to $OMEKA_URL)"
-        ),
+        help=("Base URL of the Omeka S instance (defaults to $OMEKA_URL)"),
     )
     upload_parser.add_argument(
         "--key-identity",

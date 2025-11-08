@@ -75,11 +75,11 @@ class OmekaAPI:
 
     def _choose_file(self, directory: Path, candidates: list[str]) -> Path | None:
         """Choose the first existing file from a list of candidates.
-        
+
         Args:
             directory: Directory to search in
             candidates: List of candidate filenames
-            
+
         Returns:
             Path to first existing file, or None if none exist
         """
@@ -681,6 +681,7 @@ class OmekaAPI:
         input_dir: Path | str,
         output_dir: Path | str | None = None,
         apply_whitespace_normalization: bool = True,
+        apply_all_transformations: bool = False,
     ) -> dict[str, Any]:
         """
         Apply transformations to downloaded data files.
@@ -694,6 +695,9 @@ class OmekaAPI:
                        If None, saves in parent directory of input_dir.
             apply_whitespace_normalization: Apply whitespace normalization
                 (default: True)
+            apply_all_transformations: Apply all comprehensive transformations
+                including Unicode NFC, HTML entities, Markdown links,
+                abbreviations, URL normalization, etc. (default: False)
 
         Returns:
             Dictionary with transformation summary:
@@ -752,9 +756,26 @@ class OmekaAPI:
 
         # Apply transformations
         transformations_applied = []
-        if apply_whitespace_normalization:
+        if apply_all_transformations:
+            # Apply comprehensive transformations (includes whitespace)
             item_set, items, all_media = transform_item_set_data(
-                item_set, items, all_media
+                item_set, items, all_media, apply_all=True
+            )
+            transformations_applied.extend(
+                [
+                    "unicode_nfc_normalization",
+                    "html_entity_conversion",
+                    "whitespace_normalization",
+                    "abbreviation_normalization",
+                    "markdown_link_formatting",
+                    "wikidata_url_normalization",
+                    "url_normalization",
+                ]
+            )
+        elif apply_whitespace_normalization:
+            # Apply only whitespace normalization
+            item_set, items, all_media = transform_item_set_data(
+                item_set, items, all_media, apply_all=False
             )
             transformations_applied.append("whitespace_normalization")
 
