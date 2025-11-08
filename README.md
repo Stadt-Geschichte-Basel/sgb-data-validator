@@ -14,6 +14,7 @@ The sgb-data-validator is a Python-based tool that validates metadata quality fo
 - 🔗 **URI validation** with reachability checks
 - 📊 **CSV reports** for easy data quality review
 - 📈 **Data profiling** with interactive HTML reports
+- 🔄 **Data transformation** with whitespace normalization
 - 🔌 **Python API** for programmatic access
 - 🚀 **Fast and efficient** with asynchronous processing
 
@@ -28,24 +29,27 @@ The sgb-data-validator is a Python-based tool that validates metadata quality fo
 
 The structure of this repository follows the [Advanced Structure for Data Analysis](https://the-turing-way.netlify.app/project-design/project-repo/project-repo-advanced.html) of _The Turing Way_ and is organized as follows:
 
-```
+```text
 sgb-data-validator/
 ├── src/                    # Source code modules
 │   ├── models.py          # Pydantic data models for validation
 │   ├── vocabularies.py    # Controlled vocabulary loader and validators
 │   ├── iconclass.py       # Iconclass notation parser and validator
 │   ├── profiling.py       # Data profiling and analysis utilities
+│   ├── transformations.py # Data transformation utilities
 │   └── api.py             # Omeka S API client
 ├── test/                   # Test suite with pytest
 │   ├── test_validation.py # Core validation tests
 │   ├── test_iconclass.py  # Iconclass-specific tests
+│   ├── test_transformations.py # Transformation tests
 │   └── ...                # Additional test modules
 ├── data/                   # Data files
 │   └── raw/               # Raw input data
 │       └── vocabularies.json  # Controlled vocabularies (Era, MIME, Licenses, Iconclass)
 ├── examples/               # Usage examples and tutorials
 │   ├── api_usage.py       # API client examples
-│   └── iconclass_usage.py # Iconclass validation examples
+│   ├── iconclass_usage.py # Iconclass validation examples
+│   └── transformation_usage.py # Data transformation examples
 ├── validate.py            # Main validation script (CLI)
 ├── main.py                # Alternative entry point
 ├── pyproject.toml         # Project dependencies and metadata
@@ -247,7 +251,7 @@ Profiling features:
 
 Example profiling output:
 
-```
+```text
 analysis/
 ├── items.csv                   # Flattened items data
 ├── items_profile.html          # Interactive items report
@@ -325,6 +329,246 @@ For complete examples, see `examples/api_usage.py`:
 
 ```bash
 uv run python examples/api_usage.py
+```
+
+### Data Transformation
+
+The validator can transform and clean data by applying various transformations. This feature is useful for:
+
+- **Normalizing whitespace**: Removes non-standard Unicode whitespace characters (Issue #28)
+- **Data cleaning**: Preparing data for upload or migration
+- **Batch operations**: Applying consistent transformations across all items and media
+
+#### Whitespace Normalization (Issue #28)
+
+The whitespace normalization feature addresses common data quality issues found when copy-pasting text from PDFs:
+
+- **Soft hyphens** (U+00AD): Removed entirely
+- **Non-breaking spaces** (U+00A0, U+202F): Converted to regular spaces
+- **Zero-width characters** (U+200B, U+200C, U+200D, U+FEFF): Removed
+- **Directional formatting** (U+202A, U+202B, U+202C, U+202D, U+202E): Removed
+- **Multiple spaces**: Collapsed to single spaces
+- **Multiple line breaks**: Normalized to maximum of two (preserves paragraphs)
+
+#### Basic Usage (two-step)
+
+```python
+from src.api import OmekaAPI
+
+with OmekaAPI("https://omeka.unibe.ch") as api:
+  # 1) Download raw data (no transformations)
+  download = api.download_item_set(item_set_id=10780, output_dir="data/")
+  raw_dir = download["saved_to"]["directory"]
+
+  # 2) Apply transformations to the downloaded directory
+  transform = api.apply_transformations(
+    input_dir=raw_dir,
+    output_dir="data/",
+    apply_whitespace_normalization=True,
+  )
+
+print(f"Items transformed: {transform['items_transformed']}")
+print(f"Media transformed: {transform['media_transformed']}")
+```
+
+#### Direct Whitespace Normalization
+
+You can also normalize whitespace in text directly:
+
+```python
+from src.transformations import normalize_whitespace
+
+# Example with soft hyphens and double spaces
+text = "lange Ge\u00ADschichte  mit doppelten Leerzeichen"
+normalized = normalize_whitespace(text)
+# Result: "lange Geschichte mit doppelten Leerzeichen"
+
+# Example with directional formatting
+text = "text\u202Awith\u202Cformatting"
+normalized = normalize_whitespace(text)
+# Result: "textwithformatting"
+```
+
+For complete examples, see `examples/transformation_usage.py`:
+
+```bash
+uv run python examples/transformation_usage.py
+```
+
+### Offline Workflow: Download, Transform, Edit, and Upload
+
+The validator supports a complete offline workflow for data transformation and batch updates:
+
+#### 1. Download (raw)
+
+Download an item set as-is. Files are saved with a raw suffix to indicate status:
+
+```bash
+uv run python workflow.py download \
+  --base-url https://omeka.unibe.ch \
+  --item-set-id 10780 \
+  --output data/
+
+# Produces e.g. data/raw_itemset_10780_YYYYMMDD_HHMMSS/
+# Files: items_raw.json, media_raw.json, item_set_raw.json, download_metadata.json
+```
+
+#### 2. Transform
+
+Apply transformations to a previously downloaded raw directory:
+
+```bash
+uv run python workflow.py transform data/raw_itemset_10780_*/
+
+# Produces e.g. data/transformed_itemset_10780_YYYYMMDD_HHMMSS/
+# Files: items_transformed.json, media_transformed.json, item_set_transformed.json, transformation_metadata.json
+```
+
+#### 3. Edit Offline
+
+Edit the JSON files with any text editor:
+
+- items_transformed.json — all items in the item set
+- media_transformed.json — all media objects
+- item_set_transformed.json — item set metadata
+
+#### 4. Validate Changes
+
+Before uploading, validate your changes:
+
+```bash
+# Validate offline files
+uv run python workflow.py validate data/transformed_itemset_10780_*/
+
+# Output shows any validation errors
+# ✓ All files are valid and ready for upload
+```
+
+#### 5. Upload (Dry Run)
+
+Test the upload without making changes:
+
+```bash
+# Dry run (validates but doesn't upload)
+uv run python workflow.py upload \
+  data/transformed_itemset_10780_*/ \
+  --base-url https://omeka.unibe.ch \
+  --key-identity YOUR_KEY \
+  --key-credential YOUR_SECRET \
+  --dry-run
+
+# Reviews what would be updated
+```
+
+#### 6. Upload (For Real)
+
+When you're ready, upload the changes:
+
+```bash
+# Actually upload (use with caution!)
+uv run python workflow.py upload \
+  data/transformed_itemset_10780_*/ \
+  --base-url https://omeka.unibe.ch \
+  --key-identity YOUR_KEY \
+  --key-credential YOUR_SECRET \
+  --no-dry-run
+
+# ✓ Upload completed successfully
+```
+
+#### Complete Workflow Example
+
+```bash
+# 1. Download raw data
+uv run python workflow.py download \
+  --base-url https://omeka.unibe.ch \
+  --item-set-id 10780 \
+  --output my_edits/
+
+# 2. Transform the raw directory
+uv run python workflow.py transform my_edits/raw_itemset_10780_*/
+
+# 3. Edit files offline
+# (Open my_edits/transformed_itemset_10780_*/items_transformed.json in your editor)
+
+# 4. Validate
+uv run python workflow.py validate my_edits/transformed_itemset_10780_*/
+
+# 5. Dry run
+uv run python workflow.py upload my_edits/transformed_itemset_10780_*/ \
+  --base-url https://omeka.unibe.ch \
+  --key-identity YOUR_KEY \
+  --key-credential YOUR_SECRET
+
+# 6. Upload for real
+uv run python workflow.py upload my_edits/transformed_itemset_10780_*/ \
+  --base-url https://omeka.unibe.ch \
+  --key-identity YOUR_KEY \
+  --key-credential YOUR_SECRET \
+  --no-dry-run
+```
+
+#### End-to-end with .env (v3 ➜ v4)
+
+Use environment variables to avoid passing flags. Populate `.env` with both v3 and v4 credentials:
+
+```env
+# Source (v3)
+OMEKA_URL="https://omeka.unibe.ch/"
+KEY_IDENTITY=your_v3_key
+KEY_CREDENTIAL=your_v3_secret
+
+# Target (v4)
+OMEKA_URL_V4="https://omeka.unibe.ch/v4/"
+KEY_IDENTITY_V4=your_v4_key
+KEY_CREDENTIAL_V4=your_v4_secret
+```
+
+Then run the full workflow without flags (the CLI reads .env automatically):
+
+```bash
+# 1) Download raw data from v3 using $OMEKA_URL, $KEY_IDENTITY, $KEY_CREDENTIAL
+uv run python workflow.py download --item-set-id 10780 --output data/
+
+# 2) Transform the downloaded directory (auto-detects latest raw folder)
+latest_raw_dir=$(ls -dt data/raw_itemset_10780_* | head -n 1)
+uv run python workflow.py transform "$latest_raw_dir"
+
+# 3) Optional: Validate transformed files
+latest_tx_dir=$(ls -dt data/transformed_itemset_10780_* | head -n 1)
+uv run python workflow.py validate "$latest_tx_dir"
+
+# 4) Upload to v4 using $OMEKA_URL_V4, $KEY_IDENTITY_V4, $KEY_CREDENTIAL_V4
+#    Start with a dry-run to preview changes
+uv run python workflow.py upload "$latest_tx_dir" --dry-run --base-url "$OMEKA_URL_V4" --key-identity "$KEY_IDENTITY_V4" --key-credential "$KEY_CREDENTIAL_V4"
+
+# 5) Upload for real (non-blocking validation; logs errors, continues)
+uv run python workflow.py upload "$latest_tx_dir" --no-dry-run --base-url "$OMEKA_URL_V4" --key-identity "$KEY_IDENTITY_V4" --key-credential "$KEY_CREDENTIAL_V4"
+```
+
+### Notes
+
+- Download and transform are read-only and can omit credentials.
+- Upload requires credentials; the CLI prefers v4 env vars when the base URL contains `/v4` or when `$OMEKA_URL_V4` is set.
+- Validation during upload is non-blocking: errors are logged and the upload proceeds. Review the pre-validation summary and warnings in the output.
+
+### Important: v3 to v4 Migration Limitations
+
+⚠️ **The upload workflow updates existing resources by ID.** It does **not** create new items or media in the target instance.
+
+If you're migrating from v3 to v4:
+
+- Items/media must already exist in v4 with the same IDs from v3
+- Upload will return 404 errors for any IDs that don't exist in v4
+- To migrate to a fresh v4 instance, you need to **create** resources first (not covered by this tool)
+- This workflow is designed for updating/syncing existing resources, not full data migration
+
+**Security Note:** API credentials are required for uploading. Store them in a `.env` file:
+
+```bash
+# .env file
+KEY_IDENTITY=your_key_identity
+KEY_CREDENTIAL=your_key_credential
 ```
 
 ### Troubleshooting

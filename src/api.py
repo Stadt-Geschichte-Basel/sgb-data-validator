@@ -73,6 +73,22 @@ class OmekaAPI:
             params["key_credential"] = self.key_credential
         return params
 
+    def _choose_file(self, directory: Path, candidates: list[str]) -> Path | None:
+        """Choose the first existing file from a list of candidates.
+        
+        Args:
+            directory: Directory to search in
+            candidates: List of candidate filenames
+            
+        Returns:
+            Path to first existing file, or None if none exist
+        """
+        for name in candidates:
+            p = directory / name
+            if p.exists():
+                return p
+        return None
+
     def get_item_set(self, item_set_id: int) -> dict[str, Any]:
         """
         Get a single item set by ID.
@@ -473,11 +489,11 @@ class OmekaAPI:
         self, item_id: int, data: dict[str, Any], dry_run: bool = True
     ) -> dict[str, Any]:
         """
-        Update an item (placeholder - requires write access).
+        Update an item in Omeka S.
 
         Args:
             item_id: The ID of the item to update
-            data: The data to update
+            data: The item data to update
             dry_run: If True, only validate without updating
 
         Returns:
@@ -494,11 +510,26 @@ class OmekaAPI:
             "updated": False,
         }
 
-        if not dry_run and is_valid:
-            result["message"] = (
-                "Update requires write access to Omeka S API. "
-                "This feature needs to be implemented based on your API permissions."
-            )
+        if not is_valid:
+            return result
+
+        if dry_run:
+            result["message"] = "Dry run - validation passed, no changes made"
+            return result
+
+        # Perform the actual update
+        url = f"{self.base_url}/api/items/{item_id}"
+        params = self._add_auth_params({})
+
+        try:
+            response = self.client.put(url, json=data, params=params)
+            response.raise_for_status()
+            result["updated"] = True
+            result["message"] = "Item updated successfully"
+        except httpx.HTTPStatusError as e:
+            result["message"] = f"Failed to update item: {e}"
+        except Exception as e:
+            result["message"] = f"Error updating item: {e}"
 
         return result
 
@@ -506,11 +537,11 @@ class OmekaAPI:
         self, media_id: int, data: dict[str, Any], dry_run: bool = True
     ) -> dict[str, Any]:
         """
-        Update a media resource (placeholder - requires write access).
+        Update a media resource in Omeka S.
 
         Args:
             media_id: The ID of the media to update
-            data: The data to update
+            data: The media data to update
             dry_run: If True, only validate without updating
 
         Returns:
@@ -527,10 +558,502 @@ class OmekaAPI:
             "updated": False,
         }
 
-        if not dry_run and is_valid:
-            result["message"] = (
-                "Update requires write access to Omeka S API. "
-                "This feature needs to be implemented based on your API permissions."
+        if not is_valid:
+            return result
+
+        if dry_run:
+            result["message"] = "Dry run - validation passed, no changes made"
+            return result
+
+        # Perform the actual update
+        url = f"{self.base_url}/api/media/{media_id}"
+        params = self._add_auth_params({})
+
+        try:
+            response = self.client.put(url, json=data, params=params)
+            response.raise_for_status()
+            result["updated"] = True
+            result["message"] = "Media updated successfully"
+        except httpx.HTTPStatusError as e:
+            result["message"] = f"Failed to update media: {e}"
+        except Exception as e:
+            result["message"] = f"Error updating media: {e}"
+
+        return result
+
+    # =========================================================================
+    # DOWNLOAD OPERATIONS
+    # =========================================================================
+
+    def download_item_set(
+        self,
+        item_set_id: int,
+        output_dir: Path | str,
+    ) -> dict[str, Any]:
+        """
+        Download all items and media in an item set without transformations.
+
+        Downloads raw data from the item set and saves it to files with
+        'raw' prefix to indicate untransformed status.
+
+        Args:
+            item_set_id: The ID of the item set to download
+            output_dir: Directory to save downloaded data
+
+        Returns:
+            Dictionary with download summary:
+            {
+                "item_set_id": int,
+                "items_downloaded": int,
+                "media_downloaded": int,
+                "saved_to": dict,  # file paths
+            }
+        """
+        # Get the item set data
+        item_set = self.get_item_set(item_set_id)
+
+        # Get all items and media
+        items = self.get_items_from_set(item_set_id)
+
+        # Get all media for all items
+        all_media = []
+        for item in items:
+            item_id = item.get("o:id")
+            if item_id:
+                try:
+                    media = self.get_media_from_item(item_id)
+                    all_media.extend(media)
+                except httpx.HTTPStatusError as e:
+                    print(f"⚠️  Failed to fetch media for item {item_id}: {e}")
+                    continue
+
+        # Save to files
+        output_path = Path(output_dir)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dir_name = f"raw_itemset_{item_set_id}_{timestamp}"
+        download_dir = output_path / dir_name
+        download_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save raw data (status indicated in filenames)
+        item_set_file = download_dir / "item_set_raw.json"
+        items_file = download_dir / "items_raw.json"
+        media_file = download_dir / "media_raw.json"
+
+        self.save_to_file(item_set, item_set_file)
+        self.save_to_file(items, items_file)
+        self.save_to_file(all_media, media_file)
+
+        # Save download metadata
+        metadata = {
+            "item_set_id": item_set_id,
+            "timestamp": timestamp,
+            "status": "raw",
+            "items_count": len(items),
+            "media_count": len(all_media),
+            "files": {
+                "item_set": str(item_set_file.relative_to(output_path)),
+                "items": str(items_file.relative_to(output_path)),
+                "media": str(media_file.relative_to(output_path)),
+            },
+        }
+        metadata_file = download_dir / "download_metadata.json"
+        self.save_to_file(metadata, metadata_file)
+
+        return {
+            "item_set_id": item_set_id,
+            "items_downloaded": len(items),
+            "media_downloaded": len(all_media),
+            "saved_to": {
+                "directory": download_dir,
+                "item_set": item_set_file,
+                "items": items_file,
+                "media": media_file,
+                "metadata": metadata_file,
+            },
+        }
+
+    # =========================================================================
+    # TRANSFORMATION OPERATIONS
+    # =========================================================================
+
+    def apply_transformations(
+        self,
+        input_dir: Path | str,
+        output_dir: Path | str | None = None,
+        apply_whitespace_normalization: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Apply transformations to downloaded data files.
+
+        Loads data from input files, applies transformations,
+        and saves transformed data to output files with 'transformed' prefix.
+
+        Args:
+            input_dir: Directory containing raw data files (items.json, media.json)
+            output_dir: Directory to save transformed data.
+                       If None, saves in parent directory of input_dir.
+            apply_whitespace_normalization: Apply whitespace normalization
+                (default: True)
+
+        Returns:
+            Dictionary with transformation summary:
+            {
+                "items_transformed": int,
+                "media_transformed": int,
+                "transformations_applied": list[str],
+                "saved_to": dict,  # file paths
+            }
+        """
+        from src.transformations import transform_item_set_data
+
+        input_path = Path(input_dir)
+
+        # Load raw data from files (support multiple naming conventions)
+        # Prefer explicitly suffixed raw files, then generic names
+        item_set_file = (
+            input_path / "item_set_raw.json"
+            if (input_path / "item_set_raw.json").exists()
+            else input_path / "item_set.json"
+        )
+        items_file = (
+            input_path / "items_raw.json"
+            if (input_path / "items_raw.json").exists()
+            else input_path / "items.json"
+        )
+        media_file = (
+            input_path / "media_raw.json"
+            if (input_path / "media_raw.json").exists()
+            else input_path / "media.json"
+        )
+
+        if not items_file.exists():
+            raise FileNotFoundError(f"Items file not found: {items_file}")
+
+        # Load the data
+        item_set = self.load_from_file(item_set_file) if item_set_file.exists() else {}
+        items = self.load_from_file(items_file)
+        all_media = self.load_from_file(media_file) if media_file.exists() else []
+
+        # Ensure items and media are lists
+        if not isinstance(items, list):
+            items = [items]
+        if not isinstance(all_media, list):
+            all_media = [all_media]
+
+        # Load metadata to get item_set_id
+        metadata_file = input_path / "download_metadata.json"
+        item_set_id = None
+        if metadata_file.exists():
+            metadata = self.load_from_file(metadata_file)
+            item_set_id = metadata.get("item_set_id")
+        else:
+            # Try to get from item_set data
+            item_set_id = item_set.get("o:id") if item_set else None
+
+        # Apply transformations
+        transformations_applied = []
+        if apply_whitespace_normalization:
+            item_set, items, all_media = transform_item_set_data(
+                item_set, items, all_media
             )
+            transformations_applied.append("whitespace_normalization")
+
+        # Determine output directory
+        if output_dir is None:
+            output_path = input_path.parent
+        else:
+            output_path = Path(output_dir)
+
+        # Create output directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if item_set_id:
+            dir_name = f"transformed_itemset_{item_set_id}_{timestamp}"
+        else:
+            dir_name = f"transformed_{timestamp}"
+        transform_dir = output_path / dir_name
+        transform_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save transformed data
+        # Use suffixed filenames to indicate transformed status
+        out_item_set_file = transform_dir / "item_set_transformed.json"
+        out_items_file = transform_dir / "items_transformed.json"
+        out_media_file = transform_dir / "media_transformed.json"
+
+        if item_set:
+            self.save_to_file(item_set, out_item_set_file)
+        self.save_to_file(items, out_items_file)
+        self.save_to_file(all_media, out_media_file)
+
+        # Save transformation metadata
+        metadata = {
+            "item_set_id": item_set_id,
+            "timestamp": timestamp,
+            "status": "transformed",
+            "source_directory": str(input_path),
+            "items_count": len(items),
+            "media_count": len(all_media),
+            "transformations_applied": transformations_applied,
+            "files": {
+                "item_set": str(out_item_set_file.relative_to(output_path)),
+                "items": str(out_items_file.relative_to(output_path)),
+                "media": str(out_media_file.relative_to(output_path)),
+            },
+        }
+        metadata_file = transform_dir / "transformation_metadata.json"
+        self.save_to_file(metadata, metadata_file)
+
+        return {
+            "items_transformed": len(items),
+            "media_transformed": len(all_media),
+            "transformations_applied": transformations_applied,
+            "saved_to": {
+                "directory": transform_dir,
+                "item_set": out_item_set_file if item_set else None,
+                "items": out_items_file,
+                "media": out_media_file,
+                "metadata": metadata_file,
+            },
+        }
+
+    # =========================================================================
+    # OFFLINE FILE OPERATIONS
+    # =========================================================================
+
+    def validate_offline_files(self, directory: Path | str) -> dict[str, Any]:
+        """
+        Validate transformed data from offline JSON files.
+
+        Args:
+            directory: Directory containing the transformed data files
+                      (items.json, media.json, and optionally item_set.json)
+
+        Returns:
+            Dictionary with validation results:
+            {
+                "items_validated": int,
+                "items_valid": int,
+                "items_errors": list[dict],
+                "media_validated": int,
+                "media_valid": int,
+                "media_errors": list[dict],
+                "overall_valid": bool,
+            }
+        """
+        directory = Path(directory)
+
+        result = {
+            "items_validated": 0,
+            "items_valid": 0,
+            "items_errors": [],
+            "media_validated": 0,
+            "media_valid": 0,
+            "media_errors": [],
+            "overall_valid": True,
+        }
+
+        # Validate items
+        items_file = self._choose_file(
+            directory,
+            [
+                "items_transformed.json",
+                "items.json",
+                "items_raw.json",
+            ],
+        )
+        if items_file and items_file.exists():
+            items = self.load_from_file(items_file)
+            if not isinstance(items, list):
+                items = [items]
+
+            for item in items:
+                result["items_validated"] += 1
+                is_valid, errors = self.validate_item(item)
+                if is_valid:
+                    result["items_valid"] += 1
+                else:
+                    result["overall_valid"] = False
+                    result["items_errors"].append(
+                        {
+                            "item_id": item.get("o:id"),
+                            "errors": errors,
+                        }
+                    )
+
+        # Validate media
+        media_file = self._choose_file(
+            directory,
+            [
+                "media_transformed.json",
+                "media.json",
+                "media_raw.json",
+            ],
+        )
+        if media_file and media_file.exists():
+            media_list = self.load_from_file(media_file)
+            if not isinstance(media_list, list):
+                media_list = [media_list]
+
+            for media in media_list:
+                result["media_validated"] += 1
+                is_valid, errors = self.validate_media(media)
+                if is_valid:
+                    result["media_valid"] += 1
+                else:
+                    result["overall_valid"] = False
+                    result["media_errors"].append(
+                        {
+                            "media_id": media.get("o:id"),
+                            "errors": errors,
+                        }
+                    )
+
+        return result
+
+    def upload_transformed_data(
+        self,
+        directory: Path | str,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Upload transformed data from offline files back to Omeka S.
+
+        Args:
+            directory: Directory containing the transformed data files
+            dry_run: If True, only validate without uploading (default: True)
+
+        Returns:
+            Dictionary with upload results:
+            {
+                "items_processed": int,
+                "items_updated": int,
+                "items_failed": int,
+                "media_processed": int,
+                "media_updated": int,
+                "media_failed": int,
+                "errors": list[dict],
+                "dry_run": bool,
+            }
+        """
+        directory = Path(directory)
+
+        result = {
+            "items_processed": 0,
+            "items_updated": 0,
+            "items_failed": 0,
+            "media_processed": 0,
+            "media_updated": 0,
+            "media_failed": 0,
+            "errors": [],
+            "dry_run": dry_run,
+        }
+
+        # First validate all files (non-blocking; log but continue)
+        validation = self.validate_offline_files(directory)
+        result["pre_validation"] = {
+            "items_validated": validation["items_validated"],
+            "items_valid": validation["items_valid"],
+            "media_validated": validation["media_validated"],
+            "media_valid": validation["media_valid"],
+            "items_errors_count": len(validation["items_errors"]),
+            "media_errors_count": len(validation["media_errors"]),
+            "overall_valid": validation["overall_valid"],
+        }
+        if not validation["overall_valid"]:
+            result["errors"].append(
+                {
+                    "type": "pre_validation",
+                    "message": (
+                        "Offline validation found issues; proceeding with upload"
+                    ),
+                    "validation_errors": {
+                        "items": validation["items_errors"],
+                        "media": validation["media_errors"],
+                    },
+                }
+            )
+
+        # Upload items
+        items_file = self._choose_file(
+            directory,
+            [
+                "items_transformed.json",
+                "items.json",
+                "items_raw.json",
+            ],
+        )
+        if items_file and items_file.exists():
+            items = self.load_from_file(items_file)
+            if not isinstance(items, list):
+                items = [items]
+
+            for item in items:
+                result["items_processed"] += 1
+                item_id = item.get("o:id")
+                if not item_id:
+                    result["items_failed"] += 1
+                    result["errors"].append(
+                        {
+                            "type": "item",
+                            "message": "Item missing o:id field",
+                        }
+                    )
+                    continue
+
+                update_result = self.update_item(item_id, item, dry_run=dry_run)
+                if update_result["updated"] or (
+                    dry_run and update_result["validation_passed"]
+                ):
+                    result["items_updated"] += 1
+                else:
+                    result["items_failed"] += 1
+                    result["errors"].append(
+                        {
+                            "type": "item",
+                            "item_id": item_id,
+                            "message": update_result.get("message", "Unknown error"),
+                        }
+                    )
+
+        # Upload media
+        media_file = self._choose_file(
+            directory,
+            [
+                "media_transformed.json",
+                "media.json",
+                "media_raw.json",
+            ],
+        )
+        if media_file and media_file.exists():
+            media_list = self.load_from_file(media_file)
+            if not isinstance(media_list, list):
+                media_list = [media_list]
+
+            for media in media_list:
+                result["media_processed"] += 1
+                media_id = media.get("o:id")
+                if not media_id:
+                    result["media_failed"] += 1
+                    result["errors"].append(
+                        {
+                            "type": "media",
+                            "message": "Media missing o:id field",
+                        }
+                    )
+                    continue
+
+                update_result = self.update_media(media_id, media, dry_run=dry_run)
+                if update_result["updated"] or (
+                    dry_run and update_result["validation_passed"]
+                ):
+                    result["media_updated"] += 1
+                else:
+                    result["media_failed"] += 1
+                    result["errors"].append(
+                        {
+                            "type": "media",
+                            "media_id": media_id,
+                            "message": update_result.get("message", "Unknown error"),
+                        }
+                    )
 
         return result

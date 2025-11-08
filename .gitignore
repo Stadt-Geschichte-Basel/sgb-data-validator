@@ -4,6 +4,14 @@
 **/*.quarto_ipynb
 _site/
 
+# API examples output
+examples/output/
+examples/backups/
+
+# Validation reports
+validation_reports/
+analysis/
+
 # Exclude example.env
 !example.env
 
@@ -485,11 +493,3 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/r,git,node,linux,macos,dotenv,python,windows,visualstudiocode
-
-# API examples output
-examples/output/
-examples/backups/
-
-# Validation reports
-validation_reports/
-analysis/

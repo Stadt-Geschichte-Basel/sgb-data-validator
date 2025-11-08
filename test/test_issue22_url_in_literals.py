@@ -212,18 +212,12 @@ def test_url_detection_in_literal_fields():
             for warning in validator.warnings
         )
 
-        if should_warn and has_url_warning:
+        if should_warn:
+            assert has_url_warning, f"{description}: Failed to detect URL in '{field_value[:50]}'"
             print(f"  ✓ {description}: Correctly detected URL in '{field_value[:50]}'")
-        elif not should_warn and not has_url_warning:
-            print(f"  ✓ {description}: Correctly accepted '{field_value[:50]}'")
-        elif should_warn and not has_url_warning:
-            print(f"  ✗ {description}: Failed to detect URL in '{field_value[:50]}'")
-            return False
         else:
-            print(f"  ✗ {description}: False positive for '{field_value[:50]}'")
-            return False
-
-    return True
+            assert not has_url_warning, f"{description}: False positive for '{field_value[:50]}'"
+            print(f"  ✓ {description}: Correctly accepted '{field_value[:50]}'")
 
 
 def test_url_in_item_fields():
@@ -244,12 +238,9 @@ def test_url_in_item_fields():
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)
     ]
-    if len(url_warnings) > 0:
-        print("  ✓ Detected URL in dcterms:description")
-        print(f"    Warning: {url_warnings[0]}")
-    else:
-        print("  ✗ Failed to detect URL in dcterms:description")
-        return False
+    assert len(url_warnings) > 0, "Failed to detect URL in dcterms:description"
+    print("  ✓ Detected URL in dcterms:description")
+    print(f"    Warning: {url_warnings[0]}")
 
     # Test dcterms:isPartOf with URL
     validator.warnings = []
@@ -262,13 +253,8 @@ def test_url_in_item_fields():
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)
     ]
-    if len(url_warnings) > 0:
-        print("  ✓ Detected URL in dcterms:isPartOf")
-    else:
-        print("  ✗ Failed to detect URL in dcterms:isPartOf")
-        return False
-
-    return True
+    assert len(url_warnings) > 0, "Failed to detect URL in dcterms:isPartOf"
+    print("  ✓ Detected URL in dcterms:isPartOf")
 
 
 def test_url_in_media_fields():
@@ -287,14 +273,9 @@ def test_url_in_media_fields():
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)
     ]
-    if len(url_warnings) > 0:
-        print("  ✓ Detected URL in dcterms:creator")
-        print(f"    Warning: {url_warnings[0]}")
-    else:
-        print("  ✗ Failed to detect URL in dcterms:creator")
-        return False
-
-    return True
+    assert len(url_warnings) > 0, "Failed to detect URL in dcterms:creator"
+    print("  ✓ Detected URL in dcterms:creator")
+    print(f"    Warning: {url_warnings[0]}")
 
 
 def test_no_warning_for_uri_fields():
@@ -382,14 +363,8 @@ def test_no_warning_for_uri_fields():
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)
     ]
-    if len(url_warnings) == 0:
-        print("  ✓ No warnings for URI type fields (as expected)")
-    else:
-        print("  ✗ Unexpected warnings for URI type fields")
-        print(f"    Warnings: {url_warnings}")
-        return False
-
-    return True
+    assert len(url_warnings) == 0, f"Unexpected warnings for URI type fields: {url_warnings}"
+    print("  ✓ No warnings for URI type fields (as expected)")
 
 
 def test_multiple_urls_in_field():
@@ -409,14 +384,9 @@ def test_multiple_urls_in_field():
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)
     ]
-    if len(url_warnings) > 0:
-        print("  ✓ Detected multiple URLs in field")
-        print(f"    Warning: {url_warnings[0]}")
-    else:
-        print("  ✗ Failed to detect multiple URLs")
-        return False
-
-    return True
+    assert len(url_warnings) > 0, "Failed to detect multiple URLs"
+    print("  ✓ Detected multiple URLs in field")
+    print(f"    Warning: {url_warnings[0]}")
 
 
 if __name__ == "__main__":
