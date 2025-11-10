@@ -76,7 +76,22 @@ def test_normalize_markdown_links() -> None:
         (
             "(https://example.com)[label]",
             "[label](https://example.com)",
-            "Reversed format corrected",
+            "Reversed format (URL)[label] corrected",
+        ),
+        (
+            "(bunterhund Illustration)[https://bunterhund.ch/]",
+            "[bunterhund Illustration](https://bunterhund.ch/)",
+            "Reversed format (label)[URL] corrected",
+        ),
+        (
+            "[https://example.com](label)",
+            "[label](https://example.com)",
+            "Swapped [URL](label) corrected",
+        ),
+        (
+            "[https://bunterhund.ch/](bunterhund Illustration)",
+            "[bunterhund Illustration](https://bunterhund.ch/)",
+            "Swapped [URL](label) with description corrected",
         ),
         (
             "[label] https://example.com",

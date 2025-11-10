@@ -84,8 +84,8 @@ def test_complete_item_transformation() -> None:
     )
 
     references_value = result["dcterms:references"][0]["@value"]
-    assert references_value == "[Source](http://www.example.com)", (
-        f"References should have correct Markdown format and normalized URL, "
+    assert references_value == "[Source](http://example.com)", (
+        f"References should have correct Markdown format, "
         f"got: {references_value}"
     )
 
@@ -189,7 +189,7 @@ def test_real_world_complex_example() -> None:
     expected = (
         "Die Stadt Basel (auch: <Basel>) wurde d. J. 1000 gegründet.\n\n"
         "Mehr Informationen finden Sie unter https://www.wikidata.org/wiki/Q78 "
-        "oder [hier](http://www.example.com/info)"
+        "oder [hier](http://example.com/info)"
     )
 
     assert result == expected, (

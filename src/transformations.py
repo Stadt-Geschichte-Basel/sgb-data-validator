@@ -128,7 +128,11 @@ def convert_html_entities(text: str) -> str:
 def normalize_markdown_links(text: str) -> str:
     """Ensure all Markdown links are in the correct [label](URL) format.
 
-    This function detects and corrects malformed Markdown links.
+    This function detects and corrects malformed Markdown links including:
+    - (URL)[label] -> [label](URL)
+    - (label)[URL] -> [label](URL)
+    - [URL](label) -> [label](URL)
+    - [label] URL -> [label](URL)
 
     Args:
         text: The text containing Markdown links
@@ -139,8 +143,44 @@ def normalize_markdown_links(text: str) -> str:
     if not text:
         return text
 
-    # Fix links with reversed format: (URL)[label] -> [label](URL)
-    text = re.sub(r"\(([^)]+)\)\[([^\]]+)\]", r"[\2](\1)", text)
+    # Pattern to detect if something looks like a URL
+    url_pattern = r"https?://|www\.|[a-z]+\.(com|org|net|de|ch|edu|gov|io|co)"
+
+    # Fix reversed parentheses/brackets: (something)[something_else]
+    # Handles both (URL)[label] and (label)[URL]
+    def fix_reversed_parens_brackets(match: re.Match[str]) -> str:
+        content1 = match.group(1)  # Inside parentheses
+        content2 = match.group(2)  # Inside brackets
+
+        # Check which one looks like a URL
+        if re.search(url_pattern, content1, re.IGNORECASE):
+            # content1 is URL, content2 is label: (URL)[label] -> [label](URL)
+            return f"[{content2}]({content1})"
+        elif re.search(url_pattern, content2, re.IGNORECASE):
+            # content2 is URL, content1 is label: (label)[URL] -> [label](URL)
+            return f"[{content1}]({content2})"
+        else:
+            # Can't determine, keep original
+            return match.group(0)
+
+    text = re.sub(r"\(([^)]+)\)\[([^\]]+)\]", fix_reversed_parens_brackets, text)
+
+    # Fix swapped URL/label in standard Markdown: [URL](label) -> [label](URL)
+    def fix_swapped_standard_markdown(match: re.Match[str]) -> str:
+        content1 = match.group(1)  # Inside brackets
+        content2 = match.group(2)  # Inside parentheses
+
+        # Check if they're swapped (URL in brackets, label in parens)
+        if re.search(url_pattern, content1, re.IGNORECASE) and not re.search(
+            url_pattern, content2, re.IGNORECASE
+        ):
+            # content1 is URL, content2 is label: [URL](label) -> [label](URL)
+            return f"[{content2}]({content1})"
+        else:
+            # Already correct or can't determine
+            return match.group(0)
+
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", fix_swapped_standard_markdown, text)
 
     # Fix links with missing brackets: [label] URL -> [label](URL)
     # Match [label] followed by whitespace and a URL not in parentheses
