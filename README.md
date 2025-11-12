@@ -479,13 +479,10 @@ The validator supports a complete offline workflow for data transformation and b
 Download an item set as-is. Files are saved with a raw suffix to indicate status:
 
 ```bash
-uv run python workflow.py download \
-  --base-url https://omeka.unibe.ch \
-  --item-set-id 10780 \
-  --output data/
+# Download data from Omeka S (credentials optional, from .env if not provided)
+uv run python workflow.py download --item-set-id 10780
 
 # Produces e.g. data/raw_itemset_10780_YYYYMMDD_HHMMSS/
-# Files: items_raw.json, media_raw.json, item_set_raw.json, download_metadata.json
 ```
 
 #### 2. Transform
@@ -493,17 +490,13 @@ uv run python workflow.py download \
 Apply transformations to a previously downloaded raw directory:
 
 ```bash
-# Transform (ALL comprehensive transformations are applied by default)
+# Transform (ALL transformations applied by default)
 uv run python workflow.py transform data/raw_itemset_10780_*/
 
-# Transform with only whitespace normalization (Issue #28)
-uv run python workflow.py transform data/raw_itemset_10780_*/ --no-all-transformations
-
-# Skip whitespace normalization
-uv run python workflow.py transform data/raw_itemset_10780_*/ --no-whitespace-normalization
+# Or skip all transformations (just copy data)
+uv run python workflow.py transform data/raw_itemset_10780_*/ --no-transformations
 
 # Produces e.g. data/transformed_itemset_10780_YYYYMMDD_HHMMSS/
-# Files: items_transformed.json, media_transformed.json, item_set_transformed.json, transformation_metadata.json
 ```
 
 #### 3. Edit Offline
@@ -531,15 +524,10 @@ uv run python workflow.py validate data/transformed_itemset_10780_*/
 Test the upload without making changes:
 
 ```bash
-# Dry run (validates but doesn't upload)
-uv run python workflow.py upload \
-  data/transformed_itemset_10780_*/ \
-  --base-url https://omeka.unibe.ch \
-  --key-identity YOUR_KEY \
-  --key-credential YOUR_SECRET \
-  --dry-run
+# Dry run (validates but doesn't upload) - default behavior
+uv run python workflow.py upload data/transformed_itemset_10780_*/
 
-# Reviews what would be updated
+# Reviews what would be updated (uses credentials from .env)
 ```
 
 #### 6. Upload (For Real)
@@ -547,13 +535,8 @@ uv run python workflow.py upload \
 When you're ready, upload the changes:
 
 ```bash
-# Actually upload (use with caution!)
-uv run python workflow.py upload \
-  data/transformed_itemset_10780_*/ \
-  --base-url https://omeka.unibe.ch \
-  --key-identity YOUR_KEY \
-  --key-credential YOUR_SECRET \
-  --no-dry-run
+# Actually upload (requires credentials in .env or CLI args)
+uv run python workflow.py upload data/transformed_itemset_10780_*/ --no-dry-run
 
 # ✓ Upload completed successfully
 ```
@@ -562,96 +545,66 @@ uv run python workflow.py upload \
 
 ```bash
 # 1. Download raw data
-uv run python workflow.py download \
-  --base-url https://omeka.unibe.ch \
-  --item-set-id 10780 \
-  --output my_edits/
+uv run python workflow.py download --item-set-id 10780
 
 # 2. Transform the raw directory
-uv run python workflow.py transform my_edits/raw_itemset_10780_*/
+uv run python workflow.py transform data/raw_itemset_10780_*/
 
 # 3. Edit files offline
-# (Open my_edits/transformed_itemset_10780_*/items_transformed.json in your editor)
+# (Open data/transformed_itemset_10780_*/items_transformed.json in your editor)
 
 # 4. Validate
-uv run python workflow.py validate my_edits/transformed_itemset_10780_*/
+uv run python workflow.py validate data/transformed_itemset_10780_*/
 
-# 5. Dry run
-uv run python workflow.py upload my_edits/transformed_itemset_10780_*/ \
-  --base-url https://omeka.unibe.ch \
-  --key-identity YOUR_KEY \
-  --key-credential YOUR_SECRET
+# 5. Dry run (uses credentials from .env)
+uv run python workflow.py upload data/transformed_itemset_10780_*/
 
 # 6. Upload for real
-uv run python workflow.py upload my_edits/transformed_itemset_10780_*/ \
-  --base-url https://omeka.unibe.ch \
-  --key-identity YOUR_KEY \
-  --key-credential YOUR_SECRET \
-  --no-dry-run
+uv run python workflow.py upload data/transformed_itemset_10780_*/ --no-dry-run
 ```
 
-#### End-to-end with .env (v3 ➜ v4)
+#### Simplified Workflow with .env
 
-Use environment variables to avoid passing flags. Populate `.env` with both v3 and v4 credentials:
+Configure once in `.env`, then run commands without flags:
 
 ```env
-# Source (v3)
-OMEKA_URL="https://omeka.unibe.ch/"
-KEY_IDENTITY=your_v3_key
-KEY_CREDENTIAL=your_v3_secret
-
-# Target (v4)
-OMEKA_URL_V4="https://omeka.unibe.ch/v4/"
-KEY_IDENTITY_V4=your_v4_key
-KEY_CREDENTIAL_V4=your_v4_secret
+OMEKA_URL="https://omeka.unibe.ch"
+KEY_IDENTITY=your_key
+KEY_CREDENTIAL=your_secret
+ITEM_SET_ID=10780
 ```
 
-Then run the full workflow without flags (the CLI reads .env automatically):
+Then run the workflow:
 
 ```bash
-# 1) Download raw data from v3 using $OMEKA_URL, $KEY_IDENTITY, $KEY_CREDENTIAL
-uv run python workflow.py download --item-set-id 10780 --output data/
+# 1) Download (uses OMEKA_URL, optional credentials from .env)
+uv run python workflow.py download --item-set-id 10780
 
-# 2) Transform the downloaded directory (auto-detects latest raw folder)
-latest_raw_dir=$(ls -dt data/raw_itemset_10780_* | head -n 1)
-uv run python workflow.py transform "$latest_raw_dir"
+# 2) Transform (applies all transformations by default)
+uv run python workflow.py transform data/raw_itemset_10780_*/
 
-# 3) Optional: Validate transformed files
-latest_tx_dir=$(ls -dt data/transformed_itemset_10780_* | head -n 1)
-uv run python workflow.py validate "$latest_tx_dir"
+# 3) Validate
+uv run python workflow.py validate data/transformed_itemset_10780_*/
 
-# 4) Upload to v4 using $OMEKA_URL_V4, $KEY_IDENTITY_V4, $KEY_CREDENTIAL_V4
-#    Start with a dry-run to preview changes
-uv run python workflow.py upload "$latest_tx_dir" --dry-run --base-url "$OMEKA_URL_V4" --key-identity "$KEY_IDENTITY_V4" --key-credential "$KEY_CREDENTIAL_V4"
+# 4) Upload (dry-run by default, uses credentials from .env)
+uv run python workflow.py upload data/transformed_itemset_10780_*/
 
-# 5) Upload for real (non-blocking validation; logs errors, continues)
-uv run python workflow.py upload "$latest_tx_dir" --no-dry-run --base-url "$OMEKA_URL_V4" --key-identity "$KEY_IDENTITY_V4" --key-credential "$KEY_CREDENTIAL_V4"
+# 5) Upload for real
+uv run python workflow.py upload data/transformed_itemset_10780_*/ --no-dry-run
 ```
 
 ### Notes
 
-- Download and transform are read-only and can omit credentials.
-- Upload requires credentials; the CLI prefers v4 env vars when the base URL contains `/v4` or when `$OMEKA_URL_V4` is set.
-- Validation during upload is non-blocking: errors are logged and the upload proceeds. Review the pre-validation summary and warnings in the output.
+- All commands read configuration from `.env` if not provided as arguments
+- Download and transform don't require credentials for public data
+- Upload requires `OMEKA_URL`, `KEY_IDENTITY`, and `KEY_CREDENTIAL` in `.env` or as CLI arguments
+- Validation during upload is non-blocking: errors are logged and upload continues
 
-### Important: v3 to v4 Migration Limitations
+### Important Notes
 
-⚠️ **The upload workflow updates existing resources by ID.** It does **not** create new items or media in the target instance.
+**Upload Behavior:** The upload workflow updates existing resources by ID. It does not create new items or media. Resources must already exist in the target instance with matching IDs.
 
-If you're migrating from v3 to v4:
-
-- Items/media must already exist in v4 with the same IDs from v3
-- Upload will return 404 errors for any IDs that don't exist in v4
-- To migrate to a fresh v4 instance, you need to **create** resources first (not covered by this tool)
-- This workflow is designed for updating/syncing existing resources, not full data migration
-
-**Security Note:** API credentials are required for uploading. Store them in a `.env` file:
-
-```bash
-# .env file
-KEY_IDENTITY=your_key_identity
-KEY_CREDENTIAL=your_key_credential
-```
+**Security:** Store API credentials in `.env` file, never commit them to version control.
 
 ### Troubleshooting
 

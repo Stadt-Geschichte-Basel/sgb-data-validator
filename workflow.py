@@ -55,21 +55,17 @@ def download_data(args: argparse.Namespace) -> int:
             output_dir=args.output,
         )
 
-        print(f"✓ Downloaded {result['items_downloaded']} items (raw)")
-        print(f"✓ Downloaded {result['media_downloaded']} media (raw)")
+        print(f"✓ Downloaded {result['items_downloaded']} items")
+        print(f"✓ Downloaded {result['media_downloaded']} media")
 
         if result["saved_to"]:
             print()
-            print("Raw data saved to:")
-            print(f"  Directory: {result['saved_to']['directory']}")
-            print(f"  Items (raw): {result['saved_to']['items']}")
-            print(f"  Media (raw): {result['saved_to']['media']}")
-            print(f"  Metadata: {result['saved_to']['metadata']}")
+            directory = result["saved_to"]["directory"]
+            print(f"Saved to: {directory}")
             print()
             print("Next steps:")
-            directory = result["saved_to"]["directory"]
-            print(f"  To transform: python workflow.py transform {directory}")
-            print(f"  To validate: python workflow.py validate {directory}")
+            print(f"  python workflow.py transform {directory}")
+            print(f"  python workflow.py validate {directory}")
 
     return 0
 
@@ -81,26 +77,22 @@ def transform_data(args: argparse.Namespace) -> int:
     print("=" * 80)
     print(f"Input directory: {args.input_dir}")
     print(f"Output directory: {args.output or 'same as input parent'}")
-    all_transforms = not args.no_all_transformations
-    print(f"Apply all transformations: {all_transforms}")
-    if all_transforms:
-        https_status = "enabled" if args.https_upgrade else "disabled"
-        print(f"HTTPS upgrade: {https_status}")
+    apply_transforms = not args.no_transformations
+    print(f"Apply transformations: {apply_transforms}")
     print()
 
-    with OmekaAPI(
-        args.base_url or os.getenv("OMEKA_URL") or "https://omeka.unibe.ch"
-    ) as api:
+    # Base URL not needed for transformation, but API needs it
+    with OmekaAPI("https://omeka.unibe.ch") as api:
         result = api.apply_transformations(
             input_dir=args.input_dir,
             output_dir=args.output,
-            apply_whitespace_normalization=not args.no_whitespace_normalization,
-            apply_all_transformations=not args.no_all_transformations,
-            upgrade_https=args.https_upgrade,
+            apply_whitespace_normalization=apply_transforms,
+            apply_all_transformations=apply_transforms,
+            upgrade_https=apply_transforms,
         )
 
-        print(f"✓ Transformed {result['items_transformed']} items (transformed)")
-        print(f"✓ Transformed {result['media_transformed']} media (transformed)")
+        print(f"✓ Transformed {result['items_transformed']} items")
+        print(f"✓ Transformed {result['media_transformed']} media")
         transformations = ", ".join(result["transformations_applied"]) or "(none)"
         print(f"✓ Transformations applied: {transformations}")
 
@@ -108,17 +100,13 @@ def transform_data(args: argparse.Namespace) -> int:
             print()
             print("Transformed data saved to:")
             print(f"  Directory: {result['saved_to']['directory']}")
-            print(f"  Items (transformed): {result['saved_to']['items']}")
-            print(f"  Media (transformed): {result['saved_to']['media']}")
-            print(f"  Metadata: {result['saved_to']['metadata']}")
+            print(f"  Items: {result['saved_to']['items']}")
+            print(f"  Media: {result['saved_to']['media']}")
             print()
             print("Next steps:")
             directory = result["saved_to"]["directory"]
             print(f"  To validate: python workflow.py validate {directory}")
-            print(
-                f"  To upload: python workflow.py upload {directory} "
-                f"--base-url {args.base_url or 'https://omeka.unibe.ch'}"
-            )
+            print(f"  To upload: python workflow.py upload {directory}")
 
     return 0
 
@@ -131,7 +119,8 @@ def validate_offline(args: argparse.Namespace) -> int:
     print(f"Directory: {args.directory}")
     print()
 
-    with OmekaAPI(args.base_url or "https://omeka.unibe.ch") as api:
+    # Base URL not needed for offline validation, but API needs it
+    with OmekaAPI("https://omeka.unibe.ch") as api:
         result = api.validate_offline_files(args.directory)
 
         print(f"Items validated: {result['items_validated']}")
@@ -258,27 +247,22 @@ def main() -> int:
         epilog="""
 Examples:
   # Download raw data (no transformations)
-  python workflow.py download --item-set-id 10780 --output data/ --base-url https://omeka.unibe.ch
+  python workflow.py download --item-set-id 10780
 
-  # Transform downloaded data (defaults to ALL transformations)
-  python workflow.py transform data/raw_itemset_10780_20250115/
+  # Transform downloaded data (applies all transformations by default)
+  python workflow.py transform data/raw_itemset_10780_*/
 
-  # Transform with only whitespace normalization
-  python workflow.py transform data/raw_itemset_10780_20250115/ \\
-    --no-all-transformations
+  # Transform without any changes (no transformations)
+  python workflow.py transform data/raw_itemset_10780_*/ --no-transformations
 
   # Validate offline files
-  python workflow.py validate data/transformed_itemset_10780_20250115/
+  python workflow.py validate data/transformed_itemset_10780_*/
 
-  # Upload with dry-run (validate only, no changes)
-  python workflow.py upload data/transformed_itemset_10780_20250115/ --base-url https://omeka.unibe.ch
+  # Upload with dry-run (preview changes, no upload)
+  python workflow.py upload data/transformed_itemset_10780_*/
 
   # Upload for real (requires API credentials)
-  python workflow.py upload data/transformed_itemset_10780_20250115/ \
-    --base-url https://omeka.unibe.ch \
-    --key-identity YOUR_KEY \
-    --key-credential YOUR_SECRET \
-    --no-dry-run
+  python workflow.py upload data/transformed_itemset_10780_*/ --no-dry-run
 
 For more information, see the documentation.
         """,
@@ -329,34 +313,13 @@ For more information, see the documentation.
     transform_parser.add_argument(
         "--output",
         type=Path,
-        help="Output directory for transformed data (default: parent of input_dir)",
+        help="Output directory for transformed data (default: auto)",
     )
     transform_parser.add_argument(
-        "--base-url",
-        help="Base URL (not required for transformation)",
-    )
-    # Transformation options: default applies ALL transformations with granular opt-outs
-    transform_parser.add_argument(
-        "--no-all-transformations",
+        "--no-transformations",
         action="store_true",
-        help=(
-            "Disable comprehensive transformations (Unicode NFC, HTML entities, "
-            "Markdown links, abbreviations, URL normalization). "
-            "Only whitespace normalization will be applied unless also disabled."
-        ),
+        help="Skip all transformations (no changes to data)",
     )
-    transform_parser.add_argument(
-        "--no-whitespace-normalization",
-        action="store_true",
-        help="Skip whitespace normalization.",
-    )
-    transform_parser.add_argument(
-        "--no-https-upgrade",
-        action="store_false",
-        dest="https_upgrade",
-        help="Disable HTTP→HTTPS upgrade (default: enabled).",
-    )
-    transform_parser.set_defaults(https_upgrade=True)
 
     # Validate command
     validate_parser = subparsers.add_parser(
@@ -367,10 +330,6 @@ For more information, see the documentation.
         "directory",
         type=Path,
         help="Directory containing the JSON files to validate",
-    )
-    validate_parser.add_argument(
-        "--base-url",
-        help="Base URL (not required for offline validation)",
     )
 
     # Upload command

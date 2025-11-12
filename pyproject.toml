@@ -14,7 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-sgb = "workflow:main"
+sgb-validate = "validate:main"
+sgb-workflow = "workflow:main"
 
 [build-system]
 requires = ["hatchling"]

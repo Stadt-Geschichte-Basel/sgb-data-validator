@@ -74,7 +74,7 @@ jobs:
         run: |
           uv sync
 
-      - name: Run actual validation with secrets
+      - name: Run validation and generate reports
         env:
           OMEKA_URL: ${{ secrets.OMEKA_URL }}
           ITEM_SET_ID: ${{ secrets.ITEM_SET_ID }}
@@ -82,13 +82,9 @@ jobs:
           KEY_CREDENTIAL: ${{ secrets.KEY_CREDENTIAL }}
         run: |
           mkdir -p analysis
-          touch analysis/validation_report.txt
           uv run python validate.py \
             --output analysis/validation_report.txt \
-            --check-uris \
-            --check-redirects \
             --profile \
-            --profile-output analysis/ \
             --export-csv \
             --csv-output analysis/
         continue-on-error: true

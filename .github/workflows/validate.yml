@@ -8,29 +8,6 @@ on:
         required: false
         default: '10780'
         type: string
-      base_url:
-        description: 'Base URL of Omeka S instance'
-        required: false
-        default: 'https://omeka.unibe.ch'
-        type: string
-      check_uris:
-        description: 'Check if URIs are reachable (may be slow)'
-        required: false
-        default: false
-        type: boolean
-      check_redirects:
-        description: 'Check for redirects to different domains (requires check_uris)'
-        required: false
-        default: false
-        type: boolean
-      uri_check_severity:
-        description: 'Severity for failed URI checks'
-        required: false
-        default: 'warning'
-        type: choice
-        options:
-          - warning
-          - error
 
 jobs:
   validate:
@@ -55,26 +32,12 @@ jobs:
 
       - name: Run validation
         env:
-          OMEKA_URL: ${{ github.event.inputs.base_url }}
+          OMEKA_URL: ${{ secrets.OMEKA_URL }}
           ITEM_SET_ID: ${{ github.event.inputs.item_set_id }}
           KEY_IDENTITY: ${{ secrets.KEY_IDENTITY }}
           KEY_CREDENTIAL: ${{ secrets.KEY_CREDENTIAL }}
         run: |
-          CMD="uv run python validate.py --output validation_report.txt"
-
-          if [ "${{ github.event.inputs.check_uris }}" = "true" ]; then
-            CMD="$CMD --check-uris"
-          fi
-
-          if [ "${{ github.event.inputs.check_redirects }}" = "true" ]; then
-            CMD="$CMD --check-redirects"
-          fi
-
-          if [ -n "${{ github.event.inputs.uri_check_severity }}" ]; then
-            CMD="$CMD --uri-check-severity \"${{ github.event.inputs.uri_check_severity }}\""
-          fi
-
-          eval $CMD
+          uv run python validate.py --output validation_report.txt
 
       - name: Upload validation report
         uses: actions/upload-artifact@v4
