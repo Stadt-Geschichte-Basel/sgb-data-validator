@@ -85,7 +85,8 @@ jobs:
           uv run python validate.py \
             --output analysis/validation_report.txt \
             --profile \
-            --export-csv
+            --export-csv \
+            --csv-output analysis/
         continue-on-error: true
 
       # From https://github.com/actions/setup-python
