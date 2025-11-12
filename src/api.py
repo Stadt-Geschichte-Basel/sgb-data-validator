@@ -435,20 +435,39 @@ class OmekaAPI:
         self, backup_dir: Path | str, dry_run: bool = True
     ) -> dict[str, Any]:
         """
-        Restore data from a backup.
+        Restore data from a backup by updating existing resources in Omeka S.
 
-        Note: This is a placeholder - actual restoration needs API write access.
+        This method restores items and media from a backup directory by updating
+        existing resources in the Omeka S instance. Resources are matched by ID,
+        so they must already exist in the target instance.
 
         Args:
-            backup_dir: Directory containing the backup
-            dry_run: If True, only validate the backup without restoring
+            backup_dir: Directory containing the backup with manifest.json
+            dry_run: If True, only validate without restoring (default: True)
 
         Returns:
-            Dictionary with restoration status
+            Dictionary with restoration status:
+            {
+                "backup_validated": bool,
+                "item_set_id": int,
+                "items_processed": int,
+                "items_restored": int,
+                "items_failed": int,
+                "media_processed": int,
+                "media_restored": int,
+                "media_failed": int,
+                "errors": list[dict],
+                "dry_run": bool,
+            }
+
+        Raises:
+            FileNotFoundError: If manifest or backup files are missing
+            ValueError: If authentication is required but not provided
 
         Note:
-            Actual restoration requires write access to the Omeka S API,
-            which may need additional permissions and implementation.
+            This method UPDATES existing resources by ID. It does NOT create
+            new resources. All items and media must already exist in the target
+            Omeka S instance with matching IDs.
         """
         backup_dir = Path(backup_dir)
         manifest_file = backup_dir / "manifest.json"
@@ -467,23 +486,284 @@ class OmekaAPI:
         result = {
             "backup_validated": True,
             "item_set_id": manifest["item_set_id"],
-            "items_count": manifest["items_count"],
-            "media_count": manifest["media_count"],
+            "items_processed": 0,
+            "items_restored": 0,
+            "items_failed": 0,
+            "media_processed": 0,
+            "media_restored": 0,
+            "media_failed": 0,
+            "errors": [],
             "dry_run": dry_run,
-            "restored": False,
         }
 
-        if not dry_run:
+        # If dry run, just validate and return
+        if dry_run:
             result["message"] = (
-                "Restoration requires write access to Omeka S API. "
-                "This feature needs to be implemented based on your API permissions."
+                f"Dry run - backup validated successfully. "
+                f"Would restore {manifest['items_count']} items and "
+                f"{manifest['media_count']} media."
+            )
+            return result
+
+        # Check authentication is available for actual restore
+        if not self.key_identity or not self.key_credential:
+            raise ValueError(
+                "Authentication required for restore. "
+                "Provide key_identity and key_credential when initializing OmekaAPI."
+            )
+
+        # Load items from backup
+        items_path = backup_dir / manifest["files"]["items"]
+        items = self.load_from_file(items_path)
+        if not isinstance(items, list):
+            items = [items]
+
+        # Restore items
+        for item in items:
+            result["items_processed"] += 1
+            item_id = item.get("o:id")
+            if not item_id:
+                result["items_failed"] += 1
+                result["errors"].append(
+                    {
+                        "type": "item",
+                        "message": "Item missing o:id field",
+                    }
+                )
+                continue
+
+            update_result = self.update_item(item_id, item, dry_run=False)
+            if update_result["updated"]:
+                result["items_restored"] += 1
+            else:
+                result["items_failed"] += 1
+                result["errors"].append(
+                    {
+                        "type": "item",
+                        "item_id": item_id,
+                        "message": update_result.get("message", "Unknown error"),
+                        "validation_errors": update_result.get("errors", []),
+                    }
+                )
+
+        # Load media from backup
+        media_path = backup_dir / manifest["files"]["media"]
+        media_list = self.load_from_file(media_path)
+        if not isinstance(media_list, list):
+            media_list = [media_list]
+
+        # Restore media
+        for media in media_list:
+            result["media_processed"] += 1
+            media_id = media.get("o:id")
+            if not media_id:
+                result["media_failed"] += 1
+                result["errors"].append(
+                    {
+                        "type": "media",
+                        "message": "Media missing o:id field",
+                    }
+                )
+                continue
+
+            update_result = self.update_media(media_id, media, dry_run=False)
+            if update_result["updated"]:
+                result["media_restored"] += 1
+            else:
+                result["media_failed"] += 1
+                result["errors"].append(
+                    {
+                        "type": "media",
+                        "media_id": media_id,
+                        "message": update_result.get("message", "Unknown error"),
+                        "validation_errors": update_result.get("errors", []),
+                    }
+                )
+
+        # Add summary message
+        if result["items_failed"] == 0 and result["media_failed"] == 0:
+            result["message"] = (
+                f"✓ Restore completed successfully. "
+                f"Restored {result['items_restored']} items and "
+                f"{result['media_restored']} media."
+            )
+        else:
+            items_msg = f"{result['items_restored']}/{result['items_processed']}"
+            media_msg = f"{result['media_restored']}/{result['media_processed']}"
+            result["message"] = (
+                f"⚠ Restore completed with errors. "
+                f"Restored {items_msg} items and {media_msg} media. "
+                f"Failed: {result['items_failed']} items, "
+                f"{result['media_failed']} media."
             )
 
         return result
 
     # =========================================================================
-    # UPDATE OPERATIONS (Placeholders)
+    # UPDATE AND CREATE OPERATIONS
     # =========================================================================
+
+    def create_item(self, data: dict[str, Any], dry_run: bool = True) -> dict[str, Any]:
+        """
+        Create a new item in Omeka S.
+
+        Args:
+            data: The item data to create (should NOT include o:id)
+            dry_run: If True, only perform basic validation without creating
+
+        Returns:
+            Dictionary with creation status:
+            {
+                "validation_passed": bool,
+                "errors": list[str],
+                "dry_run": bool,
+                "created": bool,
+                "item_id": int | None,  # New item ID if created
+                "message": str
+            }
+
+        Note:
+            The data should not include o:id as it will be assigned by Omeka S.
+            Use this method for migrating data to new instances or creating
+            new resources. Validation in dry-run mode is minimal (checks for
+            required fields only), as the server will perform full validation.
+        """
+        # Remove o:id if present (should be assigned by server)
+        data_copy = data.copy()
+        if "o:id" in data_copy:
+            data_copy.pop("o:id")
+
+        # Basic validation - just check for required fields
+        errors = []
+        if "o:item_set" not in data_copy and "dcterms:isPartOf" not in data_copy:
+            errors.append("Missing required field: o:item_set or dcterms:isPartOf")
+
+        result = {
+            "validation_passed": len(errors) == 0,
+            "errors": errors,
+            "dry_run": dry_run,
+            "created": False,
+            "item_id": None,
+        }
+
+        if not result["validation_passed"]:
+            result["message"] = "Validation failed"
+            return result
+
+        if dry_run:
+            result["message"] = "Dry run - validation passed, no item created"
+            return result
+
+        # Check authentication
+        if not self.key_identity or not self.key_credential:
+            result["message"] = "Authentication required for creating items"
+            return result
+
+        # Perform the actual creation
+        url = f"{self.base_url}/api/items"
+        params = self._add_auth_params({})
+
+        try:
+            response = self.client.post(url, json=data_copy, params=params)
+            response.raise_for_status()
+            created_item = response.json()
+            result["created"] = True
+            result["item_id"] = created_item.get("o:id")
+            result["validation_passed"] = True
+            result["message"] = f"Item created successfully (ID: {result['item_id']})"
+        except httpx.HTTPStatusError as e:
+            result["validation_passed"] = False
+            result["errors"].append(str(e))
+            result["message"] = f"Failed to create item: {e}"
+        except Exception as e:
+            result["validation_passed"] = False
+            result["errors"].append(str(e))
+            result["message"] = f"Error creating item: {e}"
+
+        return result
+
+    def create_media(
+        self, data: dict[str, Any], dry_run: bool = True
+    ) -> dict[str, Any]:
+        """
+        Create a new media resource in Omeka S.
+
+        Args:
+            data: The media data to create (should NOT include o:id)
+            dry_run: If True, only perform basic validation without creating
+
+        Returns:
+            Dictionary with creation status:
+            {
+                "validation_passed": bool,
+                "errors": list[str],
+                "dry_run": bool,
+                "created": bool,
+                "media_id": int | None,  # New media ID if created
+                "message": str
+            }
+
+        Note:
+            The data should not include o:id as it will be assigned by Omeka S.
+            Media must be associated with an existing item (o:item field required).
+            Validation in dry-run mode is minimal, as the server will perform
+            full validation.
+        """
+        # Remove o:id if present (should be assigned by server)
+        data_copy = data.copy()
+        if "o:id" in data_copy:
+            data_copy.pop("o:id")
+
+        # Basic validation - check for required fields
+        errors = []
+        if "o:item" not in data_copy:
+            errors.append("Missing required field: o:item")
+        if "o:ingester" not in data_copy:
+            errors.append("Missing required field: o:ingester")
+
+        result = {
+            "validation_passed": len(errors) == 0,
+            "errors": errors,
+            "dry_run": dry_run,
+            "created": False,
+            "media_id": None,
+        }
+
+        if not result["validation_passed"]:
+            result["message"] = "Validation failed"
+            return result
+
+        if dry_run:
+            result["message"] = "Dry run - validation passed, no media created"
+            return result
+
+        # Check authentication
+        if not self.key_identity or not self.key_credential:
+            result["message"] = "Authentication required for creating media"
+            return result
+
+        # Perform the actual creation
+        url = f"{self.base_url}/api/media"
+        params = self._add_auth_params({})
+
+        try:
+            response = self.client.post(url, json=data_copy, params=params)
+            response.raise_for_status()
+            created_media = response.json()
+            result["created"] = True
+            result["media_id"] = created_media.get("o:id")
+            result["validation_passed"] = True
+            result["message"] = f"Media created successfully (ID: {result['media_id']})"
+        except httpx.HTTPStatusError as e:
+            result["validation_passed"] = False
+            result["errors"].append(str(e))
+            result["message"] = f"Failed to create media: {e}"
+        except Exception as e:
+            result["validation_passed"] = False
+            result["errors"].append(str(e))
+            result["message"] = f"Error creating media: {e}"
+
+        return result
 
     def update_item(
         self, item_id: int, data: dict[str, Any], dry_run: bool = True
@@ -578,6 +858,158 @@ class OmekaAPI:
             result["message"] = f"Failed to update media: {e}"
         except Exception as e:
             result["message"] = f"Error updating media: {e}"
+
+        return result
+
+    def migrate_item_set(
+        self,
+        source_dir: Path | str,
+        target_item_set_id: int,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Migrate items and media from a backup to a new item set instance.
+
+        This creates new items and media in the target instance, assigning
+        new IDs. The source data should have been downloaded and optionally
+        transformed. This is useful for migrating data between Omeka S
+        instances or creating copies within the same instance.
+
+        Args:
+            source_dir: Directory containing items.json and media.json
+            target_item_set_id: The ID of the target item set
+            dry_run: If True, only validate without creating
+
+        Returns:
+            Dictionary with migration status:
+            {
+                "items_processed": int,
+                "items_created": int,
+                "items_failed": int,
+                "media_processed": int,
+                "media_created": int,
+                "media_failed": int,
+                "id_mapping": dict[str, dict[int, int]],  # old_id -> new_id
+                "errors": list[str],
+                "dry_run": bool
+            }
+
+        Note:
+            - Media items reference their parent items by ID
+            - ID mapping tracks old IDs to new IDs for reference updates
+            - Items are created first, then media with updated item references
+        """
+        source_path = Path(source_dir)
+        items_file = source_path / "items.json"
+        media_file = source_path / "media.json"
+
+        result = {
+            "items_processed": 0,
+            "items_created": 0,
+            "items_failed": 0,
+            "media_processed": 0,
+            "media_created": 0,
+            "media_failed": 0,
+            "id_mapping": {"items": {}, "media": {}},
+            "errors": [],
+            "dry_run": dry_run,
+        }
+
+        # Check for required files
+        if not items_file.exists():
+            result["errors"].append(f"Items file not found: {items_file}")
+            return result
+
+        # Load items data
+        try:
+            with open(items_file) as f:
+                items_data = json.load(f)
+        except Exception as e:
+            result["errors"].append(f"Failed to load items: {e}")
+            return result
+
+        # Check authentication if not dry run
+        if not dry_run and (not self.key_identity or not self.key_credential):
+            result["errors"].append("Authentication required for migration")
+            return result
+
+        # Create items first
+        print(f"📦 Migrating {len(items_data)} items to item set {target_item_set_id}")
+        for item in items_data:
+            result["items_processed"] += 1
+            old_item_id = item.get("o:id")
+
+            # Update item set reference
+            item_copy = item.copy()
+            item_copy["o:item_set"] = [{"o:id": target_item_set_id}]
+
+            # Create the item
+            create_result = self.create_item(item_copy, dry_run=dry_run)
+
+            if create_result["created"]:
+                result["items_created"] += 1
+                new_item_id = create_result["item_id"]
+                if old_item_id and new_item_id:
+                    result["id_mapping"]["items"][old_item_id] = new_item_id
+                print(f"  ✅ Item {old_item_id} → {new_item_id}")
+            elif create_result["validation_passed"] and dry_run:
+                print(f"  ✓ Item {old_item_id} validated")
+            else:
+                result["items_failed"] += 1
+                msg = create_result.get("message", "Unknown error")
+                error_msg = f"Item {old_item_id}: {msg}"
+                result["errors"].append(error_msg)
+                print(f"  ❌ {error_msg}")
+
+        # Load and create media if file exists
+        if media_file.exists():
+            try:
+                with open(media_file) as f:
+                    media_data = json.load(f)
+            except Exception as e:
+                result["errors"].append(f"Failed to load media: {e}")
+                return result
+
+            print(f"📦 Migrating {len(media_data)} media items")
+            for media in media_data:
+                result["media_processed"] += 1
+                old_media_id = media.get("o:id")
+
+                # Update item reference with new ID from mapping
+                media_copy = media.copy()
+                old_item_ref = media.get("o:item", {})
+                if isinstance(old_item_ref, dict):
+                    old_item_id = old_item_ref.get("o:id")
+                    if old_item_id in result["id_mapping"]["items"]:
+                        new_item_id = result["id_mapping"]["items"][old_item_id]
+                        media_copy["o:item"] = {"o:id": new_item_id}
+                    else:
+                        error_msg = (
+                            f"Media {old_media_id}: parent item "
+                            f"{old_item_id} not found in mapping"
+                        )
+                        result["errors"].append(error_msg)
+                        result["media_failed"] += 1
+                        print(f"  ❌ {error_msg}")
+                        continue
+
+                # Create the media
+                create_result = self.create_media(media_copy, dry_run=dry_run)
+
+                if create_result["created"]:
+                    result["media_created"] += 1
+                    new_media_id = create_result["media_id"]
+                    if old_media_id and new_media_id:
+                        result["id_mapping"]["media"][old_media_id] = new_media_id
+                    print(f"  ✅ Media {old_media_id} → {new_media_id}")
+                elif create_result["validation_passed"] and dry_run:
+                    print(f"  ✓ Media {old_media_id} validated")
+                else:
+                    result["media_failed"] += 1
+                    msg = create_result.get("message", "Unknown error")
+                    error_msg = f"Media {old_media_id}: {msg}"
+                    result["errors"].append(error_msg)
+                    print(f"  ❌ {error_msg}")
 
         return result
 
@@ -681,7 +1113,7 @@ class OmekaAPI:
         input_dir: Path | str,
         output_dir: Path | str | None = None,
         apply_whitespace_normalization: bool = True,
-        apply_all_transformations: bool = False,
+        apply_all_transformations: bool = True,
         upgrade_https: bool = True,
     ) -> dict[str, Any]:
         """
@@ -698,7 +1130,7 @@ class OmekaAPI:
                 (default: True)
             apply_all_transformations: Apply all comprehensive transformations
                 including Unicode NFC, HTML entities, Markdown links,
-                abbreviations, URL normalization, etc. (default: False)
+                abbreviations, URL normalization, etc. (default: True)
             upgrade_https: Upgrade HTTP URLs to HTTPS where available
                 (default: True, only applies when apply_all_transformations=True)
 

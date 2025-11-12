@@ -47,8 +47,13 @@ def main() -> int:
     print("   # Transform downloaded data (apply whitespace normalization)")
     print("   uv run python workflow.py transform data/raw_itemset_10780_*/")
     print()
-    print("   # Apply comprehensive transformations (Issue #31)")
-    print("   uv run python workflow.py transform data/raw_itemset_10780_*/ --all")
+    print("   # Transform downloaded data (ALL transformations by default)")
+    print("   uv run python workflow.py transform data/raw_itemset_10780_*/")
+    print()
+    print("   # Transform with only whitespace normalization")
+    print(
+        "   uv run python workflow.py transform data/raw_itemset_10780_*/ --no-all-transformations"
+    )
     print()
     print("   # Validate offline files")
     print("   uv run python workflow.py validate data/transformed_itemset_10780_*/")

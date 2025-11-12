@@ -1,0 +1,23 @@
+# Data directories
+data/
+
+# Generated files
+_site/
+.venv/
+__pycache__/
+*.pyc
+
+# Package managers
+node_modules/
+pnpm-lock.yaml
+
+# Generated reports
+analysis/
+validation_reports/
+my_reports/
+my_analysis/
+
+# Build outputs
+dist/
+build/
+*.egg-info/

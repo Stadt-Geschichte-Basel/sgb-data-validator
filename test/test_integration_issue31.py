@@ -85,8 +85,7 @@ def test_complete_item_transformation() -> None:
 
     references_value = result["dcterms:references"][0]["@value"]
     assert references_value == "[Source](http://example.com)", (
-        f"References should have correct Markdown format, "
-        f"got: {references_value}"
+        f"References should have correct Markdown format, got: {references_value}"
     )
 
     relation_value = result["dcterms:relation"][0]["@value"]

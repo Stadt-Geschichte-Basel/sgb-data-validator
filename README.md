@@ -15,6 +15,8 @@ The sgb-data-validator is a Python-based tool that validates metadata quality fo
 - 📊 **CSV reports** for easy data quality review
 - 📈 **Data profiling** with interactive HTML reports
 - 🔄 **Data transformation** with whitespace normalization
+- 💾 **Backup and restore** for safe data management
+- 🔀 **Migration support** for cross-instance data transfer
 - 🔌 **Python API** for programmatic access
 - 🚀 **Fast and efficient** with asynchronous processing
 
@@ -49,7 +51,9 @@ sgb-data-validator/
 ├── examples/               # Usage examples and tutorials
 │   ├── api_usage.py       # API client examples
 │   ├── iconclass_usage.py # Iconclass validation examples
-│   └── transformation_usage.py # Data transformation examples
+│   ├── transformation_usage.py # Data transformation examples
+│   ├── migration_usage.py # Data migration examples
+│   └── MIGRATION.md       # Migration guide and documentation
 ├── validate.py            # Main validation script (CLI)
 ├── main.py                # Alternative entry point
 ├── pyproject.toml         # Project dependencies and metadata
@@ -317,9 +321,14 @@ with OmekaAPI(
     is_valid, errors = api.validate_item(item_data)
     validation_report = api.validate_item_set(10780)
 
-    # Backup operations
+    # Backup and restore operations
     backup_paths = api.backup_item_set(10780, "backups/")
-    restore_status = api.restore_from_backup("backups/itemset_10780_20240101")
+
+    # Restore from backup (dry run)
+    restore_status = api.restore_from_backup("backups/itemset_10780_20240101", dry_run=True)
+
+    # Restore for real (requires authentication)
+    restore_result = api.restore_from_backup("backups/itemset_10780_20240101", dry_run=False)
 
     # Update operations (requires write permissions)
     result = api.update_item(12345, updated_data, dry_run=True)
@@ -484,11 +493,11 @@ uv run python workflow.py download \
 Apply transformations to a previously downloaded raw directory:
 
 ```bash
-# Apply all comprehensive transformations (Issue #31)
-uv run python workflow.py transform data/raw_itemset_10780_*/ --all
-
-# Apply only whitespace normalization (Issue #28, default)
+# Transform (ALL comprehensive transformations are applied by default)
 uv run python workflow.py transform data/raw_itemset_10780_*/
+
+# Transform with only whitespace normalization (Issue #28)
+uv run python workflow.py transform data/raw_itemset_10780_*/ --no-all-transformations
 
 # Skip whitespace normalization
 uv run python workflow.py transform data/raw_itemset_10780_*/ --no-whitespace-normalization
