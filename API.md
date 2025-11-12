@@ -5,6 +5,7 @@
 The `OmekaAPI` class provides a high-level Python interface for interacting with Omeka S instances. It supports reading, validating, transforming, creating, and updating cultural heritage metadata while ensuring data quality through comprehensive validation.
 
 **Quick Start:** For most use cases, use the simplified CLI workflow:
+
 - `workflow.py` - Simple command-line interface for download, transform, validate, upload
 - Configuration via `.env` file for credentials
 - All transformations enabled by default
