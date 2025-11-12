@@ -2,12 +2,10 @@
 Tests for the TUI module.
 """
 
-import pytest
-
 
 def test_tui_imports():
     """Test that TUI module can be imported."""
-    from src.tui import ValidationApp, ValidationStats, ConfigPanel
+    from src.tui import ConfigPanel, ValidationApp, ValidationStats
 
     assert ValidationApp is not None
     assert ValidationStats is not None
