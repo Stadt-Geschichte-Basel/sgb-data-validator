@@ -1,6 +1,11 @@
 # Data directories
 data/
 
+# Static files (should not be modified)
+CODE_OF_CONDUCT.md
+LICENSE-AGPL.md
+LICENSE-CCBY.md
+
 # Generated files
 _site/
 .venv/
