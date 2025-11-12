@@ -23,11 +23,14 @@ def example_basic_transformation() -> None:
     # Initialize the API (replace with your credentials)
     with OmekaAPI("https://omeka.unibe.ch") as api:
         # Download raw data first
-        download = api.download_item_set(item_set_id=10780, output_dir="transformations")
+        download = api.download_item_set(
+            item_set_id=10780, output_dir="transformations"
+        )
         raw_dir = download["saved_to"]["directory"]
         print(f"Downloaded raw data to: {raw_dir}")
         print(
-            f"Items downloaded: {download['items_downloaded']} | Media downloaded: {download['media_downloaded']}"
+            f"Items downloaded: {download['items_downloaded']} | "
+            f"Media downloaded: {download['media_downloaded']}"
         )
 
         # Apply transformations to the downloaded directory
@@ -56,12 +59,15 @@ def example_transformation_in_memory() -> None:
     print("=" * 60)
 
     with OmekaAPI("https://omeka.unibe.ch") as api:
-        # For in-memory demonstration, download raw data then transform using functions
-        download = api.download_item_set(item_set_id=10780, output_dir="transformations")
+        # For in-memory demonstration, download raw data then transform
+        download = api.download_item_set(
+            item_set_id=10780, output_dir="transformations"
+        )
         raw_dir = download["saved_to"]["directory"]
 
         import json
         from pathlib import Path
+
         from src.transformations import transform_item_set_data
 
         item_set = {}
@@ -112,10 +118,15 @@ def example_transformation_workflow() -> None:
         item_set_id = 10780
 
         print(f"Step 1: Downloading raw data from item set {item_set_id}...")
-        download = api.download_item_set(item_set_id=item_set_id, output_dir="transformations")
+        download = api.download_item_set(
+            item_set_id=item_set_id, output_dir="transformations"
+        )
         raw_dir = download["saved_to"]["directory"]
         print(f"Raw directory: {raw_dir}")
-        print(f"Items: {download['items_downloaded']} | Media: {download['media_downloaded']}")
+        print(
+            f"Items: {download['items_downloaded']} | "
+            f"Media: {download['media_downloaded']}"
+        )
 
         print("\nStep 2: Applying transformations...")
         transform = api.apply_transformations(
@@ -123,12 +134,16 @@ def example_transformation_workflow() -> None:
             output_dir="transformations",
             apply_whitespace_normalization=True,
         )
-        print(f"Step 3: Saved transformed data to: {transform['saved_to']['directory']}")
-        print(f"Step 4: Applied transformations: {transform['transformations_applied']}")
+        tx_dir = transform["saved_to"]["directory"]
+        print(f"Step 3: Saved transformed data to: {tx_dir}")
+        tx_list = transform["transformations_applied"]
+        print(f"Step 4: Applied transformations: {tx_list}")
 
         print("\nStep 4: Validating transformed data...")
         # Validate a sample of transformed items from file
-        import json, os
+        import json
+        import os
+
         transformed_dir = transform["saved_to"]["directory"]
         items_path = os.path.join(transformed_dir, "items_transformed.json")
         items_list = json.load(open(items_path))
@@ -154,10 +169,43 @@ def example_transformation_workflow() -> None:
         )
 
 
+def example_http_to_https_upgrade() -> None:
+    """Example: HTTP to HTTPS URL upgrade."""
+    print("\n" + "=" * 60)
+    print("Example 5: HTTP to HTTPS URL Upgrade")
+    print("=" * 60)
+
+    from src.transformations import apply_text_transformations, upgrade_http_to_https
+
+    # Examples of HTTP URLs that should be upgraded
+    test_texts = [
+        "Visit http://www.example.com for more info",
+        "Check out http://www.wikipedia.org and http://www.github.com",
+        "Markdown link: [Example](http://www.example.org)",
+        "Mixed: http://www.example.com and https://www.example.org",
+    ]
+
+    print("\nUpgrading HTTP to HTTPS:")
+    for i, text in enumerate(test_texts, 1):
+        upgraded = upgrade_http_to_https(text)
+        print(f"\n{i}. Input:  {text}")
+        print(f"   Output: {upgraded}")
+        if "https://" in upgraded and "http://" not in upgraded.replace("https://", ""):
+            print("   ✓ Successfully upgraded to HTTPS")
+
+    # Example with comprehensive transformations
+    print("\n" + "-" * 60)
+    print("Comprehensive transformation (includes HTTPS upgrade):")
+    complex_text = "&uuml;ber http://www.example.com d.j. text"
+    result = apply_text_transformations(complex_text)
+    print(f"Input:  {complex_text}")
+    print(f"Output: {result}")
+
+
 def example_custom_transformation() -> None:
     """Example: Custom transformation logic."""
     print("\n" + "=" * 60)
-    print("Example 5: Custom Transformation Logic")
+    print("Example 6: Custom Transformation Logic")
     print("=" * 60)
 
     from src.transformations import transform_item
@@ -200,6 +248,7 @@ if __name__ == "__main__":
     # example_basic_transformation()
     # example_transformation_in_memory()
     example_whitespace_normalization()
+    example_http_to_https_upgrade()
     example_custom_transformation()
     # example_transformation_workflow()
 

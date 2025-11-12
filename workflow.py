@@ -81,6 +81,11 @@ def transform_data(args: argparse.Namespace) -> int:
     print("=" * 80)
     print(f"Input directory: {args.input_dir}")
     print(f"Output directory: {args.output or 'same as input parent'}")
+    all_transforms = not args.no_all_transformations
+    print(f"Apply all transformations: {all_transforms}")
+    if all_transforms:
+        https_status = "enabled" if args.https_upgrade else "disabled"
+        print(f"HTTPS upgrade: {https_status}")
     print()
 
     with OmekaAPI(
@@ -90,6 +95,8 @@ def transform_data(args: argparse.Namespace) -> int:
             input_dir=args.input_dir,
             output_dir=args.output,
             apply_whitespace_normalization=not args.no_whitespace_normalization,
+            apply_all_transformations=not args.no_all_transformations,
+            upgrade_https=args.https_upgrade,
         )
 
         print(f"✓ Transformed {result['items_transformed']} items (transformed)")
@@ -253,8 +260,12 @@ Examples:
   # Download raw data (no transformations)
   python workflow.py download --item-set-id 10780 --output data/ --base-url https://omeka.unibe.ch
 
-  # Transform downloaded data
+  # Transform downloaded data (defaults to ALL transformations)
   python workflow.py transform data/raw_itemset_10780_20250115/
+
+  # Transform with only whitespace normalization
+  python workflow.py transform data/raw_itemset_10780_20250115/ \\
+    --no-all-transformations
 
   # Validate offline files
   python workflow.py validate data/transformed_itemset_10780_20250115/
@@ -324,11 +335,28 @@ For more information, see the documentation.
         "--base-url",
         help="Base URL (not required for transformation)",
     )
+    # Transformation options: default applies ALL transformations with granular opt-outs
+    transform_parser.add_argument(
+        "--no-all-transformations",
+        action="store_true",
+        help=(
+            "Disable comprehensive transformations (Unicode NFC, HTML entities, "
+            "Markdown links, abbreviations, URL normalization). "
+            "Only whitespace normalization will be applied unless also disabled."
+        ),
+    )
     transform_parser.add_argument(
         "--no-whitespace-normalization",
         action="store_true",
-        help="Skip whitespace normalization",
+        help="Skip whitespace normalization.",
     )
+    transform_parser.add_argument(
+        "--no-https-upgrade",
+        action="store_false",
+        dest="https_upgrade",
+        help="Disable HTTP→HTTPS upgrade (default: enabled).",
+    )
+    transform_parser.set_defaults(https_upgrade=True)
 
     # Validate command
     validate_parser = subparsers.add_parser(
@@ -357,9 +385,7 @@ For more information, see the documentation.
     )
     upload_parser.add_argument(
         "--base-url",
-        help=(
-            "Base URL of the Omeka S instance (defaults to $OMEKA_URL)"
-        ),
+        help=("Base URL of the Omeka S instance (defaults to $OMEKA_URL)"),
     )
     upload_parser.add_argument(
         "--key-identity",

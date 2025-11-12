@@ -15,6 +15,8 @@ The sgb-data-validator is a Python-based tool that validates metadata quality fo
 - 📊 **CSV reports** for easy data quality review
 - 📈 **Data profiling** with interactive HTML reports
 - 🔄 **Data transformation** with whitespace normalization
+- 💾 **Backup and restore** for safe data management
+- 🔀 **Migration support** for cross-instance data transfer
 - 🔌 **Python API** for programmatic access
 - 🚀 **Fast and efficient** with asynchronous processing
 
@@ -49,7 +51,9 @@ sgb-data-validator/
 ├── examples/               # Usage examples and tutorials
 │   ├── api_usage.py       # API client examples
 │   ├── iconclass_usage.py # Iconclass validation examples
-│   └── transformation_usage.py # Data transformation examples
+│   ├── transformation_usage.py # Data transformation examples
+│   ├── migration_usage.py # Data migration examples
+│   └── MIGRATION.md       # Migration guide and documentation
 ├── validate.py            # Main validation script (CLI)
 ├── main.py                # Alternative entry point
 ├── pyproject.toml         # Project dependencies and metadata
@@ -317,9 +321,14 @@ with OmekaAPI(
     is_valid, errors = api.validate_item(item_data)
     validation_report = api.validate_item_set(10780)
 
-    # Backup operations
+    # Backup and restore operations
     backup_paths = api.backup_item_set(10780, "backups/")
-    restore_status = api.restore_from_backup("backups/itemset_10780_20240101")
+
+    # Restore from backup (dry run)
+    restore_status = api.restore_from_backup("backups/itemset_10780_20240101", dry_run=True)
+
+    # Restore for real (requires authentication)
+    restore_result = api.restore_from_backup("backups/itemset_10780_20240101", dry_run=False)
 
     # Update operations (requires write permissions)
     result = api.update_item(12345, updated_data, dry_run=True)
@@ -336,8 +345,21 @@ uv run python examples/api_usage.py
 The validator can transform and clean data by applying various transformations. This feature is useful for:
 
 - **Normalizing whitespace**: Removes non-standard Unicode whitespace characters (Issue #28)
+- **Comprehensive transformations**: Unicode NFC, HTML entities, Markdown links, abbreviations, URLs (Issue #31)
 - **Data cleaning**: Preparing data for upload or migration
 - **Batch operations**: Applying consistent transformations across all items and media
+
+#### Comprehensive Transformations (Issue #31)
+
+The comprehensive transformation feature provides advanced data cleaning and normalization:
+
+- **Unicode NFC normalization**: Ensures diacritics like ö, ä, ü are in their composed form
+- **HTML entity conversion**: Converts `&auml;`, `&ouml;`, `&#252;`, etc. to proper characters
+- **Markdown link formatting**: Fixes malformed links to proper `[label](URL)` format
+- **Abbreviation normalization**: Standardizes `d.j.`, `d. j.`, `D. J.` → `d. J.` and `d.ä.`, `d. ä.`, `D. Ä.` → `d. Ä.`
+- **Wikidata URL normalization**: Converts mobile URLs `m.wikidata.org/wiki/Q123` → `https://www.wikidata.org/wiki/Q123`
+- **URL standardization**: Adds `www.` prefix and removes trailing slashes for consistency
+- **Whitespace normalization**: All features from Issue #28 (see below)
 
 #### Whitespace Normalization (Issue #28)
 
@@ -360,7 +382,14 @@ with OmekaAPI("https://omeka.unibe.ch") as api:
   download = api.download_item_set(item_set_id=10780, output_dir="data/")
   raw_dir = download["saved_to"]["directory"]
 
-  # 2) Apply transformations to the downloaded directory
+  # 2) Apply comprehensive transformations (Issue #31)
+  transform = api.apply_transformations(
+    input_dir=raw_dir,
+    output_dir="data/",
+    apply_all_transformations=True,  # Enables all transformations
+  )
+
+  # Or apply only whitespace normalization (Issue #28)
   transform = api.apply_transformations(
     input_dir=raw_dir,
     output_dir="data/",
@@ -369,30 +398,76 @@ with OmekaAPI("https://omeka.unibe.ch") as api:
 
 print(f"Items transformed: {transform['items_transformed']}")
 print(f"Media transformed: {transform['media_transformed']}")
+print(f"Transformations: {', '.join(transform['transformations_applied'])}")
 ```
 
-#### Direct Whitespace Normalization
+#### Direct Text Transformations
 
-You can also normalize whitespace in text directly:
+You can also apply transformations to text directly:
 
 ```python
-from src.transformations import normalize_whitespace
+from src.transformations import apply_text_transformations, normalize_whitespace
 
-# Example with soft hyphens and double spaces
+# Apply all comprehensive transformations
+text = "&uuml;ber d.j. m.wikidata.org/wiki/Q123"
+result = apply_text_transformations(text)
+# Result: "über d. J. https://www.wikidata.org/wiki/Q123"
+
+# Apply only whitespace normalization
 text = "lange Ge\u00ADschichte  mit doppelten Leerzeichen"
 normalized = normalize_whitespace(text)
 # Result: "lange Geschichte mit doppelten Leerzeichen"
 
-# Example with directional formatting
-text = "text\u202Awith\u202Cformatting"
-normalized = normalize_whitespace(text)
-# Result: "textwithformatting"
+# Convert HTML entities
+from src.transformations import convert_html_entities
+text = "M&uuml;nchen &amp; Z&uuml;rich"
+result = convert_html_entities(text)
+# Result: "München & Zürich"
+
+# Normalize abbreviations
+from src.transformations import normalize_abbreviations
+text = "Text d.j. and d.ä. here"
+result = normalize_abbreviations(text)
+# Result: "Text d. J. and d. Ä. here"
 ```
 
 For complete examples, see `examples/transformation_usage.py`:
 
 ```bash
 uv run python examples/transformation_usage.py
+```
+
+#### Helper Utilities
+
+Additional utilities are available for specific data quality tasks:
+
+```python
+from src.transformations import (
+    has_placeholder_media,
+    extract_wikidata_qids,
+    deduplicate_qids,
+    normalize_name,
+)
+
+# Detect placeholder media files
+media_data = {"o:filename": "sgb-fdp-platzhalter.jpg"}
+is_placeholder = has_placeholder_media(media_data)
+# Result: True
+
+# Extract Wikidata QIDs from text
+text = "See Q123 and https://www.wikidata.org/wiki/Q456 for details"
+qids = extract_wikidata_qids(text)
+# Result: ["Q123", "Q456"]
+
+# Deduplicate QIDs
+qids = ["Q1", "Q2", "Q1", "Q3", "Q2"]
+unique_qids = deduplicate_qids(qids)
+# Result: ["Q1", "Q2", "Q3"]
+
+# Normalize names for deduplication
+name = "&Uuml;ber  D.J.  M&uuml;ller"
+normalized = normalize_name(name)
+# Result: "über d. j. müller"
 ```
 
 ### Offline Workflow: Download, Transform, Edit, and Upload
@@ -418,7 +493,14 @@ uv run python workflow.py download \
 Apply transformations to a previously downloaded raw directory:
 
 ```bash
+# Transform (ALL comprehensive transformations are applied by default)
 uv run python workflow.py transform data/raw_itemset_10780_*/
+
+# Transform with only whitespace normalization (Issue #28)
+uv run python workflow.py transform data/raw_itemset_10780_*/ --no-all-transformations
+
+# Skip whitespace normalization
+uv run python workflow.py transform data/raw_itemset_10780_*/ --no-whitespace-normalization
 
 # Produces e.g. data/transformed_itemset_10780_YYYYMMDD_HHMMSS/
 # Files: items_transformed.json, media_transformed.json, item_set_transformed.json, transformation_metadata.json

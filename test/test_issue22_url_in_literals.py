@@ -213,10 +213,14 @@ def test_url_detection_in_literal_fields():
         )
 
         if should_warn:
-            assert has_url_warning, f"{description}: Failed to detect URL in '{field_value[:50]}'"
+            assert has_url_warning, (
+                f"{description}: Failed to detect URL in '{field_value[:50]}'"
+            )
             print(f"  ✓ {description}: Correctly detected URL in '{field_value[:50]}'")
         else:
-            assert not has_url_warning, f"{description}: False positive for '{field_value[:50]}'"
+            assert not has_url_warning, (
+                f"{description}: False positive for '{field_value[:50]}'"
+            )
             print(f"  ✓ {description}: Correctly accepted '{field_value[:50]}'")
 
 
@@ -363,7 +367,9 @@ def test_no_warning_for_uri_fields():
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)
     ]
-    assert len(url_warnings) == 0, f"Unexpected warnings for URI type fields: {url_warnings}"
+    assert len(url_warnings) == 0, (
+        f"Unexpected warnings for URI type fields: {url_warnings}"
+    )
     print("  ✓ No warnings for URI type fields (as expected)")
 
 

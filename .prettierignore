@@ -1,0 +1,28 @@
+# Data directories
+data/
+
+# Static files (should not be modified)
+CODE_OF_CONDUCT.md
+LICENSE-AGPL.md
+LICENSE-CCBY.md
+
+# Generated files
+_site/
+.venv/
+__pycache__/
+*.pyc
+
+# Package managers
+node_modules/
+pnpm-lock.yaml
+
+# Generated reports
+analysis/
+validation_reports/
+my_reports/
+my_analysis/
+
+# Build outputs
+dist/
+build/
+*.egg-info/

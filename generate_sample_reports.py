@@ -145,4 +145,3 @@ print(f"Created: {report_path}")
 
 print("\n✓ Sample validation reports generated successfully!")
 print(f"  Output directory: {output_dir}/")
-

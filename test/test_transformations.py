@@ -1,6 +1,5 @@
 """Tests for data transformation utilities."""
 
-
 from src.transformations import (
     normalize_whitespace,
     transform_item,
@@ -26,7 +25,9 @@ def test_normalize_whitespace_basic() -> None:
 
     for input_text, expected, description in test_cases:
         result = normalize_whitespace(input_text)
-        assert result == expected, f"{description} failed: expected {repr(expected)}, got {repr(result)}"
+        assert result == expected, (
+            f"{description} failed: expected {repr(expected)}, got {repr(result)}"
+        )
         print(f"  ✓ {description}")
 
 
@@ -69,7 +70,9 @@ def test_normalize_whitespace_unicode() -> None:
 
     for input_text, expected, description in test_cases:
         result = normalize_whitespace(input_text)
-        assert result == expected, f"{description} failed: input {repr(input_text)}, expected {repr(expected)}, got {repr(result)}"
+        assert result == expected, (
+            f"{description} failed: input {repr(input_text)}, expected {repr(expected)}, got {repr(result)}"
+        )
         print(f"  ✓ {description}")
 
 
@@ -105,7 +108,9 @@ def test_normalize_whitespace_multiline() -> None:
 
     for input_text, expected, description in test_cases:
         result = normalize_whitespace(input_text)
-        assert result == expected, f"{description} failed: input {repr(input_text)}, expected {repr(expected)}, got {repr(result)}"
+        assert result == expected, (
+            f"{description} failed: input {repr(input_text)}, expected {repr(expected)}, got {repr(result)}"
+        )
         print(f"  ✓ {description}")
 
 
@@ -122,7 +127,9 @@ def test_transform_property_value() -> None:
     }
     result = transform_property_value(literal_prop)
     expected_value = "text with double spaces"
-    assert result.get("@value") == expected_value, f"Literal value normalization failed: expected {expected_value}, got {result.get('@value')}"
+    assert result.get("@value") == expected_value, (
+        f"Literal value normalization failed: expected {expected_value}, got {result.get('@value')}"
+    )
     assert result.get("type") == "literal", "Type should remain literal"
     print("  ✓ Literal property value normalized")
 
@@ -171,18 +178,24 @@ def test_transform_item() -> None:
 
     # Check title was normalized
     expected_title = "Test Item with spaces"
-    assert result.get("o:title") == expected_title, f"Title normalization failed: expected {expected_title}, got {result.get('o:title')}"
+    assert result.get("o:title") == expected_title, (
+        f"Title normalization failed: expected {expected_title}, got {result.get('o:title')}"
+    )
     print("  ✓ Item title normalized")
 
     # Check description was normalized
     desc_value = result.get("dcterms:description", [{}])[0].get("@value")
     expected_desc = "Description with doublespaces and softhyphen"
-    assert desc_value == expected_desc, f"Description normalization failed: expected {expected_desc}, got {desc_value}"
+    assert desc_value == expected_desc, (
+        f"Description normalization failed: expected {expected_desc}, got {desc_value}"
+    )
     print("  ✓ Description normalized")
 
     # Check URI property was not modified
     creator_uri = result.get("dcterms:creator", [{}])[0].get("@id")
-    assert creator_uri == "http://example.com/creator", "URI property should be preserved"
+    assert creator_uri == "http://example.com/creator", (
+        "URI property should be preserved"
+    )
     print("  ✓ URI property preserved")
 
     # Check o:id was preserved
@@ -211,13 +224,17 @@ def test_transform_media() -> None:
 
     # Check title was normalized
     expected_title = "Media withformatting"
-    assert result.get("o:title") == expected_title, f"Media title normalization failed: expected {expected_title}, got {result.get('o:title')}"
+    assert result.get("o:title") == expected_title, (
+        f"Media title normalization failed: expected {expected_title}, got {result.get('o:title')}"
+    )
     print("  ✓ Media title normalized")
 
     # Check extent was normalized
     extent_value = result.get("dcterms:extent", [{}])[0].get("@value")
     expected_extent = "sizewithdirection"
-    assert extent_value == expected_extent, f"Extent normalization failed: expected {expected_extent}, got {extent_value}"
+    assert extent_value == expected_extent, (
+        f"Extent normalization failed: expected {expected_extent}, got {extent_value}"
+    )
     print("  ✓ Extent normalized")
 
 
@@ -229,21 +246,27 @@ def test_real_world_examples() -> None:
     text1 = "eine  lange Ge\u00adschichte  mit doppelten Leerzeichen"
     result1 = normalize_whitespace(text1)
     expected1 = "eine lange Geschichte mit doppelten Leerzeichen"
-    assert result1 == expected1, f"abb93285 description failed: input {repr(text1)}, expected {repr(expected1)}, got {repr(result1)}"
+    assert result1 == expected1, (
+        f"abb93285 description failed: input {repr(text1)}, expected {repr(expected1)}, got {repr(result1)}"
+    )
     print("  ✓ abb93285 description cleaned")
 
     # Example with U+202C and U+202A (from m37979 extent field)
     text2 = "text\u202awith\u202cdirectional formatting"
     result2 = normalize_whitespace(text2)
     expected2 = "textwithdirectional formatting"
-    assert result2 == expected2, f"m37979 extent field failed: input {repr(text2)}, expected {repr(expected2)}, got {repr(result2)}"
+    assert result2 == expected2, (
+        f"m37979 extent field failed: input {repr(text2)}, expected {repr(expected2)}, got {repr(result2)}"
+    )
     print("  ✓ m37979 extent field cleaned")
 
     # Example with multiple line breaks
     text3 = "text\n\n\n\nwith\n\n\ntoo many breaks"
     result3 = normalize_whitespace(text3)
     expected3 = "text\n\nwith\n\ntoo many breaks"
-    assert result3 == expected3, f"Multiple line breaks failed: input {repr(text3)}, expected {repr(expected3)}, got {repr(result3)}"
+    assert result3 == expected3, (
+        f"Multiple line breaks failed: input {repr(text3)}, expected {repr(expected3)}, got {repr(result3)}"
+    )
     print("  ✓ Multiple line breaks normalized")
 
 
