@@ -11,11 +11,13 @@ dependencies = [
     "ydata-profiling>=4.10.0",
     "setuptools>=75.0.0",
     "python-dotenv>=1.0.0",
+    "textual>=1.2.0",
 ]
 
 [project.scripts]
 sgb-validate = "validate:main"
 sgb-workflow = "workflow:main"
+sgb-tui = "tui:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -18,6 +18,7 @@ The sgb-data-validator is a Python-based tool that validates metadata quality fo
 - 💾 **Backup and restore** for safe data management
 - 🔀 **Migration support** for cross-instance data transfer
 - 🔌 **Python API** for programmatic access
+- 💻 **Interactive TUI** with Textual framework for user-friendly CLI experience
 - 🚀 **Fast and efficient** with asynchronous processing
 
 [![GitHub issues](https://img.shields.io/github/issues/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)
@@ -182,6 +183,56 @@ uv run python validate.py --export-csv --csv-output my_reports/
 # Get help
 uv run python validate.py --help
 ```
+
+#### Interactive TUI (Text User Interface)
+
+The validator includes an interactive Text User Interface (TUI) built with the [Textual](https://github.com/Textualize/textual) framework for a modern, user-friendly CLI experience:
+
+```bash
+# Launch the TUI
+uv run python tui.py
+
+# Or use the installed script
+uv run sgb-tui
+```
+
+**TUI Features:**
+
+- 📝 **Interactive Configuration**: Configure Base URL, Item Set ID, and API credentials directly in the interface
+- 🎯 **Real-time Validation**: Click "Validate" or press `v` to start validation
+- 📊 **Live Statistics**: See validation progress with live updates for items, media, errors, and warnings
+- 📑 **Tabbed Results**: View results in organized tabs (Results, Errors, Warnings, Help)
+- ⌨️ **Keyboard Navigation**: Full keyboard support for accessibility
+- 💾 **Save Reports**: Export validation reports to file with `s` key or "Save Report" button
+- 🔄 **Responsive Design**: Adapts to different terminal sizes
+- ❓ **Built-in Help**: Press `?` to view help and keyboard shortcuts
+
+**TUI Keyboard Shortcuts:**
+
+- `v` - Start validation
+- `c` - Clear results
+- `s` - Save report to file
+- `q` - Quit application
+- `?` - Show help
+
+**Configuration:**
+
+The TUI automatically loads settings from your `.env` file (if present) and allows you to override them in the interface:
+
+```env
+OMEKA_URL=https://omeka.unibe.ch
+ITEM_SET_ID=10780
+KEY_IDENTITY=your_key
+KEY_CREDENTIAL=your_secret
+```
+
+**Benefits:**
+
+- No need to remember CLI flags - configure everything in the UI
+- Visual feedback with color-coded messages and live statistics
+- Easy navigation between results, errors, and warnings
+- Save reports with a single keystroke
+- Great for users who prefer interactive tools over command-line arguments
 
 #### CSV Validation Reports
 
