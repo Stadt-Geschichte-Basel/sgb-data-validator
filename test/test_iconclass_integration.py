@@ -52,8 +52,9 @@ def test_iconclass_format_validation() -> None:
     """Test that format validation works independently"""
     print("\nTesting format validation...")
 
-    from src.iconclass import IconclassNotation
     from pydantic import ValidationError
+
+    from src.iconclass import IconclassNotation
 
     # Valid formats
     valid_formats = [

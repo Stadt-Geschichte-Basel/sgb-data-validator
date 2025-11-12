@@ -95,7 +95,7 @@ def example_parts_splitting() -> None:
 
     notation = IconclassNotation(notation="25F23")
     print(f"Notation: {notation.notation}")
-    print(f"Hierarchical structure:")
+    print("Hierarchical structure:")
     for i, part in enumerate(notation.parts, 1):
         indent = "  " * (i - 1)
         print(f"{indent}Level {i}: {part}")

@@ -77,21 +77,21 @@ def test_invalid_notation() -> None:
     try:
         IconclassNotation(notation="")
         print("✗ Should have rejected empty notation")
-    except ValidationError as e:
+    except ValidationError:
         print("✓ Correctly rejected empty notation")
 
     # Invalid characters
     try:
         IconclassNotation(notation="11H@INVALID")
         print("✗ Should have rejected notation with @ symbol")
-    except ValidationError as e:
+    except ValidationError:
         print("✓ Correctly rejected notation with invalid character '@'")
 
     # Invalid characters
     try:
         IconclassNotation(notation="11H$")
         print("✗ Should have rejected notation with $ symbol")
-    except ValidationError as e:
+    except ValidationError:
         print("✓ Correctly rejected notation with invalid character '$'")
 
 
