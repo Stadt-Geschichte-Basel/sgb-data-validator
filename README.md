@@ -1,133 +1,57 @@
-# sgb-data-validator
+# SGB Data Validator
 
-This repository contains a data validator for the Stadt-Geschichte-Basel project. The data in this repository is openly available to everyone and is intended to support reproducible research.
+> **Data Validation and Management Suite for Omeka S**
 
-## Overview
-
-The sgb-data-validator is a Python-based tool that validates metadata quality for the "Stadt.Geschichte.Basel" project's [Omeka S](https://omeka.org/s/) instance. It ensures that cultural heritage items and media objects conform to a comprehensive data model with controlled vocabularies.
-
-**Key features:**
-
-- ✅ **Schema validation** using Pydantic models
-- 📚 **Controlled vocabularies** (Era, MIME types, Licenses, Iconclass)
-- 🌍 **ISO 639-1 language validation** for all 184 two-letter codes
-- 🔗 **URI validation** with reachability checks
-- 📊 **CSV reports** for easy data quality review
-- 📈 **Data profiling** with interactive HTML reports
-- 🔄 **Data transformation** with whitespace normalization
-- 💾 **Backup and restore** for safe data management
-- 🔀 **Migration support** for cross-instance data transfer
-- 🔌 **Python API** for programmatic access
-- 🚀 **Fast and efficient** with asynchronous processing
+The **sgb-data-validator** is a comprehensive Python toolkit for validating and managing metadata in [Omeka S](https://omeka.org/s/) digital collections. Built for the [Stadt.Geschichte.Basel](https://www.stadtgeschichtebasel.ch/) project, it ensures cultural heritage data quality through schema validation, controlled vocabularies, and automated data transformations.
 
 [![GitHub issues](https://img.shields.io/github/issues/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)
-[![GitHub forks](https://img.shields.io/github/forks/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/network)
 [![GitHub stars](https://img.shields.io/github/stars/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/stargazers)
-[![Code license](https://img.shields.io/github/license/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/blob/main/LICENSE-AGPL.md)
-[![Data license](https://img.shields.io/badge/Data%20License-CC%20BY%204.0-blue.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/blob/main/LICENSE-CCBY.md)
-[![DOI](https://zenodo.org/badge/1067376900.svg)](https://zenodo.org/badge/latestdoi/ZENODO_RECORD)
+[![Code license](https://img.shields.io/github/license/Stadt-Geschichte-Basel/sgb-data-validator.svg)](LICENSE-AGPL.md)
+[![Data license](https://img.shields.io/badge/Data%20License-CC%20BY%204.0-blue.svg)](LICENSE-CCBY.md)
 
-## Repository Structure
+<!-- [![DOI](https://zenodo.org/badge/1067376900.svg)](https://zenodo.org/badge/latestdoi/ZENODO_RECORD) -->
 
-The structure of this repository follows the [Advanced Structure for Data Analysis](https://the-turing-way.netlify.app/project-design/project-repo/project-repo-advanced.html) of _The Turing Way_ and is organized as follows:
+## Features
 
-```text
-sgb-data-validator/
-├── src/                    # Source code modules
-│   ├── models.py          # Pydantic data models for validation
-│   ├── vocabularies.py    # Controlled vocabulary loader and validators
-│   ├── iconclass.py       # Iconclass notation parser and validator
-│   ├── profiling.py       # Data profiling and analysis utilities
-│   ├── transformations.py # Data transformation utilities
-│   └── api.py             # Omeka S API client
-├── test/                   # Test suite with pytest
-│   ├── test_validation.py # Core validation tests
-│   ├── test_iconclass.py  # Iconclass-specific tests
-│   ├── test_transformations.py # Transformation tests
-│   └── ...                # Additional test modules
-├── data/                   # Data files
-│   └── raw/               # Raw input data
-│       └── vocabularies.json  # Controlled vocabularies (Era, MIME, Licenses, Iconclass)
-├── examples/               # Usage examples and tutorials
-│   ├── api_usage.py       # API client examples
-│   ├── iconclass_usage.py # Iconclass validation examples
-│   ├── transformation_usage.py # Data transformation examples
-│   ├── migration_usage.py # Data migration examples
-│   └── MIGRATION.md       # Migration guide and documentation
-├── validate.py            # Main validation script (CLI)
-├── main.py                # Alternative entry point
-├── pyproject.toml         # Project dependencies and metadata
-├── README.md              # This file - main documentation
-├── IMPLEMENTATION.md      # Technical implementation details
-├── CONTRIBUTING.md        # Contribution guidelines
-└── CHANGELOG.md           # Version history and changes
-```
+- ✅ **Schema validation** with Pydantic models and Dublin Core metadata
+- 📚 **Controlled vocabularies** (Era, MIME types, Licenses, ICONCLASS notation)
+- 🌍 **ISO 639-1 language validation** (all 184 two-letter codes)
+- 🔗 **URI validation** with reachability checks and redirect detection
+- 📊 **CSV reports** with direct edit links to Omeka S admin
+- 📈 **Data profiling** with interactive HTML reports
+- 🔄 **Data transformation** (Unicode NFC, HTML entities, whitespace normalization)
+- 💾 **Offline workflow** for batch editing
+- 🔒 **Privacy management** (automatic flag propagation for placeholder images)
+- 🚀 **Fast and efficient** with async processing
 
-### Generated Directories (not in version control)
+## Documentation
 
-- `analysis/`: Generated data profiling reports (HTML, CSV)
-- `validation_reports/`: Generated validation CSV reports
-- `.venv/`: Python virtual environment (created by uv)
+**📖 [Full Documentation](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/)**
 
-## Data Description
+- [Quick Start Guide](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/#quick-start)
+- [Validation & CSV Reports](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/validation-reports.html)
+- [Data Transformation](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/#data-transformation)
+- [Offline Workflow](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/#offline-workflow)
+- [Python API Examples](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/#python-api)
 
-This repository contains a Python script to validate data from the "Stadt.Geschichte.Basel" project's Omeka S instance. The script uses pydantic models to validate items and media against a comprehensive data model, checking for:
+## Installation
 
-- Required fields (title, identifier, etc.)
-- Controlled vocabularies (Era, MIME types, Licenses, Iconclass)
-- ISO 639-1 language codes (all 184 two-letter codes)
-- Well-formed URIs
-- Empty or invalid field values
-- Unexpected fields
-- URLs in literal fields (warns if plain text fields contain URLs)
-
-The data models, including field names, descriptions, and controlled values, are documented in the `data/raw/vocabularies.json` file.
-
-All rights and intellectual property issues are documented in the `LICENSE-CCBY.md` and `LICENSE-AGPL.md` files.
-
-### Validation Workflow
-
-```mermaid
-flowchart TD
-    A[Start Validation] --> B[Fetch Items from Omeka S API]
-    B --> C{Items Found?}
-    C -->|No| D[End - No Items]
-    C -->|Yes| E[For Each Item]
-    E --> F[Validate Item Against Pydantic Model]
-    F --> G{Valid?}
-    G -->|No| H[Log Validation Errors]
-    G -->|Yes| I[Fetch Item Media]
-    I --> J[For Each Media]
-    J --> K[Validate Media Against Pydantic Model]
-    K --> L{Valid?}
-    L -->|No| M[Log Validation Errors]
-    L -->|Yes| N[Continue]
-    H --> N
-    M --> N
-    N --> O{More Items?}
-    O -->|Yes| E
-    O -->|No| P[Generate Validation Report]
-    P --> Q[End]
-```
-
-### Installation
-
-This project uses [uv](https://docs.astral.sh/uv/) for dependency management. To install dependencies:
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management:
 
 ```bash
 pip install uv
 uv sync
 ```
 
-### Configuration
+## Configuration
 
-You can configure the validator using a `.env` file. Copy the example file and edit it with your settings:
+Create a `.env` file:
 
 ```bash
 cp example.env .env
 ```
 
-The `.env` file should contain:
+Edit with your Omeka S settings:
 
 ```env
 OMEKA_URL=https://omeka.unibe.ch
@@ -136,604 +60,109 @@ KEY_CREDENTIAL=YOUR_KEY_CREDENTIAL
 ITEM_SET_ID=10780
 ```
 
-**Note:** Command-line parameters will override values from the `.env` file. This allows you to set default values in `.env` and override them when needed.
+> Command-line parameters override `.env` values.
 
-### Usage
+## Usage
 
-To validate data from the Omeka S API:
+### Basic Validation
 
 ```bash
-# Validate using settings from .env file
+# Validate using .env settings
 uv run python validate.py
 
-# Validate the default item set (10780) with explicit parameters
-uv run python validate.py --base-url https://omeka.unibe.ch --item-set-id 10780
+# With specific options
+uv run python validate.py --item-set-id 12345 --output report.txt
 
-# Save report to file
-uv run python validate.py --output validation_report.txt
+# Enable URI checking and profiling
+uv run python validate.py --check-uris --profile
 
-# Use API keys for authentication (can also be set in .env file)
-uv run python validate.py --key-identity YOUR_KEY_IDENTITY --key-credential YOUR_KEY_CREDENTIAL
-
-# Check URIs for broken links (404 errors, etc.) - This may take longer
-uv run python validate.py --check-uris
-
-# Check URIs and report redirects to different domains
-uv run python validate.py --check-uris --check-redirects
-
-# Treat failed URI checks as errors instead of warnings
-uv run python validate.py --check-uris --uri-check-severity error
-
-# Enable data profiling and generate HTML reports
-uv run python validate.py --profile
-
-# Enable minimal profiling (faster, less detailed)
-uv run python validate.py --profile --profile-minimal
-
-# Specify profiling output directory
-uv run python validate.py --profile --profile-output my_analysis/
-
-# Export validation results as CSV files
+# Export CSV reports
 uv run python validate.py --export-csv
-
-# Specify CSV export directory
-uv run python validate.py --export-csv --csv-output my_reports/
 
 # Get help
 uv run python validate.py --help
 ```
 
-#### CSV Validation Reports
-
-The validator can export validation results as CSV files for easier post-processing and review:
-
-- **`--export-csv`**: Export validation results as CSV files (items, media, and summary)
-- **`--csv-output`**: Specify output directory for CSV reports (default: `validation_reports/`)
-
-CSV export features:
-
-- **Separate files for items and media**: Creates `items_validation.csv` and `media_validation.csv`
-- **One row per resource**: Each row represents a single item or media object
-- **One column per field**: Each validation field is a separate column
-- **Empty cells for valid fields**: Valid fields have empty cells
-- **Error/warning messages in cells**: Invalid fields contain the error or warning message (prefixed with "error:" or "warning:")
-- **Edit links**: Each row includes a direct link to edit the resource in Omeka admin interface
-- **Summary report**: A `validation_summary.csv` file aggregates key metrics
-
-Example CSV output structure:
-
-```csv
-resource_id,edit_link,dcterms:identifier,dcterms:description,o:title
-121200,https://omeka.unibe.ch/admin/items/121200,error: Field is required,error: Field is required,
-121201,https://omeka.unibe.ch/admin/items/121201,,warning: Missing field,
-```
-
-The edit links allow direct navigation to problematic resources:
-
-- Items: `https://omeka.unibe.ch/admin/items/<item_id>`
-- Media: `https://omeka.unibe.ch/admin/media/<media_id>`
-
-For detailed documentation on CSV reports, see the [Validation Reports](https://Stadt-Geschichte-Basel.github.io/sgb-data-validator/validation-reports.html) page.
-
-#### URL/URI Checking
-
-The validator can check URLs and URIs in the data to ensure they are reachable:
-
-- **`--check-uris`**: Enable URI checking (validates URLs in dcterms fields and media URLs)
-- **`--check-redirects`**: Check for redirects and warn if URLs redirect to different domains (requires `--check-uris`)
-- **`--uri-check-severity`**: Set severity for failed URI checks - `warning` (default) or `error`
-
-URI checking features:
-
-- Detects 404 errors and other HTTP status codes (4xx, 5xx)
-- Validates URLs in Dublin Core fields (dcterms:creator, dcterms:source, etc.)
-- Checks media original URLs
-- Uses asynchronous requests for efficient parallel checking
-- **Rotates through multiple User-Agent strings to reduce 403 errors**
-- Falls back to GET requests when servers don't support HEAD
-- Includes realistic browser headers (Accept, Accept-Language, etc.)
-- Configurable severity allows treating broken links as warnings or errors
-- Optional redirect detection warns when URLs redirect to unexpected domains
-
-#### Data Profiling
-
-The validator can generate comprehensive data profiling reports using [ydata-profiling](https://docs.profiling.ydata.ai/):
-
-- **`--profile`**: Enable data profiling and generate analysis reports
-- **`--profile-minimal`**: Generate minimal profiling reports (faster, less detailed)
-- **`--profile-output`**: Specify output directory for profiling reports (default: `analysis/`)
-
-Profiling features:
-
-- **Automatic DataFrame conversion**: Converts nested JSON data from Omeka S API into tabular format
-- **Interactive HTML reports**: Generates comprehensive HTML reports with statistics, distributions, correlations, and missing values
-- **Separate analysis for items and media**: Creates individual reports for items and media with appropriate field handling
-- **CSV exports**: Saves flattened data to CSV files for further analysis
-- **Correlation analysis**: Identifies relationships between fields
-- **Missing data analysis**: Shows patterns of missing or incomplete data
-- **Data quality insights**: Helps identify data quality issues and inconsistencies
-
-Example profiling output:
-
-```text
-analysis/
-├── items.csv                   # Flattened items data
-├── items_profile.html          # Interactive items report
-├── media.csv                   # Flattened media data
-└── media_profile.html          # Interactive media report
-```
-
-Each HTML report includes:
-
-- Overview with dataset statistics
-- Variable details (type, distribution, unique values)
-- Correlation matrix
-- Missing values analysis
-- Sample data previews
-
-### Development
-
-This project uses the following tools from Astral:
-
-- **uv**: Fast Python package installer and resolver
-- **ruff**: Fast Python linter and formatter
-
-To run the linter and formatter:
+### Offline Workflow
 
 ```bash
-# Check code
-uv run ruff check .
-
-# Format code
-uv run ruff format .
-```
-
-To run tests:
-
-```bash
-uv run python test/test_validation.py
-```
-
-### API Usage
-
-The validator provides a comprehensive API for programmatic interaction with Omeka S data:
-
-```python
-from src.api import OmekaAPI
-
-# Initialize the API
-with OmekaAPI(
-    "https://omeka.unibe.ch",
-    key_identity="YOUR_KEY_IDENTITY",
-    key_credential="YOUR_KEY_CREDENTIAL"
-) as api:
-    # Read operations
-    item_set = api.get_item_set(10780)
-    items = api.get_items_from_set(10780)
-    item = api.get_item(12345)
-    media = api.get_media_from_item(12345)
-
-    # Save operations
-    api.save_to_file(items, "backup/items.json")
-    loaded_items = api.load_from_file("backup/items.json")
-
-    # Validation
-    is_valid, errors = api.validate_item(item_data)
-    validation_report = api.validate_item_set(10780)
-
-    # Backup and restore operations
-    backup_paths = api.backup_item_set(10780, "backups/")
-
-    # Restore from backup (dry run)
-    restore_status = api.restore_from_backup("backups/itemset_10780_20240101", dry_run=True)
-
-    # Restore for real (requires authentication)
-    restore_result = api.restore_from_backup("backups/itemset_10780_20240101", dry_run=False)
-
-    # Update operations (requires write permissions)
-    result = api.update_item(12345, updated_data, dry_run=True)
-```
-
-For complete examples, see `examples/api_usage.py`:
-
-```bash
-uv run python examples/api_usage.py
-```
-
-### Data Transformation
-
-The validator can transform and clean data by applying various transformations. This feature is useful for:
-
-- **Normalizing whitespace**: Removes non-standard Unicode whitespace characters (Issue #28)
-- **Comprehensive transformations**: Unicode NFC, HTML entities, Markdown links, abbreviations, URLs (Issue #31)
-- **Data cleaning**: Preparing data for upload or migration
-- **Batch operations**: Applying consistent transformations across all items and media
-
-#### Comprehensive Transformations (Issue #31)
-
-The comprehensive transformation feature provides advanced data cleaning and normalization:
-
-- **Unicode NFC normalization**: Ensures diacritics like ö, ä, ü are in their composed form
-- **HTML entity conversion**: Converts `&auml;`, `&ouml;`, `&#252;`, etc. to proper characters
-- **Markdown link formatting**: Fixes malformed links to proper `[label](URL)` format
-- **Abbreviation normalization**: Standardizes `d.j.`, `d. j.`, `D. J.` → `d. J.` and `d.ä.`, `d. ä.`, `D. Ä.` → `d. Ä.`
-- **Wikidata URL normalization**: Converts mobile URLs `m.wikidata.org/wiki/Q123` → `https://www.wikidata.org/wiki/Q123`
-- **URL standardization**: Adds `www.` prefix and removes trailing slashes for consistency
-- **Whitespace normalization**: All features from Issue #28 (see below)
-
-#### Whitespace Normalization (Issue #28)
-
-The whitespace normalization feature addresses common data quality issues found when copy-pasting text from PDFs:
-
-- **Soft hyphens** (U+00AD): Removed entirely
-- **Non-breaking spaces** (U+00A0, U+202F): Converted to regular spaces
-- **Zero-width characters** (U+200B, U+200C, U+200D, U+FEFF): Removed
-- **Directional formatting** (U+202A, U+202B, U+202C, U+202D, U+202E): Removed
-- **Multiple spaces**: Collapsed to single spaces
-- **Multiple line breaks**: Normalized to maximum of two (preserves paragraphs)
-
-#### Basic Usage (two-step)
-
-```python
-from src.api import OmekaAPI
-
-with OmekaAPI("https://omeka.unibe.ch") as api:
-  # 1) Download raw data (no transformations)
-  download = api.download_item_set(item_set_id=10780, output_dir="data/")
-  raw_dir = download["saved_to"]["directory"]
-
-  # 2) Apply comprehensive transformations (Issue #31)
-  transform = api.apply_transformations(
-    input_dir=raw_dir,
-    output_dir="data/",
-    apply_all_transformations=True,  # Enables all transformations
-  )
-
-  # Or apply only whitespace normalization (Issue #28)
-  transform = api.apply_transformations(
-    input_dir=raw_dir,
-    output_dir="data/",
-    apply_whitespace_normalization=True,
-  )
-
-print(f"Items transformed: {transform['items_transformed']}")
-print(f"Media transformed: {transform['media_transformed']}")
-print(f"Transformations: {', '.join(transform['transformations_applied'])}")
-```
-
-#### Direct Text Transformations
-
-You can also apply transformations to text directly:
-
-```python
-from src.transformations import apply_text_transformations, normalize_whitespace
-
-# Apply all comprehensive transformations
-text = "&uuml;ber d.j. m.wikidata.org/wiki/Q123"
-result = apply_text_transformations(text)
-# Result: "über d. J. https://www.wikidata.org/wiki/Q123"
-
-# Apply only whitespace normalization
-text = "lange Ge\u00ADschichte  mit doppelten Leerzeichen"
-normalized = normalize_whitespace(text)
-# Result: "lange Geschichte mit doppelten Leerzeichen"
-
-# Convert HTML entities
-from src.transformations import convert_html_entities
-text = "M&uuml;nchen &amp; Z&uuml;rich"
-result = convert_html_entities(text)
-# Result: "München & Zürich"
-
-# Normalize abbreviations
-from src.transformations import normalize_abbreviations
-text = "Text d.j. and d.ä. here"
-result = normalize_abbreviations(text)
-# Result: "Text d. J. and d. Ä. here"
-```
-
-For complete examples, see `examples/transformation_usage.py`:
-
-```bash
-uv run python examples/transformation_usage.py
-```
-
-#### Helper Utilities
-
-Additional utilities are available for specific data quality tasks:
-
-```python
-from src.transformations import (
-    has_placeholder_media,
-    extract_wikidata_qids,
-    deduplicate_qids,
-    normalize_name,
-)
-
-# Detect placeholder media files
-media_data = {"o:filename": "sgb-fdp-platzhalter.jpg"}
-is_placeholder = has_placeholder_media(media_data)
-# Result: True
-
-# Extract Wikidata QIDs from text
-text = "See Q123 and https://www.wikidata.org/wiki/Q456 for details"
-qids = extract_wikidata_qids(text)
-# Result: ["Q123", "Q456"]
-
-# Deduplicate QIDs
-qids = ["Q1", "Q2", "Q1", "Q3", "Q2"]
-unique_qids = deduplicate_qids(qids)
-# Result: ["Q1", "Q2", "Q3"]
-
-# Normalize names for deduplication
-name = "&Uuml;ber  D.J.  M&uuml;ller"
-normalized = normalize_name(name)
-# Result: "über d. j. müller"
-```
-
-### Offline Workflow: Download, Transform, Edit, and Upload
-
-The validator supports a complete offline workflow for data transformation and batch updates:
-
-#### 1. Download (raw)
-
-Download an item set as-is. Files are saved with a raw suffix to indicate status:
-
-```bash
-# Download data from Omeka S (credentials optional, from .env if not provided)
+# 1. Download
 uv run python workflow.py download --item-set-id 10780
 
-# Produces e.g. data/raw_itemset_10780_YYYYMMDD_HHMMSS/
-```
-
-#### 2. Transform
-
-Apply transformations to a previously downloaded raw directory:
-
-```bash
-# Transform (ALL transformations applied by default)
+# 2. Transform
 uv run python workflow.py transform data/raw_itemset_10780_*/
 
-# Or skip all transformations (just copy data)
-uv run python workflow.py transform data/raw_itemset_10780_*/ --no-transformations
-
-# Produces e.g. data/transformed_itemset_10780_YYYYMMDD_HHMMSS/
-```
-
-#### 3. Edit Offline
-
-Edit the JSON files with any text editor:
-
-- items_transformed.json — all items in the item set
-- media_transformed.json — all media objects
-- item_set_transformed.json — item set metadata
-
-#### 4. Validate Changes
-
-Before uploading, validate your changes:
-
-```bash
-# Validate offline files
-uv run python workflow.py validate data/transformed_itemset_10780_*/
-
-# Output shows any validation errors
-# ✓ All files are valid and ready for upload
-```
-
-#### 5. Upload (Dry Run)
-
-Test the upload without making changes:
-
-```bash
-# Dry run (validates but doesn't upload) - default behavior
-uv run python workflow.py upload data/transformed_itemset_10780_*/
-
-# Reviews what would be updated (uses credentials from .env)
-```
-
-#### 6. Upload (For Real)
-
-When you're ready, upload the changes:
-
-```bash
-# Actually upload (requires credentials in .env or CLI args)
-uv run python workflow.py upload data/transformed_itemset_10780_*/ --no-dry-run
-
-# ✓ Upload completed successfully
-```
-
-#### Complete Workflow Example
-
-```bash
-# 1. Download raw data
-uv run python workflow.py download --item-set-id 10780
-
-# 2. Transform the raw directory
-uv run python workflow.py transform data/raw_itemset_10780_*/
-
-# 3. Edit files offline
-# (Open data/transformed_itemset_10780_*/items_transformed.json in your editor)
+# 3. Edit JSON files offline with any text editor
 
 # 4. Validate
 uv run python workflow.py validate data/transformed_itemset_10780_*/
 
-# 5. Dry run (uses credentials from .env)
+# 5. Dry run
 uv run python workflow.py upload data/transformed_itemset_10780_*/
 
 # 6. Upload for real
 uv run python workflow.py upload data/transformed_itemset_10780_*/ --no-dry-run
 ```
 
-#### Simplified Workflow with .env
+## Development
 
-Configure once in `.env`, then run commands without flags:
-
-```env
-OMEKA_URL="https://omeka.unibe.ch"
-KEY_IDENTITY=your_key
-KEY_CREDENTIAL=your_secret
-ITEM_SET_ID=10780
-```
-
-Then run the workflow:
+Run linter and formatter:
 
 ```bash
-# 1) Download (uses OMEKA_URL, optional credentials from .env)
-uv run python workflow.py download --item-set-id 10780
-
-# 2) Transform (applies all transformations by default)
-uv run python workflow.py transform data/raw_itemset_10780_*/
-
-# 3) Validate
-uv run python workflow.py validate data/transformed_itemset_10780_*/
-
-# 4) Upload (dry-run by default, uses credentials from .env)
-uv run python workflow.py upload data/transformed_itemset_10780_*/
-
-# 5) Upload for real
-uv run python workflow.py upload data/transformed_itemset_10780_*/ --no-dry-run
+uv run ruff check .
+uv run ruff format .
 ```
 
-### Notes
-
-- All commands read configuration from `.env` if not provided as arguments
-- Download and transform don't require credentials for public data
-- Upload requires `OMEKA_URL`, `KEY_IDENTITY`, and `KEY_CREDENTIAL` in `.env` or as CLI arguments
-- Validation during upload is non-blocking: errors are logged and upload continues
-
-### Important Notes
-
-**Upload Behavior:** The upload workflow updates existing resources by ID. It does not create new items or media. Resources must already exist in the target instance with matching IDs.
-
-**Security:** Store API credentials in `.env` file, never commit them to version control.
-
-### Troubleshooting
-
-#### Installation Issues
-
-**Problem:** `uv: command not found`
-
-**Solution:** Install uv first:
+Run tests (96 tests: 72 unit + 24 integration):
 
 ```bash
-pip install uv
+uv run pytest
+uv run pytest -m unit          # Unit tests only
+uv run pytest -m integration   # Integration tests only
 ```
 
-**Problem:** Dependencies fail to install
+## Repository Structure
 
-**Solution:** Try removing the lock file and re-syncing:
+Following [The Turing Way](https://the-turing-way.netlify.app/project-design/project-repo/project-repo-advanced.html):
 
-```bash
-rm uv.lock
-uv sync
+```text
+sgb-data-validator/
+├── src/                    # Source modules
+│   ├── models.py          # Pydantic validation models
+│   ├── api.py             # Omeka S API client
+│   ├── transformations.py # Data transformation utilities
+│   ├── vocabularies.py    # Controlled vocabulary loader
+│   └── iconclass.py       # ICONCLASS notation parser
+├── test/                   # Test suite (96 tests)
+├── examples/               # Usage examples
+├── data/raw/              # Controlled vocabularies
+├── validate.py            # CLI validation script
+└── workflow.py            # CLI offline workflow script
 ```
-
-#### Validation Issues
-
-**Problem:** `KeyError` or `AttributeError` when validating
-
-**Solution:** Ensure you're using the correct Omeka S API version and that your `.env` file has valid credentials.
-
-**Problem:** URI checking is slow or times out
-
-**Solution:**
-
-- Use `--uri-check-severity warning` to make failed URIs non-blocking
-- Reduce concurrent requests by limiting network activity
-- Skip URI checking during initial validation runs
-
-**Problem:** 403 errors when checking URIs
-
-**Solution:** The validator already rotates User-Agent strings. If you still get 403 errors, the target server may be rate-limiting. Wait a few minutes and try again.
-
-#### Configuration Issues
-
-**Problem:** Environment variables not loaded from `.env`
-
-**Solution:** Ensure `.env` is in the root directory and not `.env.example`. Command-line parameters override `.env` values.
-
-**Problem:** Cannot connect to Omeka S API
-
-**Solution:**
-
-- Verify the `OMEKA_URL` in `.env` is correct
-- Check network connectivity
-- Ensure API credentials have appropriate permissions
-
-#### Performance Issues
-
-**Problem:** Validation is very slow
-
-**Solution:**
-
-- Disable URI checking (`--check-uris`) for faster validation
-- Use minimal profiling (`--profile-minimal`) instead of full profiling
-- Validate smaller item sets for testing
-
-#### Getting Help
-
-If you encounter issues not listed here:
-
-1. Check the [issue tracker](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues) for similar problems
-2. Review the [IMPLEMENTATION.md](IMPLEMENTATION.md) for technical details
-3. [Open a new issue](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues/new/choose) with:
-   - Your environment (OS, Python version)
-   - Steps to reproduce the problem
-   - Full error messages and logs
-   - What you've already tried
-
-## Use
-
-These data are openly available to everyone and can be used for any research or educational purpose. If you use this data in your research, please cite as specified in `CITATION.cff`. The following citation formats are also available through _Zenodo_:
-
-- [BibTeX](https://zenodo.org/record/ZENODO_RECORD/export/hx)
-- [CSL](https://zenodo.org/record/ZENODO_RECORD/export/csl)
-- [DataCite](https://zenodo.org/record/ZENODO_RECORD/export/dcite4)
-- [Dublin Core](https://zenodo.org/record/ZENODO_RECORD/export/xd)
-- [DCAT](https://zenodo.org/record/ZENODO_RECORD/export/dcat)
-- [JSON](https://zenodo.org/record/ZENODO_RECORD/export/json)
-- [JSON-LD](https://zenodo.org/record/ZENODO_RECORD/export/schemaorg_jsonld)
-- [GeoJSON](https://zenodo.org/record/ZENODO_RECORD/export/geojson)
-- [MARCXML](https://zenodo.org/record/ZENODO_RECORD/export/xm)
-
-_Zenodo_ provides an [API (REST & OAI-PMH)](https://developers.zenodo.org/) to access the data. For example, the following command will return the metadata for the most recent version of the data
-
-```bash
-curl -i https://zenodo.org/api/records/ZENODO_RECORD
-```
-
-## Support
-
-This project is maintained by [@maehr](https://github.com/maehr). Please understand that we can't provide individual support via email. We also believe that help is much more valuable when it's shared publicly, so more people can benefit from it.
-
-| Type                                   | Platforms                                                                                      |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| 🚨 **Bug Reports**                     | [GitHub Issue Tracker](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)    |
-| 📊 **Report bad data**                 | [GitHub Issue Tracker](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)    |
-| 📚 **Docs Issue**                      | [GitHub Issue Tracker](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)    |
-| 🎁 **Feature Requests**                | [GitHub Issue Tracker](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)    |
-| 🛡 **Report a security vulnerability** | See [SECURITY.md](SECURITY.md)                                                                 |
-| 💬 **General Questions**               | [GitHub Discussions](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/discussions) |
-
-## Roadmap
-
-No changes are currently planned.
 
 ## Contributing
 
-All contributions to this repository are welcome! If you find errors or problems with the data, or if you want to add new data or features, please open an issue or pull request. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+Contributions are welcome! See:
 
-## Versioning
-
-We use [SemVer](http://semver.org/) for versioning. The available versions are listed in the [tags on this repository](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/tags).
-
-## Authors and acknowledgment
-
-- **Moritz Mähr** - _Initial work_ - [maehr](https://github.com/maehr)
-
-See also the list of [contributors](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/graphs/contributors) who contributed to this project.
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) - Community standards
+- [SECURITY.md](SECURITY.md) - Security policy
+- [CHANGELOG.md](CHANGELOG.md) - Version history
 
 ## License
 
-The data in this repository is released under the Creative Commons Attribution 4.0 International (CC BY 4.0) License - see the [LICENSE-CCBY](LICENSE-CCBY.md) file for details. By using this data, you agree to give appropriate credit to the original author(s) and to indicate if any modifications have been made.
+- **Code**: [AGPL-3.0](LICENSE-AGPL.md)
+- **Data**: [CC BY 4.0](LICENSE-CCBY.md)
 
-The code in this repository is released under the GNU Affero General Public License v3.0 - see the [LICENSE-AGPL](LICENSE-AGPL.md) file for details. By using this code, you agree to make any modifications available under the same license.
+## Citation
+
+See [CITATION.cff](CITATION.cff) for citation metadata.
+
+## Support
+
+- [GitHub Issues](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)
+- [GitHub Discussions](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/discussions)
+
+---
+
+**Maintained by [@maehr](https://github.com/maehr)** | **[Stadt.Geschichte.Basel](https://www.stadtgeschichtebasel.ch/)**

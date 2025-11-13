@@ -307,7 +307,8 @@ async def upgrade_http_to_https_async(text: str) -> str:
         return text
 
     # Find all HTTP URLs (not already HTTPS)
-    http_urls = re.findall(r"http://[^\s<>\[\]{}|\\^`]+", text)
+    # Stop at whitespace, brackets, parentheses, and other common delimiters
+    http_urls = re.findall(r"http://[^\s<>\[\](){}|\\^`]+", text)
 
     if not http_urls:
         return text
@@ -494,6 +495,8 @@ def transform_media(
 ) -> dict[str, Any]:
     """Transform a media object's data by normalizing text in all text fields.
 
+    This function also sets o:is_public to False for media with placeholder images.
+
     Args:
         media_data: The media data dictionary
         apply_all: If True, apply all transformations; if False, only whitespace
@@ -503,7 +506,14 @@ def transform_media(
         A new dictionary with transformed data
     """
     # Media has the same structure as items for the fields we care about
-    return transform_item(media_data, apply_all=apply_all, upgrade_https=upgrade_https)
+    result = transform_item(
+        media_data, apply_all=apply_all, upgrade_https=upgrade_https
+    )
+
+    # Set private flag for media with placeholder images
+    result = set_media_private_flag(result)
+
+    return result
 
 
 def transform_item_set_data(
@@ -514,6 +524,11 @@ def transform_item_set_data(
     upgrade_https: bool = True,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     """Transform an entire item set with all its items and media.
+
+    This function:
+    1. Transforms text in all items and media
+    2. Sets o:is_public=False for media with placeholder images
+    3. Propagates private flag to items if any of their media children are private
 
     Args:
         item_set_data: The item set data dictionary
@@ -536,11 +551,17 @@ def transform_item_set_data(
         for item in items
     ]
 
-    # Transform all media
+    # Transform all media (includes setting private flag for placeholders)
     transformed_media = [
         transform_media(m, apply_all=apply_all, upgrade_https=upgrade_https)
         for m in media
     ]
+
+    # Propagate private flag from media to their parent items
+    # If any media child is private, the parent item should also be private
+    transformed_items = propagate_private_flag_to_items(
+        transformed_items, transformed_media
+    )
 
     return transformed_item_set, transformed_items, transformed_media
 
@@ -564,6 +585,89 @@ def has_placeholder_media(media_data: dict[str, Any]) -> bool:
         return "sgb-fdp-platzhalter" in filename.lower()
 
     return False
+
+
+def set_media_private_flag(media_data: dict[str, Any]) -> dict[str, Any]:
+    """Set o:is_public to False for media with placeholder images.
+
+    This function checks if media contains a placeholder file and sets
+    the o:is_public flag to False if it does.
+
+    Args:
+        media_data: The media data dictionary
+
+    Returns:
+        A copy of the media data with o:is_public potentially updated
+    """
+    if not isinstance(media_data, dict):
+        return media_data
+
+    # Create a copy to avoid modifying the original
+    result = media_data.copy()
+
+    # Check if this media has a placeholder
+    if has_placeholder_media(media_data):
+        result["o:is_public"] = False
+
+    return result
+
+
+def propagate_private_flag_to_items(
+    items: list[dict[str, Any]], media: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Set o:is_public to False for items if any of their media children are private.
+
+    This function creates a mapping of media to their parent items and sets
+    items to private if any of their media are private.
+
+    Args:
+        items: List of item data dictionaries
+        media: List of media data dictionaries
+
+    Returns:
+        List of items with o:is_public potentially updated
+    """
+    if not items or not media:
+        return items
+
+    # Build a mapping of item_id -> has_private_media
+    item_has_private_media: dict[int, bool] = {}
+
+    for media_item in media:
+        if not isinstance(media_item, dict):
+            continue
+
+        # Get the parent item ID
+        o_item = media_item.get("o:item")
+        if not o_item or not isinstance(o_item, dict):
+            continue
+
+        item_id = o_item.get("o:id")
+        if not item_id:
+            continue
+
+        # Check if this media is private
+        is_public = media_item.get("o:is_public", True)
+        if not is_public:
+            item_has_private_media[item_id] = True
+
+    # Update items if they have private media
+    result = []
+    for item in items:
+        if not isinstance(item, dict):
+            result.append(item)
+            continue
+
+        item_copy = item.copy()
+        item_id = item.get("o:id")
+
+        # If this item has any private media, make the item private
+        if item_id and item_has_private_media.get(item_id, False):
+            item_copy["o:is_public"] = False
+
+        result.append(item_copy)
+
+    return result
 
 
 def extract_wikidata_qids(text: str) -> list[str]:

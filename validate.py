@@ -828,7 +828,11 @@ class OmekaValidator:
 
     def save_report(self, output_file: Path) -> None:
         """Save validation report to file"""
-        with open(output_file, "w", encoding="utf-8") as f:
+        # Ensure parent directory exists when a path with directories is provided
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write("=" * 80 + "\n")
             f.write("VALIDATION REPORT\n")
             f.write("=" * 80 + "\n")
@@ -851,7 +855,7 @@ class OmekaValidator:
                 for warning in self.warnings:
                     f.write(f"  {warning}\n")
 
-        print(f"\nReport saved to: {output_file}")
+        print(f"\nReport saved to: {output_path}")
 
     def export_validation_csv(
         self, output_dir: str | Path = "validation_reports"
@@ -1016,6 +1020,8 @@ class OmekaValidator:
             return
 
         output_dir = Path(output_dir)
+        # Ensure output directory exists
+        output_dir.mkdir(parents=True, exist_ok=True)
         print(f"\nGenerating profiling reports in {output_dir}/...")
 
         if self.items_data:

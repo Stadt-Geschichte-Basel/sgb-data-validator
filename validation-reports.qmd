@@ -119,7 +119,7 @@ Click these links to quickly navigate to the resource and make corrections.
 ### Common Warning Messages
 
 | Message | Meaning | Action Recommended |
-|------------------|------------------|------------------------------------|
+|-------------------|-------------------|-----------------------------------|
 | `warning: Missing field` | An optional but recommended field is missing | Consider adding the field for completeness |
 | `warning: URI is not reachable: <url>` | A referenced URL returns an error (404, 500, etc.) | Verify and correct the URL |
 | `warning: URL redirects to different domain` | A URL redirects to an unexpected domain | Verify the redirect is intentional |
@@ -193,11 +193,12 @@ uv run python validate.py --output validation_report.txt \
 
 The reports shown below are **actual validation results** from the Stadt.Geschichte.Basel Omeka S instance, automatically generated during each site build. These reports reflect the current state of the data.
 
-**Download live validation files:** 
-- [items_validation.csv](analysis/items_validation.csv) - Items with validation issues 
-- [media_validation.csv](analysis/media_validation.csv) - Media with validation issues 
-- [validation_summary.csv](analysis/validation_summary.csv) - Summary statistics 
-- [validation_report.txt](analysis/validation_report.txt) - Text report with errors and warnings
+**Download live validation files:**
+
+-   [items_validation.csv](analysis/items_validation.csv) - Items with validation issues
+-   [media_validation.csv](analysis/media_validation.csv) - Media with validation issues
+-   [validation_summary.csv](analysis/validation_summary.csv) - Summary statistics
+-   [validation_report.txt](analysis/validation_report.txt) - Text report with errors and warnings
 
 Sample/example files are also available in the repository at [`examples/sample_reports/`](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/tree/main/examples/sample_reports) for reference.
 :::
@@ -208,6 +209,8 @@ Sample/example files are also available in the repository at [`examples/sample_r
 import os
 import pandas as pd
 from pathlib import Path
+from IPython.display import Markdown
+from tabulate import tabulate
 
 # Define paths to validation files
 validation_report_path = Path("analysis/validation_report.txt")
@@ -218,50 +221,21 @@ summary_csv_path = Path("analysis/validation_summary.csv")
 # Helper function to check if file exists and is not empty
 def file_exists_and_not_empty(path):
     return path.exists() and path.stat().st_size > 0
-
-# Helper function to create a markdown clickable link from URL
-def make_clickable(val):
-    if pd.isna(val) or val == "":
-        return val
-    if isinstance(val, str) and val.startswith("http"):
-        return f'<a href="{val}" target="_blank">Edit</a>'
-    return val
-
-# Helper function to highlight errors and warnings
-def highlight_issues(val):
-    if pd.isna(val) or val == "":
-        return ""
-    val_str = str(val)
-    if val_str.startswith("error:"):
-        return f'<span style="color: #dc3545; font-weight: bold;">{val_str}</span>'
-    elif val_str.startswith("warning:"):
-        return f'<span style="color: #ffc107;">{val_str}</span>'
-    return val_str
 ```
 
 ### Validation Summary Statistics
 
 ```{python}
+#| label: tbl-validation-summary
+#| tbl-cap: Validation Summary Metrics
 #| echo: false
 #| output: asis
 
 if file_exists_and_not_empty(summary_csv_path):
-    # Read and display summary CSV
-    summary_df = pd.read_csv(summary_csv_path)
-    
-    # Create a nicely formatted display
-    print("#### Summary Metrics")
-    print()
-    
-    # Convert to a more readable format
-    for _, row in summary_df.iterrows():
-        metric = row['metric'].replace('_', ' ').title()
-        value = row['value']
-        print(f"- **{metric}:** {value}")
-    print()
+    df = pd.read_csv(summary_csv_path)
+    print(tabulate(df.values.tolist(), headers=df.columns, tablefmt="github"))
 else:
     print("*No validation summary available. Run validation to generate reports.*")
-    print()
 ```
 
 ### Text Report Output
@@ -309,108 +283,60 @@ else:
 ### Items Validation Table
 
 ```{python}
+#| label: tbl-items-validation
+#| tbl-cap: Items with Validation Issues
 #| echo: false
 #| output: asis
 
 if file_exists_and_not_empty(items_csv_path):
-    # Read items validation CSV
-    items_df = pd.read_csv(items_csv_path)
+    df = pd.read_csv(items_csv_path)
     
-    if len(items_df) > 0:
-        print(f"#### Items with Validation Issues ({len(items_df)} items)")
-        print()
-        
-        # Apply formatting to the edit_link column
-        if 'edit_link' in items_df.columns:
-            items_df['edit_link'] = items_df['edit_link'].apply(make_clickable)
-        
-        # Apply highlighting to all columns except resource_id and edit_link
-        display_df = items_df.copy()
-        for col in display_df.columns:
-            if col not in ['resource_id', 'edit_link']:
-                display_df[col] = display_df[col].apply(highlight_issues)
-        
-        # Display as HTML table with better styling
-        html_table = display_df.to_html(escape=False, index=False, classes='table table-striped table-hover', border=0)
-        print(html_table)
-        print()
-        
-        # Add a note about the table
-        print("::: {.callout-tip}")
-        print("## Using the Table")
-        print("- Click the 'Edit' link to open the item in Omeka admin interface")
-        print("- <span style='color: #dc3545; font-weight: bold;'>Red text</span> indicates validation errors that must be fixed")
-        print("- <span style='color: #ffc107;'>Yellow text</span> indicates warnings for recommended improvements")
-        print("- Empty cells indicate valid fields with no issues")
-        print(":::")
-        print()
+    if len(df) > 0:
+        print(f"**Items with issues: {len(df)}**\n\n")
+        print(tabulate(df.values.tolist(), headers=df.columns, tablefmt="github"))
     else:
         print("✅ **Excellent!** All items passed validation with no issues.")
-        print()
 else:
-    print("**Example format** (run validation to see actual data):")
-    print()
-    print("```csv")
-    print("resource_id,edit_link,dcterms:identifier,dcterms:description,dcterms:subject")
-    print("10780,https://omeka.unibe.ch/admin/items/10780,error: Field is required,,")
-    print("10781,https://omeka.unibe.ch/admin/items/10781,,warning: Missing field,")
-    print("```")
-    print()
+    print("*No items validation data available. Run validation to generate reports.*")
 ```
+
+::: {.callout-tip}
+## Using the Table
+
+- Use the `edit_link` column values to navigate to items in Omeka admin interface
+- **`error:`** prefix indicates validation errors that must be fixed
+- **`warning:`** prefix indicates warnings for recommended improvements
+- Empty cells indicate valid fields with no issues
+:::
 
 ### Media Validation Table
 
 ```{python}
+#| label: tbl-media-validation
+#| tbl-cap: Media with Validation Issues
 #| echo: false
 #| output: asis
 
 if file_exists_and_not_empty(media_csv_path):
-    # Read media validation CSV
-    media_df = pd.read_csv(media_csv_path)
+    df = pd.read_csv(media_csv_path)
     
-    if len(media_df) > 0:
-        print(f"#### Media with Validation Issues ({len(media_df)} media objects)")
-        print()
-        
-        # Apply formatting to the edit_link column
-        if 'edit_link' in media_df.columns:
-            media_df['edit_link'] = media_df['edit_link'].apply(make_clickable)
-        
-        # Apply highlighting to all columns except resource_id and edit_link
-        display_df = media_df.copy()
-        for col in display_df.columns:
-            if col not in ['resource_id', 'edit_link']:
-                display_df[col] = display_df[col].apply(highlight_issues)
-        
-        # Display as HTML table with better styling
-        html_table = display_df.to_html(escape=False, index=False, classes='table table-striped table-hover', border=0)
-        print(html_table)
-        print()
-        
-        # Add a note about the table
-        print("::: {.callout-tip}")
-        print("## Using the Table")
-        print("- Click the 'Edit' link to open the media in Omeka admin interface")
-        print("- <span style='color: #dc3545; font-weight: bold;'>Red text</span> indicates validation errors that must be fixed")
-        print("- <span style='color: #ffc107;'>Yellow text</span> indicates warnings for recommended improvements")
-        print("- Empty cells indicate valid fields with no issues")
-        print(":::")
-        print()
+    if len(df) > 0:
+        print(f"**Media with issues: {len(df)}**\n\n")
+        print(tabulate(df.values.tolist(), headers=df.columns, tablefmt="github"))
     else:
         print("✅ **Excellent!** All media objects passed validation with no issues.")
-        print()
 else:
-    print("**Example format** (run validation to see actual data):")
-    print()
-    print("```csv")
-    print("resource_id,edit_link,dcterms:identifier,dcterms:creator,o:media_type")
-    print("10778,https://omeka.unibe.ch/admin/media/10778,,warning: Missing field,")
-    print("10779,https://omeka.unibe.ch/admin/media/10779,error: Field is required,,error: Invalid MIME type")
-    print("```")
-    print()
+    print("*No media validation data available. Run validation to generate reports.*")
 ```
 
+::: {.callout-tip}
+## Using the Table
 
+- Use the `edit_link` column values to navigate to media in Omeka admin interface
+- **`error:`** prefix indicates validation errors that must be fixed
+- **`warning:`** prefix indicates warnings for recommended improvements
+- Empty cells indicate valid fields with no issues
+:::
 
 ### Interpreting the Results
 
