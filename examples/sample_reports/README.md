@@ -34,4 +34,4 @@ These sample files demonstrate:
 4. **Edit links**: Direct URLs to fix issues in Omeka admin interface
 5. **Summary metrics**: Overall data quality statistics
 
-For detailed documentation, see [Validation Reports](https://Stadt-Geschichte-Basel.github.io/sgb-data-validator/validation-reports.html).
+For detailed documentation, see [Validation Reports](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/validation-reports.html).

@@ -119,7 +119,7 @@ Click these links to quickly navigate to the resource and make corrections.
 ### Common Warning Messages
 
 | Message | Meaning | Action Recommended |
-|------------------|------------------|------------------------------------|
+|-------------------|-------------------|-----------------------------------|
 | `warning: Missing field` | An optional but recommended field is missing | Consider adding the field for completeness |
 | `warning: URI is not reachable: <url>` | A referenced URL returns an error (404, 500, etc.) | Verify and correct the URL |
 | `warning: URL redirects to different domain` | A URL redirects to an unexpected domain | Verify the redirect is intentional |
@@ -193,97 +193,149 @@ uv run python validate.py --output validation_report.txt \
 
 The reports shown below are **actual validation results** from the Stadt.Geschichte.Basel Omeka S instance, automatically generated during each site build. These reports reflect the current state of the data.
 
-**Download live validation files:** - [items_validation.csv](analysis/items_validation.csv) - Items with validation issues - [media_validation.csv](analysis/media_validation.csv) - Media with validation issues - [validation_summary.csv](analysis/validation_summary.csv) - Summary statistics - [validation_report.txt](analysis/validation_report.txt) - Text report with errors and warnings
+**Download live validation files:**
+
+-   [items_validation.csv](analysis/items_validation.csv) - Items with validation issues
+-   [media_validation.csv](analysis/media_validation.csv) - Media with validation issues
+-   [validation_summary.csv](analysis/validation_summary.csv) - Summary statistics
+-   [validation_report.txt](analysis/validation_report.txt) - Text report with errors and warnings
 
 Sample/example files are also available in the repository at [`examples/sample_reports/`](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/tree/main/examples/sample_reports) for reference.
 :::
 
+```{python}
+#| echo: false
+#| output: asis
+import os
+import pandas as pd
+from pathlib import Path
+from IPython.display import Markdown
+from tabulate import tabulate
+
+# Define paths to validation files
+validation_report_path = Path("analysis/validation_report.txt")
+items_csv_path = Path("analysis/items_validation.csv")
+media_csv_path = Path("analysis/media_validation.csv")
+summary_csv_path = Path("analysis/validation_summary.csv")
+
+# Helper function to check if file exists and is not empty
+def file_exists_and_not_empty(path):
+    return path.exists() and path.stat().st_size > 0
+```
+
+### Validation Summary Statistics
+
+```{python}
+#| label: tbl-validation-summary
+#| tbl-cap: Validation Summary Metrics
+#| echo: false
+#| output: asis
+
+if file_exists_and_not_empty(summary_csv_path):
+    df = pd.read_csv(summary_csv_path)
+    print(tabulate(df.values.tolist(), headers=df.columns, tablefmt="github"))
+else:
+    print("*No validation summary available. Run validation to generate reports.*")
+```
+
 ### Text Report Output
 
-**Example format** (actual report available for download above):
+```{python}
+#| echo: false
+#| output: asis
 
-```         
-================================================================================
-VALIDATION REPORT
-================================================================================
-Items validated: 150
-Media validated: 300
-Total errors: 12
-Total warnings: 45
-URIs checked: 450
-Failed URIs: 3
-================================================================================
-
-ERRORS:
-  [Item 10780] dcterms:identifier: Field is required
-  [Item 10782] dcterms:subject[0]: Invalid Iconclass code: XYZ123
-  [Item 10783] dcterms:language[0]: Invalid language code (must be valid ISO 639-1 two-letter code): xyz
-  [Media 10779] dcterms:identifier: Field is required
-  [Media 10779] o:media_type: Invalid MIME type: application/unknown
-
-WARNINGS (informational):
-  [Item 10781] dcterms:description: Missing field
-  [Media 10778] dcterms:creator: Missing field
-  [Item 10777] dcterms:description: Literal field contains URL: https://example.com/...
-  [Item 10785] dcterms:source: URI is not reachable: https://broken-link.example.com (404 Not Found)
-
-Report saved to: analysis/validation_report.txt
+if file_exists_and_not_empty(validation_report_path):
+    # Read and display the text report
+    with open(validation_report_path, 'r') as f:
+        report_content = f.read()
+    
+    print("```")
+    print(report_content)
+    print("```")
+    print()
+else:
+    print("**Example format** (run validation to see actual report):")
+    print()
+    print("```")
+    print("================================================================================")
+    print("VALIDATION REPORT")
+    print("================================================================================")
+    print("Items validated: 150")
+    print("Media validated: 300")
+    print("Total errors: 12")
+    print("Total warnings: 45")
+    print("URIs checked: 450")
+    print("Failed URIs: 3")
+    print("================================================================================")
+    print()
+    print("ERRORS:")
+    print("  [Item 10780] dcterms:identifier: Field is required")
+    print("  [Item 10782] dcterms:subject[0]: Invalid Iconclass code: XYZ123")
+    print("  [Media 10779] dcterms:identifier: Field is required")
+    print()
+    print("WARNINGS (informational):")
+    print("  [Item 10781] dcterms:description: Missing field")
+    print("  [Media 10778] dcterms:creator: Missing field")
+    print("```")
+    print()
 ```
 
-### Items Validation CSV
+### Items Validation Table
 
-**File:** `analysis/items_validation.csv`
+```{python}
+#| label: tbl-items-validation
+#| tbl-cap: Items with Validation Issues
+#| echo: false
+#| output: asis
 
-**Example format** (download the link above for actual live data):
-
-``` csv
-resource_id,edit_link,dcterms:identifier,dcterms:description,dcterms:temporal,dcterms:subject,dcterms:language
-10780,https://omeka.unibe.ch/admin/items/10780,error: Field is required,,,,
-10781,https://omeka.unibe.ch/admin/items/10781,,warning: Missing field,,,
-10782,https://omeka.unibe.ch/admin/items/10782,,,,error: Invalid Iconclass code: XYZ123,
-10783,https://omeka.unibe.ch/admin/items/10783,,,,,error: Invalid language code (must be valid ISO 639-1 two-letter code): xyz
+if file_exists_and_not_empty(items_csv_path):
+    df = pd.read_csv(items_csv_path)
+    
+    if len(df) > 0:
+        print(f"**Items with issues: {len(df)}**\n\n")
+        print(tabulate(df.values.tolist(), headers=df.columns, tablefmt="github"))
+    else:
+        print("✅ **Excellent!** All items passed validation with no issues.")
+else:
+    print("*No items validation data available. Run validation to generate reports.*")
 ```
 
-**Key observations (from example):** - Item 10780 is missing required `dcterms:identifier` (error) - Item 10781 has missing `dcterms:description` (warning - optional field) - Item 10782 has an invalid Iconclass code in `dcterms:subject` - Item 10783 has an invalid ISO 639-1 language code
+::: {.callout-tip}
+## Using the Table
 
-### Media Validation CSV
+- Use the `edit_link` column values to navigate to items in Omeka admin interface
+- **`error:`** prefix indicates validation errors that must be fixed
+- **`warning:`** prefix indicates warnings for recommended improvements
+- Empty cells indicate valid fields with no issues
+:::
 
-**File:** `analysis/media_validation.csv`
+### Media Validation Table
 
-**Example format** (download the link above for actual live data):
+```{python}
+#| label: tbl-media-validation
+#| tbl-cap: Media with Validation Issues
+#| echo: false
+#| output: asis
 
-``` csv
-resource_id,edit_link,dcterms:identifier,dcterms:creator,dcterms:license,o:media_type
-10778,https://omeka.unibe.ch/admin/media/10778,,warning: Missing field,,
-10779,https://omeka.unibe.ch/admin/media/10779,error: Field is required,,,error: Invalid MIME type: application/unknown
+if file_exists_and_not_empty(media_csv_path):
+    df = pd.read_csv(media_csv_path)
+    
+    if len(df) > 0:
+        print(f"**Media with issues: {len(df)}**\n\n")
+        print(tabulate(df.values.tolist(), headers=df.columns, tablefmt="github"))
+    else:
+        print("✅ **Excellent!** All media objects passed validation with no issues.")
+else:
+    print("*No media validation data available. Run validation to generate reports.*")
 ```
 
-**Key observations (from example):** - Media 10778 has missing `dcterms:creator` (warning - recommended field) - Media 10779 has both a missing required identifier and an invalid MIME type
+::: {.callout-tip}
+## Using the Table
 
-### Validation Summary CSV
-
-**File:** `analysis/validation_summary.csv`
-
-**Example format** (download the link above for actual live data):
-
-``` csv
-metric,value
-items_validated,150
-media_validated,300
-total_errors,12
-total_warnings,45
-items_with_issues,4
-media_with_issues,2
-uris_checked,450
-failed_uris,3
-```
-
-**Summary insights (from example):** - 150 items and 300 media objects validated - 12 errors require immediate attention - 45 warnings suggest improvements - Only 4 items and 2 media have issues (high quality: 97.3% items, 99.3% media) - 3 of 450 URIs checked are unreachable (99.3% URI health)
-
-::: callout-tip
-## Live Data
-
-Download the actual validation summary CSV from the link in the blue box above to see current statistics for the Stadt.Geschichte.Basel collection.
+- Use the `edit_link` column values to navigate to media in Omeka admin interface
+- **`error:`** prefix indicates validation errors that must be fixed
+- **`warning:`** prefix indicates warnings for recommended improvements
+- Empty cells indicate valid fields with no issues
 :::
 
 ### Interpreting the Results

@@ -5,18 +5,17 @@ This module validates items and media from the Omeka S API against
 a comprehensive data model using pydantic.
 """
 
-import argparse
 import asyncio
-import os
 import random
 import re
 import sys
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
+import typer
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
@@ -828,7 +827,11 @@ class OmekaValidator:
 
     def save_report(self, output_file: Path) -> None:
         """Save validation report to file"""
-        with open(output_file, "w", encoding="utf-8") as f:
+        # Ensure parent directory exists when a path with directories is provided
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write("=" * 80 + "\n")
             f.write("VALIDATION REPORT\n")
             f.write("=" * 80 + "\n")
@@ -851,7 +854,7 @@ class OmekaValidator:
                 for warning in self.warnings:
                     f.write(f"  {warning}\n")
 
-        print(f"\nReport saved to: {output_file}")
+        print(f"\nReport saved to: {output_path}")
 
     def export_validation_csv(
         self, output_dir: str | Path = "validation_reports"
@@ -1016,6 +1019,8 @@ class OmekaValidator:
             return
 
         output_dir = Path(output_dir)
+        # Ensure output directory exists
+        output_dir.mkdir(parents=True, exist_ok=True)
         print(f"\nGenerating profiling reports in {output_dir}/...")
 
         if self.items_data:
@@ -1037,137 +1042,155 @@ class OmekaValidator:
         print("\nProfiling complete!")
 
 
-def main() -> int:
-    """Main entry point"""
+app = typer.Typer(
+    help="Validate Omeka S data against Stadt.Geschichte.Basel data model",
+    no_args_is_help=True,
+)
+
+
+@app.command()
+def main(
+    base_url: Annotated[
+        str,
+        typer.Option(
+            help="Base URL of the Omeka S instance",
+            envvar="OMEKA_URL",
+        ),
+    ] = "https://omeka.unibe.ch",
+    item_set_id: Annotated[
+        int,
+        typer.Option(
+            help="Item set ID to validate",
+            envvar="ITEM_SET_ID",
+        ),
+    ] = 10780,
+    key_identity: Annotated[
+        str | None,
+        typer.Option(
+            help="Optional API key identity for authentication",
+            envvar="KEY_IDENTITY",
+        ),
+    ] = None,
+    key_credential: Annotated[
+        str | None,
+        typer.Option(
+            help="Optional API key credential for authentication",
+            envvar="KEY_CREDENTIAL",
+        ),
+    ] = None,
+    check_uris: Annotated[
+        bool,
+        typer.Option(
+            help="Check if URIs are reachable (may be slow)",
+        ),
+    ] = False,
+    check_redirects: Annotated[
+        bool,
+        typer.Option(
+            help="Check for redirects and warn if URLs redirect to different domains (requires --check-uris)",
+        ),
+    ] = False,
+    uri_check_severity: Annotated[
+        str,
+        typer.Option(
+            help="Severity level for failed URI checks",
+        ),
+    ] = "warning",
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            help="Save report to file (default: print to console only)",
+        ),
+    ] = None,
+    profile: Annotated[
+        bool,
+        typer.Option(
+            help="Enable data profiling and generate analysis reports",
+        ),
+    ] = False,
+    profile_minimal: Annotated[
+        bool,
+        typer.Option(
+            help="Generate minimal profiling reports (faster, less detailed)",
+        ),
+    ] = False,
+    profile_output: Annotated[
+        Path,
+        typer.Option(
+            help="Directory for profiling outputs",
+        ),
+    ] = Path("analysis"),
+    export_csv: Annotated[
+        bool,
+        typer.Option(
+            help="Export validation results as CSV files (items, media, and summary)",
+        ),
+    ] = False,
+    csv_output: Annotated[
+        Path,
+        typer.Option(
+            help="Directory for CSV validation reports",
+        ),
+    ] = Path("validation_reports"),
+) -> None:
+    """Validate Omeka S data against data model."""
     # Load environment variables from .env file if it exists
     load_dotenv()
 
-    # Get defaults from environment variables
-    env_base_url = os.getenv("OMEKA_URL", "https://omeka.unibe.ch")
-    env_item_set_id = int(os.getenv("ITEM_SET_ID", "10780"))
-    env_key_identity = os.getenv("KEY_IDENTITY")
-    env_key_credential = os.getenv("KEY_CREDENTIAL")
+    # Validate uri_check_severity
+    if uri_check_severity not in ["warning", "error"]:
+        typer.echo(
+            f"Error: uri-check-severity must be 'warning' or 'error', got '{uri_check_severity}'",
+            err=True,
+        )
+        raise typer.Exit(1)
 
-    parser = argparse.ArgumentParser(
-        description="Validate Omeka S data against Stadt.Geschichte.Basel data model"
-    )
-    parser.add_argument(
-        "--base-url",
-        default=env_base_url,
-        help=f"Base URL of the Omeka S instance (default: {env_base_url})",
-    )
-    parser.add_argument(
-        "--item-set-id",
-        type=int,
-        default=env_item_set_id,
-        help=f"Item set ID to validate (default: {env_item_set_id})",
-    )
-    parser.add_argument(
-        "--key-identity",
-        default=env_key_identity,
-        help="Optional API key identity for authentication (can be set in .env as KEY_IDENTITY)",
-    )
-    parser.add_argument(
-        "--key-credential",
-        default=env_key_credential,
-        help="Optional API key credential for authentication (can be set in .env as KEY_CREDENTIAL)",
-    )
-    parser.add_argument(
-        "--check-uris",
-        action="store_true",
-        help="Check if URIs are reachable (may be slow)",
-    )
-    parser.add_argument(
-        "--check-redirects",
-        action="store_true",
-        help="Check for redirects and warn if URLs redirect to different domains (requires --check-uris)",
-    )
-    parser.add_argument(
-        "--uri-check-severity",
-        choices=["warning", "error"],
-        default="warning",
-        help="Severity level for failed URI checks: warning (default) or error",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        help="Save report to file (default: print to console only)",
-    )
-    parser.add_argument(
-        "--profile",
-        action="store_true",
-        help="Enable data profiling and generate analysis reports",
-    )
-    parser.add_argument(
-        "--profile-minimal",
-        action="store_true",
-        help="Generate minimal profiling reports (faster, less detailed)",
-    )
-    parser.add_argument(
-        "--profile-output",
-        type=Path,
-        default="analysis",
-        help="Directory for profiling outputs (default: analysis/)",
-    )
-    parser.add_argument(
-        "--export-csv",
-        action="store_true",
-        help="Export validation results as CSV files (items, media, and summary)",
-    )
-    parser.add_argument(
-        "--csv-output",
-        type=Path,
-        default="validation_reports",
-        help="Directory for CSV validation reports (default: validation_reports/)",
-    )
-
-    args = parser.parse_args()
-
-    print("Stadt.Geschichte.Basel Data Validator")
-    print(f"Base URL: {args.base_url}")
-    print(f"Item Set ID: {args.item_set_id}")
-    if args.check_uris:
-        print(f"URI checking: enabled (severity: {args.uri_check_severity})")
-        if args.check_redirects:
-            print("Redirect checking: enabled")
-    if args.profile:
-        print(f"Data profiling: enabled (output: {args.profile_output}/)")
-    if args.export_csv:
-        print(f"CSV export: enabled (output: {args.csv_output}/)")
-    print()
+    typer.echo("Stadt.Geschichte.Basel Data Validator")
+    typer.echo(f"Base URL: {base_url}")
+    typer.echo(f"Item Set ID: {item_set_id}")
+    if check_uris:
+        typer.echo(f"URI checking: enabled (severity: {uri_check_severity})")
+        if check_redirects:
+            typer.echo("Redirect checking: enabled")
+    if profile:
+        typer.echo(f"Data profiling: enabled (output: {profile_output}/)")
+    if export_csv:
+        typer.echo(f"CSV export: enabled (output: {csv_output}/)")
+    typer.echo()
 
     validator = OmekaValidator(
-        args.base_url,
-        args.key_identity,
-        args.key_credential,
-        args.check_uris,
-        args.check_redirects,
-        args.uri_check_severity,
-        args.profile,
+        base_url,
+        key_identity,
+        key_credential,
+        check_uris,
+        check_redirects,
+        uri_check_severity,
+        profile,
     )
 
     try:
-        validator.validate_item_set(args.item_set_id)
+        validator.validate_item_set(item_set_id)
     except httpx.HTTPError as e:
-        print(f"Error accessing API: {e}", file=sys.stderr)
-        return 1
+        typer.echo(f"Error accessing API: {e}", err=True)
+        raise typer.Exit(1)
     except Exception as e:
-        print(f"Unexpected error: {e}", file=sys.stderr)
-        return 1
+        typer.echo(f"Unexpected error: {e}", err=True)
+        raise typer.Exit(1)
 
     validator.print_report()
 
-    if args.output:
-        validator.save_report(args.output)
+    if output:
+        validator.save_report(output)
 
-    if args.export_csv:
-        validator.export_validation_csv(args.csv_output)
+    if export_csv:
+        validator.export_validation_csv(csv_output)
 
-    if args.profile:
-        validator.generate_profiling_reports(args.profile_output, args.profile_minimal)
+    if profile:
+        validator.generate_profiling_reports(profile_output, profile_minimal)
 
-    return 0 if not validator.errors else 1
+    if validator.errors:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()

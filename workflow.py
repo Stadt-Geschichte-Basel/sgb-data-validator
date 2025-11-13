@@ -14,11 +14,10 @@ Notes:
 - Transformed files are saved with *_transformed.json
 """
 
-import argparse
-import os
-import sys
 from pathlib import Path
+from typing import Annotated
 
+import typer
 from dotenv import load_dotenv
 
 from src.api import OmekaAPI
@@ -26,24 +25,65 @@ from src.api import OmekaAPI
 # Load environment variables
 load_dotenv()
 
+# Create the main Typer app
+app = typer.Typer(
+    help="SGB data workflow: download, transform, validate, upload",
+    no_args_is_help=True,
+)
 
-def download_data(args: argparse.Namespace) -> int:
-    """Download raw data from Omeka without applying transformations."""
-    print("=" * 80)
-    print("DOWNLOAD DATA")
-    print("=" * 80)
-    base_url = args.base_url or os.getenv("OMEKA_URL")
+
+@app.command()
+def download(
+    item_set_id: Annotated[
+        int,
+        typer.Option(
+            help="Item set ID to download",
+        ),
+    ],
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            help="Base URL of the Omeka S instance",
+            envvar="OMEKA_URL",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option(
+            help="Output directory for raw data",
+        ),
+    ] = Path("data"),
+    key_identity: Annotated[
+        str | None,
+        typer.Option(
+            help="API key identity for authentication (optional)",
+            envvar="KEY_IDENTITY",
+        ),
+    ] = None,
+    key_credential: Annotated[
+        str | None,
+        typer.Option(
+            help="API key credential for authentication (optional)",
+            envvar="KEY_CREDENTIAL",
+        ),
+    ] = None,
+) -> None:
+    """Download raw data from Omeka S (no transformations)."""
+    typer.echo("=" * 80)
+    typer.echo("DOWNLOAD DATA")
+    typer.echo("=" * 80)
+
     if not base_url:
-        print("✗ Error: Base URL not provided. Use --base-url or set OMEKA_URL in .env")
-        return 1
-    print(f"Base URL: {base_url}")
-    print(f"Item Set ID: {args.item_set_id}")
-    print(f"Output directory: {args.output}")
-    print()
+        typer.echo(
+            "✗ Error: Base URL not provided. Use --base-url or set OMEKA_URL in .env",
+            err=True,
+        )
+        raise typer.Exit(1)
 
-    # Credentials optional for download; pull from env if not provided
-    key_identity = args.key_identity or os.getenv("KEY_IDENTITY")
-    key_credential = args.key_credential or os.getenv("KEY_CREDENTIAL")
+    typer.echo(f"Base URL: {base_url}")
+    typer.echo(f"Item Set ID: {item_set_id}")
+    typer.echo(f"Output directory: {output}")
+    typer.echo()
 
     with OmekaAPI(
         base_url,
@@ -51,134 +91,206 @@ def download_data(args: argparse.Namespace) -> int:
         key_credential=key_credential,
     ) as api:
         result = api.download_item_set(
-            item_set_id=args.item_set_id,
-            output_dir=args.output,
+            item_set_id=item_set_id,
+            output_dir=output,
         )
 
-        print(f"✓ Downloaded {result['items_downloaded']} items")
-        print(f"✓ Downloaded {result['media_downloaded']} media")
+        typer.echo(f"✓ Downloaded {result['items_downloaded']} items")
+        typer.echo(f"✓ Downloaded {result['media_downloaded']} media")
 
         if result["saved_to"]:
-            print()
+            typer.echo()
             directory = result["saved_to"]["directory"]
-            print(f"Saved to: {directory}")
-            print()
-            print("Next steps:")
-            print(f"  python workflow.py transform {directory}")
-            print(f"  python workflow.py validate {directory}")
-
-    return 0
+            typer.echo(f"Saved to: {directory}")
+            typer.echo()
+            typer.echo("Next steps:")
+            typer.echo(f"  python workflow.py transform {directory}")
+            typer.echo(f"  python workflow.py validate {directory}")
 
 
-def transform_data(args: argparse.Namespace) -> int:
-    """Apply transformations to previously downloaded raw data."""
-    print("=" * 80)
-    print("TRANSFORM DATA")
-    print("=" * 80)
-    print(f"Input directory: {args.input_dir}")
-    print(f"Output directory: {args.output or 'same as input parent'}")
-    apply_transforms = not args.no_transformations
-    print(f"Apply transformations: {apply_transforms}")
-    print()
+@app.command()
+def transform(
+    input_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing raw data files to transform",
+        ),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            help="Output directory for transformed data (default: auto)",
+        ),
+    ] = None,
+    no_transformations: Annotated[
+        bool,
+        typer.Option(
+            help="Skip all transformations (no changes to data)",
+        ),
+    ] = False,
+) -> None:
+    """Apply transformations to downloaded data."""
+    typer.echo("=" * 80)
+    typer.echo("TRANSFORM DATA")
+    typer.echo("=" * 80)
+    typer.echo(f"Input directory: {input_dir}")
+    typer.echo(f"Output directory: {output or 'same as input parent'}")
+    apply_transforms = not no_transformations
+    typer.echo(f"Apply transformations: {apply_transforms}")
+    typer.echo()
 
     # Base URL not needed for transformation, but API needs it
     with OmekaAPI("https://omeka.unibe.ch") as api:
         result = api.apply_transformations(
-            input_dir=args.input_dir,
-            output_dir=args.output,
+            input_dir=input_dir,
+            output_dir=output,
             apply_whitespace_normalization=apply_transforms,
             apply_all_transformations=apply_transforms,
             upgrade_https=apply_transforms,
         )
 
-        print(f"✓ Transformed {result['items_transformed']} items")
-        print(f"✓ Transformed {result['media_transformed']} media")
+        typer.echo(f"✓ Transformed {result['items_transformed']} items")
+        typer.echo(f"✓ Transformed {result['media_transformed']} media")
         transformations = ", ".join(result["transformations_applied"]) or "(none)"
-        print(f"✓ Transformations applied: {transformations}")
+        typer.echo(f"✓ Transformations applied: {transformations}")
 
         if result["saved_to"]:
-            print()
-            print("Transformed data saved to:")
-            print(f"  Directory: {result['saved_to']['directory']}")
-            print(f"  Items: {result['saved_to']['items']}")
-            print(f"  Media: {result['saved_to']['media']}")
-            print()
-            print("Next steps:")
+            typer.echo()
+            typer.echo("Transformed data saved to:")
+            typer.echo(f"  Directory: {result['saved_to']['directory']}")
+            typer.echo(f"  Items: {result['saved_to']['items']}")
+            typer.echo(f"  Media: {result['saved_to']['media']}")
+            typer.echo()
+            typer.echo("Next steps:")
             directory = result["saved_to"]["directory"]
-            print(f"  To validate: python workflow.py validate {directory}")
-            print(f"  To upload: python workflow.py upload {directory}")
-
-    return 0
+            typer.echo(f"  To validate: python workflow.py validate {directory}")
+            typer.echo(f"  To upload: python workflow.py upload {directory}")
 
 
-def validate_offline(args: argparse.Namespace) -> int:
+@app.command()
+def validate(
+    directory: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing the JSON files to validate",
+        ),
+    ],
+) -> None:
     """Validate offline JSON files."""
-    print("=" * 80)
-    print("VALIDATE OFFLINE FILES")
-    print("=" * 80)
-    print(f"Directory: {args.directory}")
-    print()
+    typer.echo("=" * 80)
+    typer.echo("VALIDATE OFFLINE FILES")
+    typer.echo("=" * 80)
+    typer.echo(f"Directory: {directory}")
+    typer.echo()
 
     # Base URL not needed for offline validation, but API needs it
     with OmekaAPI("https://omeka.unibe.ch") as api:
-        result = api.validate_offline_files(args.directory)
+        result = api.validate_offline_files(directory)
 
-        print(f"Items validated: {result['items_validated']}")
-        print(f"Items valid: {result['items_valid']}")
+        typer.echo(f"Items validated: {result['items_validated']}")
+        typer.echo(f"Items valid: {result['items_valid']}")
         if result["items_errors"]:
-            print(f"Items with errors: {len(result['items_errors'])}")
+            typer.echo(f"Items with errors: {len(result['items_errors'])}")
 
-        print()
-        print(f"Media validated: {result['media_validated']}")
-        print(f"Media valid: {result['media_valid']}")
+        typer.echo()
+        typer.echo(f"Media validated: {result['media_validated']}")
+        typer.echo(f"Media valid: {result['media_valid']}")
         if result["media_errors"]:
-            print(f"Media with errors: {len(result['media_errors'])}")
+            typer.echo(f"Media with errors: {len(result['media_errors'])}")
 
         if result["overall_valid"]:
-            print()
-            print("✓ All files are valid and ready for upload")
-            return 0
+            typer.echo()
+            typer.echo("✓ All files are valid and ready for upload")
         else:
-            print()
-            print("✗ Validation errors found:")
+            typer.echo()
+            typer.echo("✗ Validation errors found:")
             for item_error in result["items_errors"]:
-                print(f"  Item {item_error['item_id']}:")
+                typer.echo(f"  Item {item_error['item_id']}:")
                 for error in item_error["errors"]:
-                    print(f"    - {error}")
+                    typer.echo(f"    - {error}")
             for media_error in result["media_errors"]:
-                print(f"  Media {media_error['media_id']}:")
+                typer.echo(f"  Media {media_error['media_id']}:")
                 for error in media_error["errors"]:
-                    print(f"    - {error}")
-            return 1
+                    typer.echo(f"    - {error}")
+            raise typer.Exit(1)
 
 
-def upload_data(args: argparse.Namespace) -> int:
+@app.command()
+def upload(
+    directory: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing the JSON files to upload",
+        ),
+    ],
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            help="Base URL of the Omeka S instance",
+            envvar="OMEKA_URL",
+        ),
+    ] = None,
+    key_identity: Annotated[
+        str | None,
+        typer.Option(
+            help="API key identity for authentication (required for upload)",
+            envvar="KEY_IDENTITY",
+        ),
+    ] = None,
+    key_credential: Annotated[
+        str | None,
+        typer.Option(
+            help="API key credential for authentication (required for upload)",
+            envvar="KEY_CREDENTIAL",
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            help="Validate only, do not upload (default: True)",
+        ),
+    ] = True,
+    no_dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--no-dry-run",
+            help="Actually upload the data (use with caution!)",
+        ),
+    ] = False,
+) -> None:
     """Upload transformed data back to Omeka S."""
-    print("=" * 80)
-    print("UPLOAD TRANSFORMED DATA")
-    print("=" * 80)
-    # Determine base URL and credentials (prefer args, fall back to env)
-    base_url = args.base_url or os.getenv("OMEKA_URL")
-    print(f"Base URL: {base_url}")
-    print(f"Directory: {args.directory}")
-    print(f"Dry run: {args.dry_run}")
-    print()
+    typer.echo("=" * 80)
+    typer.echo("UPLOAD TRANSFORMED DATA")
+    typer.echo("=" * 80)
 
-    if args.dry_run:
-        print("⚠ DRY RUN MODE - No changes will be made")
-        print()
+    # Handle dry_run flag
+    if no_dry_run:
+        dry_run = False
 
-    env_key_identity = os.getenv("KEY_IDENTITY")
-    env_key_credential = os.getenv("KEY_CREDENTIAL")
+    if not base_url:
+        typer.echo(
+            "✗ Error: Base URL not provided. Use --base-url or set OMEKA_URL in .env",
+            err=True,
+        )
+        raise typer.Exit(1)
 
-    key_identity = args.key_identity or env_key_identity
-    key_credential = args.key_credential or env_key_credential
+    typer.echo(f"Base URL: {base_url}")
+    typer.echo(f"Directory: {directory}")
+    typer.echo(f"Dry run: {dry_run}")
+    typer.echo()
 
-    if not key_identity or not key_credential or not base_url:
-        print("✗ Error: API credentials and base URL required for upload")
-        print("  Provide --base-url, --key-identity, --key-credential")
-        print("  Or set OMEKA_URL[_V4], KEY_IDENTITY[_V4], KEY_CREDENTIAL[_V4] in .env")
-        return 1
+    if dry_run:
+        typer.echo("⚠ DRY RUN MODE - No changes will be made")
+        typer.echo()
+
+    if not key_identity or not key_credential:
+        typer.echo(
+            "✗ Error: API credentials required for upload",
+            err=True,
+        )
+        typer.echo("  Provide --key-identity, --key-credential", err=True)
+        typer.echo("  Or set KEY_IDENTITY, KEY_CREDENTIAL in .env", err=True)
+        raise typer.Exit(1)
 
     with OmekaAPI(
         base_url,
@@ -186,205 +298,245 @@ def upload_data(args: argparse.Namespace) -> int:
         key_credential=key_credential,
     ) as api:
         result = api.upload_transformed_data(
-            directory=args.directory,
-            dry_run=args.dry_run,
+            directory=directory,
+            dry_run=dry_run,
         )
 
-        print(f"Items processed: {result['items_processed']}")
-        print(f"Items updated: {result['items_updated']}")
-        print(f"Items failed: {result['items_failed']}")
-        print()
-        print(f"Media processed: {result['media_processed']}")
-        print(f"Media updated: {result['media_updated']}")
-        print(f"Media failed: {result['media_failed']}")
+        typer.echo(f"Items processed: {result['items_processed']}")
+        typer.echo(f"Items updated: {result['items_updated']}")
+        typer.echo(f"Items failed: {result['items_failed']}")
+        typer.echo()
+        typer.echo(f"Media processed: {result['media_processed']}")
+        typer.echo(f"Media updated: {result['media_updated']}")
+        typer.echo(f"Media failed: {result['media_failed']}")
 
         # Show pre-validation summary if available
         pre = result.get("pre_validation")
         if pre:
-            print()
-            print("Pre-validation summary (non-blocking):")
-            print(
+            typer.echo()
+            typer.echo("Pre-validation summary (non-blocking):")
+            typer.echo(
                 f"  Items: {pre['items_valid']}/{pre['items_validated']} valid; "
                 f"Errors: {pre['items_errors_count']}"
             )
-            print(
+            typer.echo(
                 f"  Media: {pre['media_valid']}/{pre['media_validated']} valid; "
                 f"Errors: {pre['media_errors_count']}"
             )
 
         if result["errors"]:
-            print()
-            print("Warnings/Errors:")
+            typer.echo()
+            typer.echo("Warnings/Errors:")
             for error in result["errors"]:
                 error_type = error.get("type", "unknown")
                 error_msg = error.get("message", "Unknown error")
-                print(f"  {error_type}: {error_msg}")
+                typer.echo(f"  {error_type}: {error_msg}")
 
-        if args.dry_run:
-            print()
-            print("✓ Dry run completed - no changes were made")
-            print("  To actually upload, run again with --no-dry-run")
-            return 0
+        if dry_run:
+            typer.echo()
+            typer.echo("✓ Dry run completed - no changes were made")
+            typer.echo("  To actually upload, run again with --no-dry-run")
         elif (
             result["items_failed"] == 0
             and result["media_failed"] == 0
             and not result["errors"]
         ):
-            print()
-            print("✓ Upload completed successfully")
-            return 0
+            typer.echo()
+            typer.echo("✓ Upload completed successfully")
         else:
-            print()
-            print("✗ Upload completed with errors")
-            return 1
+            typer.echo()
+            typer.echo("✗ Upload completed with errors")
+            raise typer.Exit(1)
 
 
-def main() -> int:
+@app.command()
+def pipeline(
+    item_set_id: Annotated[
+        int,
+        typer.Option(
+            help="Item set ID to process",
+        ),
+    ],
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            help="Base URL of Omeka S",
+            envvar="OMEKA_URL",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option(
+            help="Root output directory",
+        ),
+    ] = Path("data"),
+    key_identity: Annotated[
+        str | None,
+        typer.Option(
+            help="API key identity (required for upload stage)",
+            envvar="KEY_IDENTITY",
+        ),
+    ] = None,
+    key_credential: Annotated[
+        str | None,
+        typer.Option(
+            help="API key credential (required for upload stage)",
+            envvar="KEY_CREDENTIAL",
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            help="Dry run upload (default: enabled)",
+        ),
+    ] = True,
+    no_dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--no-dry-run",
+            help="Perform real upload",
+        ),
+    ] = False,
+    skip_validate: Annotated[
+        bool,
+        typer.Option(
+            help="Skip validation before upload",
+        ),
+    ] = False,
+    force_upload: Annotated[
+        bool,
+        typer.Option(
+            help="Proceed with upload even if validation finds errors",
+        ),
+    ] = False,
+) -> None:
+    """Run download → transform → validate → upload in one step."""
+    typer.echo("=" * 80)
+    typer.echo("PIPELINE RUN")
+    typer.echo("=" * 80)
+
+    if not base_url:
+        typer.echo(
+            "✗ Error: Base URL not provided. Use --base-url or set OMEKA_URL in .env",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    # Handle dry_run flag
+    if no_dry_run:
+        dry_run = False
+
+    typer.echo(f"Base URL: {base_url}")
+    typer.echo(f"Item Set ID: {item_set_id}")
+    typer.echo(f"Output root: {output}")
+    typer.echo(f"Dry run: {dry_run}")
+    typer.echo(f"Skip validate: {skip_validate}")
+    typer.echo(f"Force upload on validation errors: {force_upload}")
+    typer.echo()
+
+    with OmekaAPI(
+        base_url, key_identity=key_identity, key_credential=key_credential
+    ) as api:
+        typer.echo("[1/4] Downloading raw data...")
+        download_result = api.download_item_set(
+            item_set_id=item_set_id, output_dir=output
+        )
+        raw_dir = download_result["saved_to"]["directory"]
+        typer.echo(f"✓ Raw data saved to {raw_dir}")
+        typer.echo(
+            f"  Items: {download_result['items_downloaded']} | Media: {download_result['media_downloaded']}"
+        )
+        typer.echo()
+
+        typer.echo("[2/4] Applying transformations...")
+        transform_result = api.apply_transformations(input_dir=raw_dir)
+        transformed_dir = transform_result["saved_to"]["directory"]
+        typer.echo(f"✓ Transformed data saved to {transformed_dir}")
+        typer.echo(
+            f"  Items transformed: {transform_result['items_transformed']} | Media transformed: {transform_result['media_transformed']}"
+        )
+        typer.echo(
+            f"  Transformations: {', '.join(transform_result['transformations_applied']) or '(none)'}"
+        )
+        typer.echo()
+
+        validation_ok = True
+        if not skip_validate:
+            typer.echo("[3/4] Validating transformed data...")
+            validation_result = api.validate_offline_files(transformed_dir)
+            validation_ok = validation_result["overall_valid"]
+            typer.echo(
+                "  Items valid: "
+                + f"{validation_result['items_valid']}/{validation_result['items_validated']}"
+            )
+            typer.echo(
+                "  Media valid: "
+                + f"{validation_result['media_valid']}/{validation_result['media_validated']}"
+            )
+            if not validation_ok:
+                typer.echo(
+                    "  ✗ Validation found errors (upload will be skipped unless --force-upload)"
+                )
+            else:
+                typer.echo("  ✓ Validation passed")
+            typer.echo()
+        else:
+            typer.echo("[3/4] Validation skipped (--skip-validate)")
+            typer.echo()
+
+        do_upload = validation_ok or force_upload or skip_validate
+        if not do_upload:
+            typer.echo(
+                "[4/4] Upload skipped due to validation errors. Use --force-upload to override."
+            )
+            raise typer.Exit(1)
+        if not key_identity or not key_credential:
+            typer.echo(
+                "[4/4] Upload skipped: missing API credentials (KEY_IDENTITY / KEY_CREDENTIAL)"
+            )
+            raise typer.Exit(1)
+
+        typer.echo("[4/4] Uploading transformed data (dry_run=" + str(dry_run) + ")...")
+        upload_result = api.upload_transformed_data(
+            directory=transformed_dir, dry_run=dry_run
+        )
+        typer.echo(
+            f"  Items processed: {upload_result['items_processed']}, updated: {upload_result['items_updated']}, failed: {upload_result['items_failed']}"
+        )
+        typer.echo(
+            f"  Media processed: {upload_result['media_processed']}, updated: {upload_result['media_updated']}, failed: {upload_result['media_failed']}"
+        )
+        if upload_result["errors"]:
+            typer.echo("  Warnings/Errors:")
+            for err in upload_result["errors"]:
+                t = err.get("type", "unknown")
+                msg = err.get("message", "Unknown error")
+                typer.echo(f"    - {t}: {msg}")
+
+        if dry_run:
+            typer.echo(
+                "\n✓ Pipeline completed (dry-run). Re-run with --no-dry-run to apply changes."
+            )
+        else:
+            if (
+                upload_result["items_failed"] == 0
+                and upload_result["media_failed"] == 0
+            ):
+                typer.echo("\n✓ Pipeline completed successfully.")
+            else:
+                typer.echo("\n✗ Pipeline completed with some upload failures.")
+
+        success = dry_run or (
+            upload_result["items_failed"] == 0 and upload_result["media_failed"] == 0
+        )
+        if not success:
+            raise typer.Exit(1)
+
+
+def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="SGB data workflow: download, transform, validate, upload",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Download raw data (no transformations)
-  python workflow.py download --item-set-id 10780
-
-  # Transform downloaded data (applies all transformations by default)
-  python workflow.py transform data/raw_itemset_10780_*/
-
-  # Transform without any changes (no transformations)
-  python workflow.py transform data/raw_itemset_10780_*/ --no-transformations
-
-  # Validate offline files
-  python workflow.py validate data/transformed_itemset_10780_*/
-
-  # Upload with dry-run (preview changes, no upload)
-  python workflow.py upload data/transformed_itemset_10780_*/
-
-  # Upload for real (requires API credentials)
-  python workflow.py upload data/transformed_itemset_10780_*/ --no-dry-run
-
-For more information, see the documentation.
-        """,
-    )
-
-    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
-
-    # Download command
-    download_parser = subparsers.add_parser(
-        "download",
-        help="Download raw data from Omeka S (no transformations)",
-    )
-    download_parser.add_argument(
-        "--base-url",
-        help="Base URL of the Omeka S instance (defaults to $OMEKA_URL)",
-    )
-    download_parser.add_argument(
-        "--item-set-id",
-        type=int,
-        required=True,
-        help="Item set ID to download",
-    )
-    download_parser.add_argument(
-        "--output",
-        type=Path,
-        default="data",
-        help="Output directory for raw data (default: data/)",
-    )
-    download_parser.add_argument(
-        "--key-identity",
-        help="API key identity for authentication (optional)",
-    )
-    download_parser.add_argument(
-        "--key-credential",
-        help="API key credential for authentication (optional)",
-    )
-
-    # Transform command
-    transform_parser = subparsers.add_parser(
-        "transform",
-        help="Apply transformations to downloaded data",
-    )
-    transform_parser.add_argument(
-        "input_dir",
-        type=Path,
-        help="Directory containing raw data files to transform",
-    )
-    transform_parser.add_argument(
-        "--output",
-        type=Path,
-        help="Output directory for transformed data (default: auto)",
-    )
-    transform_parser.add_argument(
-        "--no-transformations",
-        action="store_true",
-        help="Skip all transformations (no changes to data)",
-    )
-
-    # Validate command
-    validate_parser = subparsers.add_parser(
-        "validate",
-        help="Validate offline JSON files",
-    )
-    validate_parser.add_argument(
-        "directory",
-        type=Path,
-        help="Directory containing the JSON files to validate",
-    )
-
-    # Upload command
-    upload_parser = subparsers.add_parser(
-        "upload",
-        help="Upload transformed data back to Omeka S",
-    )
-    upload_parser.add_argument(
-        "directory",
-        type=Path,
-        help="Directory containing the JSON files to upload",
-    )
-    upload_parser.add_argument(
-        "--base-url",
-        help=("Base URL of the Omeka S instance (defaults to $OMEKA_URL)"),
-    )
-    upload_parser.add_argument(
-        "--key-identity",
-        help="API key identity for authentication (required for upload)",
-    )
-    upload_parser.add_argument(
-        "--key-credential",
-        help="API key credential for authentication (required for upload)",
-    )
-    upload_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        default=True,
-        help="Validate only, do not upload (default)",
-    )
-    upload_parser.add_argument(
-        "--no-dry-run",
-        action="store_false",
-        dest="dry_run",
-        help="Actually upload the data (use with caution!)",
-    )
-
-    args = parser.parse_args()
-
-    if not args.command:
-        parser.print_help()
-        return 1
-
-    if args.command == "download":
-        return download_data(args)
-    elif args.command == "transform":
-        return transform_data(args)
-    elif args.command == "validate":
-        return validate_offline(args)
-    elif args.command == "upload":
-        return upload_data(args)
-    else:
-        print(f"Unknown command: {args.command}")
-        return 1
+    app()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
