@@ -105,6 +105,8 @@ jobs:
 
       - name: Render Quarto Project
         uses: quarto-dev/quarto-actions/render@v2
+        env:
+          QUARTO_PYTHON: .venv/bin/python
         with:
           to: sgb-theme-html
 
