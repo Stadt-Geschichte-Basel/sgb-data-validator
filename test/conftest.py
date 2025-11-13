@@ -16,7 +16,9 @@ def _contains_any(text: str, parts: Iterable[str]) -> bool:
     return any(p in text for p in parts)
 
 
-def pytest_collection_modifyitems(session: pytest.Session, config: pytest.Config, items: list[pytest.Item]) -> None:  # noqa: D401
+def pytest_collection_modifyitems(
+    session: pytest.Session, config: pytest.Config, items: list[pytest.Item]
+) -> None:  # noqa: D401
     """Auto-categorize tests into unit/integration based on file name.
 
     - Files with common integration hints are marked as `integration`

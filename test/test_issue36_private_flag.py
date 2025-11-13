@@ -121,9 +121,7 @@ def test_propagate_private_flag_multiple_children() -> None:
     print("\nTest 4: Propagate flag with multiple children")
     print("=" * 60)
 
-    items = [
-        {"o:id": 100, "o:is_public": True, "o:title": "Item with mixed media"}
-    ]
+    items = [{"o:id": 100, "o:is_public": True, "o:title": "Item with mixed media"}]
 
     media = [
         {
@@ -233,9 +231,7 @@ def test_transform_item_set_complete_workflow() -> None:
         },
     ]
 
-    _, result_items, result_media = transform_item_set_data(
-        item_set_data, items, media
-    )
+    _, result_items, result_media = transform_item_set_data(item_set_data, items, media)
 
     # Media 1 should be private (has placeholder)
     assert result_media[0]["o:is_public"] is False
