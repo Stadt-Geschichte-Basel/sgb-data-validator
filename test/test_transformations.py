@@ -283,8 +283,8 @@ def test_book_doi_metadata_excludes_chapters() -> None:
     )
 
 
-def test_enrich_item_with_book_doi_appends_uri_from_is_part_of_literal() -> None:
-    """Test fuzzy matching against existing dcterms:isPartOf literals only."""
+def test_enrich_item_with_book_doi_replaces_literal_with_uri() -> None:
+    """The inconsistent citation literal is replaced by the canonical DOI URI."""
     item = {
         "o:id": 1,
         "o:title": "Some unrelated image title",
@@ -305,16 +305,37 @@ def test_enrich_item_with_book_doi_appends_uri_from_is_part_of_literal() -> None
     assert missing is None
     assert report is not None
     assert report["doi"] == "10.21255/SGB-04-283636"
-    assert len(result["dcterms:isPartOf"]) == 2
-    assert result["dcterms:isPartOf"][0]["type"] == "literal"
-    assert result["dcterms:isPartOf"][1] == {
-        "type": "uri",
-        "property_id": 33,
-        "property_label": "Is Part Of",
-        "is_public": True,
-        "@id": "https://doi.org/10.21255/sgb-04-283636",
-        "o:label": "Aufbrüche, Krisen, Transformationen. 1510 – 1790",
+    # literal dropped, only the canonical DOI URI remains
+    assert result["dcterms:isPartOf"] == [
+        {
+            "type": "uri",
+            "property_id": 33,
+            "property_label": "Is Part Of",
+            "is_public": True,
+            "@id": "https://doi.org/10.21255/sgb-04-283636",
+            "o:label": "Aufbrüche, Krisen, Transformationen. 1510 – 1790",
+        }
+    ]
+
+
+def test_enrich_item_with_book_doi_ignores_non_citation_literal() -> None:
+    """Junk isPartOf like 'stadtgeschichtebasel.ch' must not match a volume.
+
+    Regression: it normalizes to 'ch', which used to score 1.0 against Band 1.
+    """
+    item = {
+        "o:id": 12856,
+        "o:title": "Data Story: Schulden einer Stadt",
+        "dcterms:isPartOf": [
+            {"type": "literal", "property_id": 33, "@value": "stadtgeschichtebasel.ch"}
+        ],
     }
+
+    result, report, missing = enrich_item_with_book_doi(item)
+
+    assert report is None
+    assert missing is None
+    assert result == item  # untouched, literal preserved
 
 
 def test_enrich_item_with_book_doi_is_idempotent() -> None:
@@ -392,7 +413,8 @@ def test_enrich_items_with_book_dois_report_counts() -> None:
 
     result, report = enrich_items_with_book_dois(items)
 
-    assert len(result[0]["dcterms:isPartOf"]) == 2
+    assert len(result[0]["dcterms:isPartOf"]) == 1
+    assert result[0]["dcterms:isPartOf"][0]["type"] == "uri"
     assert report["book_dois_considered"] == 9
     assert report["items_enriched"] == 1
     assert len(report["enriched_items"]) == 1
@@ -418,7 +440,7 @@ def test_transform_item_set_data_can_return_doi_report() -> None:
     )
 
     doi_report = report["doi_is_part_of_enrichment"]
-    assert transformed_items[0]["dcterms:isPartOf"][1]["@id"] == "https://doi.org/10.21255/sgb-08-796384"
+    assert transformed_items[0]["dcterms:isPartOf"][0]["@id"] == "https://doi.org/10.21255/sgb-08-796384"
     assert doi_report["items_enriched"] == 1
     assert doi_report["enriched_items"][0]["doi"] == "10.21255/SGB-08-796384"
 
@@ -435,7 +457,8 @@ if __name__ == "__main__":
     test_transform_media()
     test_real_world_examples()
     test_book_doi_metadata_excludes_chapters()
-    test_enrich_item_with_book_doi_appends_uri_from_is_part_of_literal()
+    test_enrich_item_with_book_doi_replaces_literal_with_uri()
+    test_enrich_item_with_book_doi_ignores_non_citation_literal()
     test_enrich_item_with_book_doi_is_idempotent()
     test_enrich_item_reports_abb_missing_is_part_of_literal()
     test_enrich_items_with_book_dois_report_counts()

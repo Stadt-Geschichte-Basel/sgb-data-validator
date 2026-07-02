@@ -559,11 +559,14 @@ def normalize_doi_match_text(text: str) -> str:
 
 
 def _partial_ratio(needle: str, haystack: str) -> float:
-    """Return a difflib-based partial match ratio without external dependencies."""
+    """Return how much of ``needle`` appears within ``haystack`` (difflib, no deps).
+
+    Directional on purpose: a ``haystack`` shorter than ``needle`` cannot contain it
+    and scores low. (Swapping the two would let a 2-char citation like "ch" match a
+    full book title at 1.0 — see the stadtgeschichtebasel.ch false positive.)
+    """
     if not needle or not haystack:
         return 0.0
-    if len(needle) > len(haystack):
-        needle, haystack = haystack, needle
     if needle in haystack:
         return 1.0
 
@@ -624,10 +627,12 @@ def _best_book_doi_match(
 def enrich_item_with_book_doi(
     item_data: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
-    """Append a book DOI URI to dcterms:isPartOf using existing literals only.
+    """Replace a literal dcterms:isPartOf citation with the matching book DOI URI.
 
-    Returns (item, enrichment_report, missing_report). ABB items without a usable
-    literal dcterms:isPartOf value are reported for manual review.
+    Matching uses only existing isPartOf literals; on a confident match the literal
+    value(s) are replaced by a canonical DOI URI (non-literal values are kept), so
+    isPartOf is uniform per volume. Returns (item, enrichment_report, missing_report);
+    ABB items without a usable literal dcterms:isPartOf value are reported for review.
     """
     if not isinstance(item_data, dict):
         return item_data, None, None
@@ -654,9 +659,17 @@ def enrich_item_with_book_doi(
     if _doi_uri_exists(is_part_of, metadata["id"]):
         return item_data, None, None
 
+    # Replace the (inconsistent) citation literal(s) with the canonical DOI URI so
+    # isPartOf is uniform per volume. Non-literal values are preserved.
+    # ponytail: assumes one citation literal per item (true in current data).
+    kept = [
+        prop
+        for prop in is_part_of
+        if not (isinstance(prop, dict) and prop.get("type") == "literal")
+    ]
     result = item_data.copy()
     result["dcterms:isPartOf"] = [
-        *is_part_of,
+        *kept,
         {
             "type": "uri",
             "property_id": 33,
