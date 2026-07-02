@@ -8,9 +8,60 @@ import asyncio
 import html
 import re
 import unicodedata
+from difflib import SequenceMatcher
 from typing import Any
 
 import httpx
+
+BOOK_DOI_METADATA: tuple[dict[str, str], ...] = (
+    {
+        "DOI": "10.21255/SGB-01-406352",
+        "id": "https://doi.org/10.21255/sgb-01-406352",
+        "title": "Auf dem langen Weg zur Stadt. 50 000 v. Chr. – 800 n. Chr.",
+    },
+    {
+        "DOI": "10.21255/SGB-02-404936",
+        "id": "https://doi.org/10.21255/sgb-02-404936",
+        "title": "Eine Bischofsstadt zwischen Oberrhein und Jura. 800 – 1273",
+    },
+    {
+        "DOI": "10.21255/SGB-03-345800",
+        "id": "https://doi.org/10.21255/sgb-03-345800",
+        "title": "Stadt in Verhandlung. 1250 – 1530",
+    },
+    {
+        "DOI": "10.21255/SGB-04-283636",
+        "id": "https://doi.org/10.21255/sgb-04-283636",
+        "title": "Aufbrüche, Krisen, Transformationen. 1510 – 1790",
+    },
+    {
+        "DOI": "10.21255/SGB-05-155353",
+        "id": "https://doi.org/10.21255/sgb-05-155353",
+        "title": "Hinter der Mauer, vor der Moderne. 1760 – 1859",
+    },
+    {
+        "DOI": "10.21255/SGB-06-810743",
+        "id": "https://doi.org/10.21255/sgb-06-810743",
+        "title": "Die beschleunigte Stadt. 1856 – 1914",
+    },
+    {
+        "DOI": "10.21255/SGB-07-663402",
+        "id": "https://doi.org/10.21255/sgb-07-663402",
+        "title": "Stadt an der Grenze in einer Zeit der Gefährdung. 1912 – 1966",
+    },
+    {
+        "DOI": "10.21255/SGB-08-796384",
+        "id": "https://doi.org/10.21255/sgb-08-796384",
+        "title": "Auf dem Weg ins Jetzt. Seit 1960",
+    },
+    {
+        "DOI": "10.21255/SGB-09-486500",
+        "id": "https://doi.org/10.21255/sgb-09-486500",
+        "title": "Stadträume. Offen und begrenzt, gestaltet und umkämpft",
+    },
+)
+
+DOI_MATCH_THRESHOLD = 0.86
 
 
 def normalize_whitespace(text: str) -> str:
@@ -490,6 +541,166 @@ def transform_item(
     return result
 
 
+def normalize_doi_match_text(text: str) -> str:
+    """Normalize text for fuzzy DOI title matching."""
+    if not text:
+        return ""
+
+    text = unicodedata.normalize("NFKC", text).lower()
+    text = text.replace("–", "-").replace("—", "-").replace("−", "-")
+    text = unicodedata.normalize("NFKD", text)
+    text = re.sub(r"[\u0300-\u036f]", "", text)
+    text = text.replace("chr.", "chr")
+    text = re.sub(r"\(hg[.,:]?\)|\bhg[.,:]?", " ", text)
+    text = re.sub(r"\bstadt\.?geschichte\.?basel\b", " ", text)
+    text = re.sub(r"\bbasel\b|\bbd\.?\b|\bband\b", " ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _partial_ratio(needle: str, haystack: str) -> float:
+    """Return a difflib-based partial match ratio without external dependencies."""
+    if not needle or not haystack:
+        return 0.0
+    if len(needle) > len(haystack):
+        needle, haystack = haystack, needle
+    if needle in haystack:
+        return 1.0
+
+    window = len(needle)
+    best = 0.0
+    for index in range(0, max(len(haystack) - window + 1, 1)):
+        score = SequenceMatcher(None, needle, haystack[index : index + window]).ratio()
+        if score > best:
+            best = score
+    return best
+
+
+def _literal_is_part_of_values(item_data: dict[str, Any]) -> list[str]:
+    values = []
+    for prop in item_data.get("dcterms:isPartOf") or []:
+        if isinstance(prop, dict) and prop.get("type") == "literal":
+            value = prop.get("@value")
+            if isinstance(value, str) and value.strip():
+                values.append(value)
+    return values
+
+
+def _abb_identifiers(item_data: dict[str, Any]) -> list[str]:
+    identifiers = []
+    for prop in item_data.get("dcterms:identifier") or []:
+        if not isinstance(prop, dict):
+            continue
+        value = prop.get("@value")
+        if isinstance(value, str) and re.fullmatch(r"abb\d+", value.strip(), re.I):
+            identifiers.append(value.strip())
+    return identifiers
+
+
+def _doi_uri_exists(is_part_of: list[Any], doi_uri: str) -> bool:
+    doi_uri = doi_uri.lower()
+    return any(
+        isinstance(prop, dict) and str(prop.get("@id", "")).lower() == doi_uri
+        for prop in is_part_of
+    )
+
+
+def _best_book_doi_match(
+    is_part_of_literals: list[str],
+) -> tuple[dict[str, str], float] | None:
+    text = normalize_doi_match_text(" ".join(is_part_of_literals))
+    if not text:
+        return None
+
+    best: tuple[dict[str, str], float] | None = None
+    for metadata in BOOK_DOI_METADATA:
+        title = normalize_doi_match_text(metadata["title"])
+        score = _partial_ratio(title, text)
+        if score >= DOI_MATCH_THRESHOLD and (best is None or score > best[1]):
+            best = (metadata, score)
+    return best
+
+
+def enrich_item_with_book_doi(
+    item_data: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
+    """Append a book DOI URI to dcterms:isPartOf using existing literals only.
+
+    Returns (item, enrichment_report, missing_report). ABB items without a usable
+    literal dcterms:isPartOf value are reported for manual review.
+    """
+    if not isinstance(item_data, dict):
+        return item_data, None, None
+
+    is_part_of_literals = _literal_is_part_of_values(item_data)
+    abb_identifiers = _abb_identifiers(item_data)
+
+    if not is_part_of_literals:
+        if abb_identifiers:
+            return item_data, None, {
+                "item_id": item_data.get("o:id"),
+                "title": item_data.get("o:title"),
+                "identifiers": abb_identifiers,
+                "reason": "missing_literal_dcterms_isPartOf",
+            }
+        return item_data, None, None
+
+    match = _best_book_doi_match(is_part_of_literals)
+    if match is None:
+        return item_data, None, None
+
+    metadata, score = match
+    is_part_of = list(item_data.get("dcterms:isPartOf") or [])
+    if _doi_uri_exists(is_part_of, metadata["id"]):
+        return item_data, None, None
+
+    result = item_data.copy()
+    result["dcterms:isPartOf"] = [
+        *is_part_of,
+        {
+            "type": "uri",
+            "property_id": 33,
+            "property_label": "Is Part Of",
+            "is_public": True,
+            "@id": metadata["id"],
+            "o:label": metadata["title"],
+        },
+    ]
+
+    return result, {
+        "item_id": item_data.get("o:id"),
+        "title": item_data.get("o:title"),
+        "doi": metadata["DOI"],
+        "doi_uri": metadata["id"],
+        "doi_title": metadata["title"],
+        "match_score": round(score, 3),
+    }, None
+
+
+def enrich_items_with_book_dois(
+    items: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Enrich items with book DOI URI values and collect a metadata report."""
+    enriched_items = []
+    enriched_report = []
+    missing_is_part_of = []
+
+    for item in items:
+        enriched_item, report_entry, missing_entry = enrich_item_with_book_doi(item)
+        enriched_items.append(enriched_item)
+        if report_entry:
+            enriched_report.append(report_entry)
+        if missing_entry:
+            missing_is_part_of.append(missing_entry)
+
+    return enriched_items, {
+        "book_dois_considered": len(BOOK_DOI_METADATA),
+        "items_enriched": len(enriched_report),
+        "enriched_items": enriched_report,
+        "abb_items_missing_is_part_of": missing_is_part_of,
+    }
+
+
 def transform_media(
     media_data: dict[str, Any], apply_all: bool = False, upgrade_https: bool = True
 ) -> dict[str, Any]:
@@ -522,7 +733,11 @@ def transform_item_set_data(
     media: list[dict[str, Any]],
     apply_all: bool = False,
     upgrade_https: bool = True,
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    return_report: bool = False,
+) -> (
+    tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]
+    | tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]
+):
     """Transform an entire item set with all its items and media.
 
     This function:
@@ -536,9 +751,11 @@ def transform_item_set_data(
         media: List of media data dictionaries
         apply_all: If True, apply all transformations; if False, only whitespace
         upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
+        return_report: If True, include a DOI enrichment report in the return value
 
     Returns:
-        Tuple of (transformed_item_set, transformed_items, transformed_media)
+        Tuple of (transformed_item_set, transformed_items, transformed_media),
+        plus a report dictionary if return_report=True.
     """
     # Transform the item set itself (though it usually doesn't have much text)
     transformed_item_set = transform_item(
@@ -551,6 +768,9 @@ def transform_item_set_data(
         for item in items
     ]
 
+    # Enrich item-level isPartOf citations with book DOI URI values.
+    transformed_items, doi_report = enrich_items_with_book_dois(transformed_items)
+
     # Transform all media (includes setting private flag for placeholders)
     transformed_media = [
         transform_media(m, apply_all=apply_all, upgrade_https=upgrade_https)
@@ -562,6 +782,11 @@ def transform_item_set_data(
     transformed_items = propagate_private_flag_to_items(
         transformed_items, transformed_media
     )
+
+    if return_report:
+        return transformed_item_set, transformed_items, transformed_media, {
+            "doi_is_part_of_enrichment": doi_report,
+        }
 
     return transformed_item_set, transformed_items, transformed_media
 

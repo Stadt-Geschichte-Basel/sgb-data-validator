@@ -1,8 +1,12 @@
 """Tests for data transformation utilities."""
 
 from src.transformations import (
+    BOOK_DOI_METADATA,
+    enrich_item_with_book_doi,
+    enrich_items_with_book_dois,
     normalize_whitespace,
     transform_item,
+    transform_item_set_data,
     transform_media,
     transform_property_value,
 )
@@ -270,6 +274,155 @@ def test_real_world_examples() -> None:
     print("  ✓ Multiple line breaks normalized")
 
 
+def test_book_doi_metadata_excludes_chapters() -> None:
+    """Test DOI enrichment only considers book-level DOIs."""
+    assert len(BOOK_DOI_METADATA) == 9
+    assert all(
+        "." not in metadata["DOI"].lower().split("/sgb-", 1)[1]
+        for metadata in BOOK_DOI_METADATA
+    )
+
+
+def test_enrich_item_with_book_doi_appends_uri_from_is_part_of_literal() -> None:
+    """Test fuzzy matching against existing dcterms:isPartOf literals only."""
+    item = {
+        "o:id": 1,
+        "o:title": "Some unrelated image title",
+        "dcterms:identifier": [{"type": "literal", "@value": "abb12345"}],
+        "dcterms:isPartOf": [
+            {
+                "type": "literal",
+                "property_id": 33,
+                "property_label": "Is Part Of",
+                "is_public": True,
+                "@value": "Burghartz, Susanna (Hg,): Aufbrüche, Krisen, Transformationen. 1510-1790, Basel 2024 (Stadt.Geschichte.Basel 4).",
+            }
+        ],
+    }
+
+    result, report, missing = enrich_item_with_book_doi(item)
+
+    assert missing is None
+    assert report is not None
+    assert report["doi"] == "10.21255/SGB-04-283636"
+    assert len(result["dcterms:isPartOf"]) == 2
+    assert result["dcterms:isPartOf"][0]["type"] == "literal"
+    assert result["dcterms:isPartOf"][1] == {
+        "type": "uri",
+        "property_id": 33,
+        "property_label": "Is Part Of",
+        "is_public": True,
+        "@id": "https://doi.org/10.21255/sgb-04-283636",
+        "o:label": "Aufbrüche, Krisen, Transformationen. 1510 – 1790",
+    }
+
+
+def test_enrich_item_with_book_doi_is_idempotent() -> None:
+    """Test an existing DOI URI is not appended again."""
+    item = {
+        "o:id": 1,
+        "dcterms:isPartOf": [
+            {
+                "type": "literal",
+                "property_id": 33,
+                "property_label": "Is Part Of",
+                "is_public": True,
+                "@value": "Stadt in Verhandlung. 1250-1530. Basel 2024 (Stadt.Geschichte.Basel 3).",
+            },
+            {
+                "type": "uri",
+                "property_id": 33,
+                "property_label": "Is Part Of",
+                "is_public": True,
+                "@id": "https://doi.org/10.21255/sgb-03-345800",
+                "o:label": "Stadt in Verhandlung. 1250 – 1530",
+            },
+        ],
+    }
+
+    result, report, missing = enrich_item_with_book_doi(item)
+
+    assert result == item
+    assert report is None
+    assert missing is None
+
+
+def test_enrich_item_reports_abb_missing_is_part_of_literal() -> None:
+    """Test ABB records without usable dcterms:isPartOf literals are reported."""
+    item = {
+        "o:id": 7,
+        "o:title": "Needs review",
+        "dcterms:identifier": [{"type": "literal", "@value": "abb98765"}],
+    }
+
+    result, report, missing = enrich_item_with_book_doi(item)
+
+    assert result == item
+    assert report is None
+    assert missing == {
+        "item_id": 7,
+        "title": "Needs review",
+        "identifiers": ["abb98765"],
+        "reason": "missing_literal_dcterms_isPartOf",
+    }
+
+
+def test_enrich_items_with_book_dois_report_counts() -> None:
+    """Test batch enrichment returns counts and missing ABB entries."""
+    items = [
+        {
+            "o:id": 1,
+            "dcterms:isPartOf": [
+                {
+                    "type": "literal",
+                    "@value": "Die beschleunigte Stadt. 1856-1914, Basel 2024.",
+                }
+            ],
+        },
+        {
+            "o:id": 2,
+            "o:title": "Missing relation",
+            "dcterms:identifier": [{"type": "literal", "@value": "abb11111"}],
+        },
+        {
+            "o:id": 3,
+            "dcterms:identifier": [{"type": "literal", "@value": "obj11111"}],
+        },
+    ]
+
+    result, report = enrich_items_with_book_dois(items)
+
+    assert len(result[0]["dcterms:isPartOf"]) == 2
+    assert report["book_dois_considered"] == 9
+    assert report["items_enriched"] == 1
+    assert len(report["enriched_items"]) == 1
+    assert len(report["abb_items_missing_is_part_of"]) == 1
+    assert report["abb_items_missing_is_part_of"][0]["item_id"] == 2
+
+
+def test_transform_item_set_data_can_return_doi_report() -> None:
+    """Test end-to-end item set transformation includes the DOI report."""
+    item = {
+        "o:id": 1,
+        "o:title": "Test item",
+        "dcterms:isPartOf": [
+            {
+                "type": "literal",
+                "@value": "Auf dem Weg ins Jetzt. Seit 1960. Basel 2025 (Stadt.Geschichte.Basel 8).",
+            }
+        ],
+    }
+
+    _item_set, transformed_items, _media, report = transform_item_set_data(
+        {}, [item], [], return_report=True
+    )
+
+    doi_report = report["doi_is_part_of_enrichment"]
+    assert transformed_items[0]["dcterms:isPartOf"][1]["@id"] == "https://doi.org/10.21255/sgb-08-796384"
+    assert doi_report["items_enriched"] == 1
+    assert doi_report["enriched_items"][0]["doi"] == "10.21255/SGB-08-796384"
+
+
 if __name__ == "__main__":
     print("Testing data transformation utilities")
     print("=" * 60)
@@ -281,6 +434,12 @@ if __name__ == "__main__":
     test_transform_item()
     test_transform_media()
     test_real_world_examples()
+    test_book_doi_metadata_excludes_chapters()
+    test_enrich_item_with_book_doi_appends_uri_from_is_part_of_literal()
+    test_enrich_item_with_book_doi_is_idempotent()
+    test_enrich_item_reports_abb_missing_is_part_of_literal()
+    test_enrich_items_with_book_dois_report_counts()
+    test_transform_item_set_data_can_return_doi_report()
 
     print("\n" + "=" * 60)
     print("✓ All transformation tests passed!")

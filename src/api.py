@@ -1191,10 +1191,16 @@ class OmekaAPI:
 
         # Apply transformations
         transformations_applied = []
+        transformation_report: dict[str, Any] = {}
         if apply_all_transformations:
             # Apply comprehensive transformations (includes whitespace)
-            item_set, items, all_media = transform_item_set_data(
-                item_set, items, all_media, apply_all=True, upgrade_https=upgrade_https
+            item_set, items, all_media, transformation_report = transform_item_set_data(
+                item_set,
+                items,
+                all_media,
+                apply_all=True,
+                upgrade_https=upgrade_https,
+                return_report=True,
             )
             transformations_applied.extend(
                 [
@@ -1209,12 +1215,19 @@ class OmekaAPI:
             if upgrade_https:
                 transformations_applied.append("http_to_https_upgrade")
             transformations_applied.append("url_normalization")
+            transformations_applied.append("doi_is_part_of_enrichment")
         elif apply_whitespace_normalization:
             # Apply only whitespace normalization
-            item_set, items, all_media = transform_item_set_data(
-                item_set, items, all_media, apply_all=False, upgrade_https=False
+            item_set, items, all_media, transformation_report = transform_item_set_data(
+                item_set,
+                items,
+                all_media,
+                apply_all=False,
+                upgrade_https=False,
+                return_report=True,
             )
             transformations_applied.append("whitespace_normalization")
+            transformations_applied.append("doi_is_part_of_enrichment")
 
         # Determine output directory
         if output_dir is None:
@@ -1251,6 +1264,7 @@ class OmekaAPI:
             "items_count": len(items),
             "media_count": len(all_media),
             "transformations_applied": transformations_applied,
+            "transformation_report": transformation_report,
             "files": {
                 "item_set": str(out_item_set_file.relative_to(output_path)),
                 "items": str(out_items_file.relative_to(output_path)),
@@ -1264,6 +1278,7 @@ class OmekaAPI:
             "items_transformed": len(items),
             "media_transformed": len(all_media),
             "transformations_applied": transformations_applied,
+            "transformation_report": transformation_report,
             "saved_to": {
                 "directory": transform_dir,
                 "item_set": out_item_set_file if item_set else None,
