@@ -9,6 +9,7 @@ import asyncio
 import random
 import re
 import sys
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Annotated, Any
@@ -99,21 +100,49 @@ class OmekaValidator:
         self.item_identifiers: dict[str, list[int]] = {}  # identifier -> [item_ids]
         self.media_identifiers: dict[str, list[int]] = {}  # identifier -> [media_ids]
 
-        self.client = httpx.Client(timeout=30.0)
+        # no-cache headers + a per-run nonce (see _add_auth_params) force the Omeka
+        # reverse-proxy to serve fresh, complete listings. Without this, runs
+        # intermittently got a stale/truncated snapshot (e.g. 868 of 998 items,
+        # already-fixed values reported as errors).
+        self.client = httpx.Client(
+            timeout=30.0, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"}
+        )
 
         vocab_file = Path(__file__).parent / "data" / "raw" / "vocabularies.json"
         self.vocab_loader = VocabularyLoader(vocab_file)
 
     def _add_auth_params(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Add authentication parameters if configured."""
+        """Add authentication parameters (and a cache-busting nonce) if configured."""
         if self.key_identity and self.key_credential:
             params["key_identity"] = self.key_identity
             params["key_credential"] = self.key_credential
+        # Unique per request so a retry can bypass a query-keyed proxy cache
+        # (Omeka ignores unknown query params).
+        params["_"] = str(time.time_ns())
         return params
 
     def fetch_items(self, item_set_id: int) -> list[dict[str, Any]]:
-        """Fetch all items from an item set"""
-        items: list[dict[str, Any]] = []
+        """Fetch all items from an item set.
+
+        The Omeka reverse-proxy intermittently returns a truncated page set, which
+        silently dropped ~130 items from validation. Omeka reports the true count in
+        the ``omeka-s-total-results`` header, so we retry until the fetch is complete.
+        """
+        by_id: dict[int, dict[str, Any]] = {}
+        for attempt in range(5):
+            by_id, expected = self._fetch_items_once(item_set_id)
+            if expected is None or len(by_id) >= expected:
+                break
+            # Truncated snapshot from the proxy; wait out the stale window and retry.
+            time.sleep(2 * (attempt + 1))
+        return list(by_id.values())
+
+    def _fetch_items_once(
+        self, item_set_id: int
+    ) -> tuple[dict[int, dict[str, Any]], int | None]:
+        """One full pagination pass. Returns (items-by-id, expected total or None)."""
+        by_id: dict[int, dict[str, Any]] = {}
+        expected: int | None = None
         page = 1
         per_page = 50
 
@@ -126,14 +155,21 @@ class OmekaValidator:
             response = self.client.get(url, params=params)
             response.raise_for_status()
 
+            if expected is None:
+                try:
+                    expected = int(response.headers.get("omeka-s-total-results"))
+                except (TypeError, ValueError):
+                    expected = None
+
             page_items = response.json()
             if not page_items:
                 break
 
-            items.extend(page_items)
+            for item in page_items:
+                by_id[item["o:id"]] = item
             page += 1
 
-        return items
+        return by_id, expected
 
     def fetch_media(self, item_id: int) -> list[dict[str, Any]]:
         """Fetch all media for an item"""
