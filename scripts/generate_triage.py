@@ -23,7 +23,7 @@ import os
 import re
 import subprocess
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -84,7 +84,7 @@ RIGHTS_PATTERNS = [
     ("CC BY-NC-SA", r"cc[\s-]*by[\s-]*nc[\s-]*sa"),
     ("CC BY-NC-ND", r"cc[\s-]*by[\s-]*nc[\s-]*nd"),
     ("CC BY-NC", r"cc[\s-]*by[\s-]*nc\b"),
-    ("CC BY-ND", r"cc[\s-]*by[\s-]*nd\b"),
+    ("CC BY-ND", r"cc[\s-]*by[\s-]*nd\b|attribution-noderivatives"),
     ("CC BY-SA", r"cc[\s-]*by[\s-]*sa|attribution-sharealike"),
     ("CC BY", r"cc[\s-]*by\b|creative commons attribution 4"),
     ("Public Domain", r"cc0|public\s*domain|gemeinfrei"),
@@ -159,17 +159,18 @@ def classify_error(entry: Entry, field_name: str, msg: str, title_by_id) -> None
         others = [int(x) for x in dup.group(2).split(",") if int(x) != entry.rid]
         other_titles = {title_by_id(entry.kind, o) for o in others}
         refs = ", ".join(f"{entry.kind} {o}" for o in others)
+        some = "einem der beiden" if len(others) == 1 else "allen ausser einem"
         if other_titles == {title_of(entry.record)}:
             text = (
                 f"Gleicher Titel und Identifier wie {refs}. Prüfen: Ist es "
-                "dasselbe Objekt, einen der beiden löschen. Sonst einem der "
-                "beiden einen neuen Identifier geben."
+                "dasselbe Objekt, die Doppel löschen (einer bleibt). Sonst "
+                f"{some} einen neuen Identifier geben."
             )
         else:
             text = (
                 f"Gleicher Identifier `{dup.group(1)}` wie {refs} "
                 f"(«{'», «'.join(sorted(other_titles))}»). "
-                "Einem der beiden einen neuen Identifier geben."
+                f"{some[0].upper() + some[1:]} einen neuen Identifier geben."
             )
         entry.problems.append(text)
         entry.groups.add("Doppelte Identifier")
@@ -226,10 +227,12 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
 
     # Media numbers per parent item, to propose at most one new item identifier.
     numbers_by_parent: dict[int, set[str]] = defaultdict(set)
-    for mid in suggestions:
-        own = re.match(r"m(\d+)", first_value(media[mid], "dcterms:identifier") or "")
-        if own:
-            numbers_by_parent[media[mid]["o:item"]["o:id"]].add(own.group(1))
+    for m in media.values():
+        own = re.match(r"m(\d+)", first_value(m, "dcterms:identifier") or "")
+        parent_id = (m.get("o:item") or {}).get("o:id")
+        if own and parent_id is not None:
+            numbers_by_parent[parent_id].add(own.group(1))
+    proposed = Counter(suggestions.values())
 
     clear_fixes: set[int] = set()
     for mid, expected in suggestions.items():
@@ -239,7 +242,8 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
         parent_ident = first_value(parent, "dcterms:identifier")
         numbers = numbers_by_parent.get(parent.get("o:id"), set())
         candidate = f"abb{next(iter(numbers))}" if len(numbers) == 1 else None
-        if len(validator.item_identifiers.get(parent_ident, [])) > 1 and numbers:
+        own = re.match(r"m(\d+)", current)
+        if len(validator.item_identifiers.get(parent_ident, [])) > 1 and own:
             # The item identifier is itself a duplicate: the item may be wrong.
             text = (
                 f"Identifier `{current}` passt nicht zum Objekt `{parent_ident}` "
@@ -259,6 +263,11 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
             text = (
                 f"Identifier `{current}` passt nicht zum Objekt `{parent_ident}`. "
                 f"`{expected}` ist aber schon vergeben ({used_by}). Prüfen."
+            )
+        elif proposed[expected] > 1:
+            text = (
+                f"Identifier `{current}` passt nicht zum Objekt `{parent_ident}`. "
+                f"`{expected}` wird für mehrere Media vorgeschlagen. Prüfen."
             )
         elif not current.startswith("m"):
             text = (
@@ -491,10 +500,13 @@ def main() -> int:
         file=sys.stderr,
     )
 
-    expected_media = sum(len(i.get("o:media") or []) for i in validator.items_data)
-    if len(validator.media_data) < expected_media:
+    expected_ids = {
+        m["o:id"] for i in validator.items_data for m in i.get("o:media") or []
+    }
+    missing = expected_ids - {m["o:id"] for m in validator.media_data}
+    if missing:
         print(
-            f"Error: fetched {len(validator.media_data)} of {expected_media} media. "
+            f"Error: {len(missing)} media not fetched (e.g. {sorted(missing)[:5]}). "
             "The list is incomplete; not posting.",
             file=sys.stderr,
         )

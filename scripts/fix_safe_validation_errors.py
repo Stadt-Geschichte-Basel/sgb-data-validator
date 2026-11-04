@@ -1,11 +1,14 @@
 """Apply the safe, automatic fixes to live Omeka records, one record at a time.
 
-Safe to run while co-workers edit in Omeka:
+Low risk while co-workers edit in Omeka:
   - Each record is read fresh (GET, cache-busted) before the transform, and
     again right before the PUT. If o:modified changed in between, it is skipped.
+  - Residual risk: Omeka has no write precondition. An edit saved in the short
+    time between the second read and the PUT is overwritten.
   - Records changed in the last --skip-recent-hours (default 2) are skipped.
   - Only records that the transform actually changes are written (PUT).
-  - Each record is saved to backups/fix_<timestamp>/ before its PUT.
+  - Each record is saved to backups/fix_<timestamp>/ before its PUT
+    (directory 0700, files 0600: records can be non-public).
 
 Fixes are the standard pipeline from src.transformations.transform_item_set_data
 (apply_all=True): whitespace / Unicode / HTTPS / DOI isPartOf / private flag, and
@@ -127,11 +130,14 @@ def main() -> int:
                         stats["skipped_changed"] += 1
                         print(f"  SKIP  [{kind} {rid}] changed during this run")
                         continue
-                    backup_dir.mkdir(parents=True, exist_ok=True)
-                    (backup_dir / f"{kind}_{rid}.json").write_text(
-                        json.dumps(before, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
+                    backup_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    fd = os.open(
+                        backup_dir / f"{kind}_{rid}.json",
+                        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                        0o600,
                     )
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        json.dump(before, f, ensure_ascii=False, indent=2)
                 result = update(rid, after, dry_run=not args.apply)
                 if not result.get("validation_passed"):
                     stats["invalid"] += 1
