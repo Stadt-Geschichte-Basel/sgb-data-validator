@@ -1,5 +1,6 @@
 # Data directories
 data/
+backups/
 
 # Static files (should not be modified)
 CODE_OF_CONDUCT.md

@@ -937,7 +937,7 @@ class OmekaValidator:
                 # Write rows sorted by resource_id
                 for resource_id in sorted(item_issues.keys()):
                     issues = item_issues[resource_id]
-                    edit_link = f"{admin_base_url}/items/{resource_id}"
+                    edit_link = f"{admin_base_url}/item/{resource_id}"
                     row = [resource_id, edit_link]
                     # Add field values (empty if no issue)
                     row.extend(issues.get(field, "") for field in item_fields)
