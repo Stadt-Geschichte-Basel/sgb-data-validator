@@ -100,7 +100,7 @@ class OmekaValidator:
         self.item_identifiers: dict[str, list[int]] = {}  # identifier -> [item_ids]
         self.media_identifiers: dict[str, list[int]] = {}  # identifier -> [media_ids]
 
-        # no-cache headers + a per-run nonce (see _add_auth_params) force the Omeka
+        # no-cache headers + a per-request nonce (see _add_auth_params) force the Omeka
         # reverse-proxy to serve fresh, complete listings. Without this, runs
         # intermittently got a stale/truncated snapshot (e.g. 868 of 998 items,
         # already-fixed values reported as errors).
@@ -112,7 +112,10 @@ class OmekaValidator:
         self.vocab_loader = VocabularyLoader(vocab_file)
 
     def _add_auth_params(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Add authentication parameters (and a cache-busting nonce) if configured."""
+        """Add a cache-busting nonce, and the authentication parameters if configured.
+
+        The nonce is added to every request, also without authentication.
+        """
         if self.key_identity and self.key_credential:
             params["key_identity"] = self.key_identity
             params["key_credential"] = self.key_credential
@@ -127,15 +130,26 @@ class OmekaValidator:
         The Omeka reverse-proxy intermittently returns a truncated page set, which
         silently dropped ~130 items from validation. Omeka reports the true count in
         the ``omeka-s-total-results`` header, so we retry until the fetch is complete.
+
+        Raises:
+            RuntimeError: if the fetch is still incomplete after all attempts. An
+                incomplete item set must not be validated silently.
         """
+        attempts = 5
         by_id: dict[int, dict[str, Any]] = {}
-        for attempt in range(5):
+        expected: int | None = None
+        for attempt in range(attempts):
             by_id, expected = self._fetch_items_once(item_set_id)
             if expected is None or len(by_id) >= expected:
-                break
-            # Truncated snapshot from the proxy; wait out the stale window and retry.
-            time.sleep(2 * (attempt + 1))
-        return list(by_id.values())
+                return list(by_id.values())
+            if attempt < attempts - 1:
+                # Truncated snapshot from the proxy; wait out the stale window.
+                time.sleep(2 * (attempt + 1))
+        raise RuntimeError(
+            f"Item set {item_set_id}: fetched {len(by_id)} of {expected} items "
+            f"after {attempts} attempts (truncated proxy response). "
+            "Not validating an incomplete item set."
+        )
 
     def _fetch_items_once(
         self, item_set_id: int
