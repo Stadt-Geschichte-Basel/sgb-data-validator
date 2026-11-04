@@ -1,7 +1,8 @@
 """Apply the safe, automatic fixes to live Omeka records, one record at a time.
 
 Safe to run while co-workers edit in Omeka:
-  - Each record is read fresh (GET, cache-busted) just before the write.
+  - Each record is read fresh (GET, cache-busted) before the transform, and
+    again right before the PUT. If o:modified changed in between, it is skipped.
   - Records changed in the last --skip-recent-hours (default 2) are skipped.
   - Only records that the transform actually changes are written (PUT).
   - Each record is saved to backups/fix_<timestamp>/ before its PUT.
@@ -119,6 +120,13 @@ def main() -> int:
                     break
                 update = api.update_item if kind == "items" else api.update_media
                 if args.apply:
+                    # Omeka PUT replaces the whole record and has no precondition.
+                    # Re-read right before the write; skip if someone edited it.
+                    current = fresh_get(api, kind, rid)
+                    if current.get("o:modified") != before.get("o:modified"):
+                        stats["skipped_changed"] += 1
+                        print(f"  SKIP  [{kind} {rid}] changed during this run")
+                        continue
                     backup_dir.mkdir(parents=True, exist_ok=True)
                     (backup_dir / f"{kind}_{rid}.json").write_text(
                         json.dumps(before, ensure_ascii=False, indent=2),
@@ -142,7 +150,8 @@ def main() -> int:
     verb = "changed" if args.apply else "would change"
     print(
         f"\n{verb}: {stats['changed']}  "
-        f"skipped (recent edit): {stats['skipped_recent']}"
+        f"skipped (recent edit): {stats['skipped_recent']}  "
+        f"skipped (changed during run): {stats['skipped_changed']}"
         f"  invalid: {stats['invalid']}  failed: {stats['failed']}"
     )
     for field, n in field_counts.most_common():

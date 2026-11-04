@@ -7,7 +7,8 @@ issue in place (it creates the comment on the first run).
 
 Extra checks (only for this list):
   - media identifier number != parent item number -> suggest the right one
-  - item identifier does not start with "abb<digit>"
+  - item identifier does not start with "abb<digit>" ("dataset<digit>" is also
+    allowed: contributed datasets such as KNIL item 11181)
   - license named in dcterms:rights != dcterms:license URI
 
 Usage:
@@ -81,6 +82,9 @@ GROUP_ORDER = [
 # License families: name in dcterms:rights text vs. dcterms:license URI.
 RIGHTS_PATTERNS = [
     ("CC BY-NC-SA", r"cc[\s-]*by[\s-]*nc[\s-]*sa"),
+    ("CC BY-NC-ND", r"cc[\s-]*by[\s-]*nc[\s-]*nd"),
+    ("CC BY-NC", r"cc[\s-]*by[\s-]*nc\b"),
+    ("CC BY-ND", r"cc[\s-]*by[\s-]*nd\b"),
     ("CC BY-SA", r"cc[\s-]*by[\s-]*sa|attribution-sharealike"),
     ("CC BY", r"cc[\s-]*by\b|creative commons attribution 4"),
     ("Public Domain", r"cc0|public\s*domain|gemeinfrei"),
@@ -88,6 +92,9 @@ RIGHTS_PATTERNS = [
 ]
 LICENSE_URI_FAMILY = [
     ("/by-nc-sa/", "CC BY-NC-SA"),
+    ("/by-nc-nd/", "CC BY-NC-ND"),
+    ("/by-nc/", "CC BY-NC"),
+    ("/by-nd/", "CC BY-ND"),
     ("/by-sa/", "CC BY-SA"),
     ("/by/", "CC BY"),
     ("/publicdomain/", "Public Domain"),
@@ -154,8 +161,9 @@ def classify_error(entry: Entry, field_name: str, msg: str, title_by_id) -> None
         refs = ", ".join(f"{entry.kind} {o}" for o in others)
         if other_titles == {title_of(entry.record)}:
             text = (
-                f"Gleicher Titel wie {refs}: wohl doppelt erfasst. "
-                "Prüfen, dann einen Datensatz löschen."
+                f"Gleicher Titel und Identifier wie {refs}. Prüfen: Ist es "
+                "dasselbe Objekt, einen der beiden löschen. Sonst einem der "
+                "beiden einen neuen Identifier geben."
             )
         else:
             text = (
@@ -216,29 +224,53 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
             entry(err.resource_type, err.resource_id), err.field, err.error, title_by_id
         )
 
+    # Media numbers per parent item, to propose at most one new item identifier.
+    numbers_by_parent: dict[int, set[str]] = defaultdict(set)
+    for mid in suggestions:
+        own = re.match(r"m(\d+)", first_value(media[mid], "dcterms:identifier") or "")
+        if own:
+            numbers_by_parent[media[mid]["o:item"]["o:id"]].add(own.group(1))
+
+    clear_fixes: set[int] = set()
     for mid, expected in suggestions.items():
         e = entry("Media", mid)
         current = first_value(e.record, "dcterms:identifier") or ""
         parent = items.get((e.record.get("o:item") or {}).get("o:id"), {})
         parent_ident = first_value(parent, "dcterms:identifier")
-        own = re.match(r"m(\d+)", current)
-        if len(validator.item_identifiers.get(parent_ident, [])) > 1 and own:
-            # The item identifier is itself a duplicate: the item is wrong.
+        numbers = numbers_by_parent.get(parent.get("o:id"), set())
+        candidate = f"abb{next(iter(numbers))}" if len(numbers) == 1 else None
+        if len(validator.item_identifiers.get(parent_ident, [])) > 1 and numbers:
+            # The item identifier is itself a duplicate: the item may be wrong.
             text = (
                 f"Identifier `{current}` passt nicht zum Objekt `{parent_ident}` "
                 f"(Item {parent['o:id']}), und `{parent_ident}` ist doppelt "
-                f"vergeben. **Vorschlag: Item {parent['o:id']} auf "
-                f"`abb{own.group(1)}` ändern.**"
+                "vergeben."
+            )
+            if candidate and candidate not in validator.item_identifiers:
+                text += (
+                    f" **Vorschlag: Item {parent['o:id']} auf `{candidate}` ändern.**"
+                )
+            else:
+                text += " Prüfen, ob das Item oder die Media falsch ist."
+        elif expected in validator.media_identifiers:
+            used_by = ", ".join(
+                f"Media {i}" for i in validator.media_identifiers[expected]
+            )
+            text = (
+                f"Identifier `{current}` passt nicht zum Objekt `{parent_ident}`. "
+                f"`{expected}` ist aber schon vergeben ({used_by}). Prüfen."
             )
         elif not current.startswith("m"):
             text = (
                 f"Media-Identifier muss mit `m` beginnen. **Vorschlag: `{expected}`**."
             )
+            clear_fixes.add(mid)
         else:
             text = (
                 f"Identifier `{current}` passt nicht zum Objekt `{parent_ident}`. "
                 f"**Vorschlag: `{expected}`**."
             )
+            clear_fixes.add(mid)
         e.problems.insert(0, text)
         e.groups.add(
             "Doppelte Identifier"
@@ -246,8 +278,8 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
             else "Falscher Inhalt"
         )
 
-    # Duplicate pairs: if one side has a suggestion, the other side is fine.
-    for mid in suggestions:
+    # Duplicate pairs: if one side has a clear fix, the other side is fine.
+    for mid in clear_fixes:
         current = first_value(media[mid], "dcterms:identifier")
         for other_id in validator.media_identifiers.get(current, []):
             if other_id != mid and other_id not in suggestions:
@@ -261,7 +293,8 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
         if ident and not re.match(r"abb\d|dataset\d", ident):
             e = entry("Item", iid)
             e.problems.append(
-                f"Identifier `{ident}` beginnt nicht mit `abb` + Ziffer. "
+                f"Identifier `{ident}` beginnt nicht mit `abb` + Ziffer "
+                "(oder `dataset` + Ziffer). "
                 "Schreibweise prüfen."
             )
             e.groups.add("Falscher Inhalt")
@@ -330,7 +363,7 @@ def render(entries: list[Entry], validator: OmekaValidator, admin: str) -> str:
         new = " 🆕" if c and c >= cutoff else ""
         ident_txt = f" `{ident}`" if ident else ""
         return (
-            f"- [ ] [{e.kind} {e.rid}]({admin}/{seg}/{e.rid}) "
+            f"- [ ] [{e.kind} {e.rid}]({admin}/{seg}/{e.rid}/edit) "
             f"«{title_of(e.record)}»{ident_txt}{new}"
             f" — {' '.join(e.problems)}"
         )
@@ -390,7 +423,16 @@ def render(entries: list[Entry], validator: OmekaValidator, admin: str) -> str:
 
 
 def post(body: str) -> None:
-    jq = f'.[] | select(.body | startswith("{MARKER}")) | .id'
+    login = subprocess.run(
+        ["gh", "api", "user", "--jq", ".login"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    jq = (
+        f'.[] | select(.user.login == "{login}") '
+        f'| select(.body | startswith("{MARKER}")) | .id'
+    )
     found = subprocess.run(
         [
             "gh",
@@ -449,11 +491,25 @@ def main() -> int:
         file=sys.stderr,
     )
 
-    body = render(build_entries(validator), validator, f"{base_url}/admin")
-    if len(body) > 65000:
+    expected_media = sum(len(i.get("o:media") or []) for i in validator.items_data)
+    if len(validator.media_data) < expected_media:
         print(
-            f"Warning: {len(body)} characters, GitHub limit is 65536.", file=sys.stderr
+            f"Error: fetched {len(validator.media_data)} of {expected_media} media. "
+            "The list is incomplete; not posting.",
+            file=sys.stderr,
         )
+        if args.post:
+            return 1
+
+    site = base_url[: -len("/api")] if base_url.endswith("/api") else base_url
+    body = render(build_entries(validator), validator, f"{site}/admin")
+    if len(body) > 65536:
+        print(
+            f"Error: {len(body)} characters, GitHub limit is 65536. Not posting.",
+            file=sys.stderr,
+        )
+        if args.post:
+            return 1
     if args.post:
         post(body)
     else:

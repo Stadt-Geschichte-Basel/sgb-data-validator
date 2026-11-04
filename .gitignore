@@ -12,6 +12,9 @@ examples/backups/
 validation_reports/
 analysis/
 
+# Local record backups from live writes (may contain non-public metadata)
+backups/
+
 # Exclude example.env
 !example.env
 

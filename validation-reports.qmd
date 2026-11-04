@@ -35,9 +35,9 @@ This report contains validation results for all items with issues. Each row repr
 
 ``` csv
 resource_id,edit_link,dcterms:identifier,dcterms:description,o:title
-121200,https://omeka.unibe.ch/admin/item/121200,error: Field is required,error: Field is required,
-121201,https://omeka.unibe.ch/admin/item/121201,,warning: Missing field,
-121202,https://omeka.unibe.ch/admin/item/121202,,,
+121200,https://omeka.unibe.ch/admin/item/121200/edit,error: Field is required,error: Field is required,
+121201,https://omeka.unibe.ch/admin/item/121201/edit,,warning: Missing field,
+121202,https://omeka.unibe.ch/admin/item/121202/edit,,,
 ```
 
 In this example: - Item 121200 has errors in `dcterms:identifier` and `dcterms:description` fields - Item 121201 has a warning about a missing `dcterms:description` field - Item 121202 is valid (all empty cells mean no issues)
@@ -60,8 +60,8 @@ This report contains validation results for all media objects with issues. The s
 
 ``` csv
 resource_id,edit_link,dcterms:identifier,dcterms:creator,o:media_type
-10778,https://omeka.unibe.ch/admin/media/10778,,,
-10779,https://omeka.unibe.ch/admin/media/10779,error: Field is required,warning: Missing field,
+10778,https://omeka.unibe.ch/admin/media/10778/edit,,,
+10779,https://omeka.unibe.ch/admin/media/10779/edit,error: Field is required,warning: Missing field,
 ```
 
 ### 3. Validation Summary Report
@@ -99,8 +99,8 @@ failed_uris,3
 
 Each validation report includes an `edit_link` column that provides direct access to the Omeka admin interface for correcting issues:
 
--   **Items**: `https://omeka.unibe.ch/admin/item/<item_id>`
--   **Media**: `https://omeka.unibe.ch/admin/media/<media_id>`
+-   **Items**: `https://omeka.unibe.ch/admin/item/<item_id>/edit`
+-   **Media**: `https://omeka.unibe.ch/admin/media/<media_id>/edit`
 
 Click these links to quickly navigate to the resource and make corrections.
 
@@ -350,7 +350,7 @@ else:
 
 Click the `edit_link` values in the downloaded CSV files to navigate directly to the Omeka admin interface for quick corrections.
 
-**Example edit links:** - Items: `https://omeka.unibe.ch/admin/item/<item_id>` - Media: `https://omeka.unibe.ch/admin/media/<media_id>`
+**Example edit links:** - Items: `https://omeka.unibe.ch/admin/item/<item_id>/edit` - Media: `https://omeka.unibe.ch/admin/media/<media_id>/edit`
 
 #### Data Quality Metrics
 
