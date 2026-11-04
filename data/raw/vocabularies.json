@@ -21,7 +21,9 @@
 			"application/pdf",
 			"application/geo+json",
 			"text/csv",
-			"image/png"
+			"image/png",
+			"text/plain",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 		]
 	},
 	{

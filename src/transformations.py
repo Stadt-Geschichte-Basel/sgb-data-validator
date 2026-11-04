@@ -9,6 +9,8 @@ import html
 import re
 import unicodedata
 from difflib import SequenceMatcher
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -714,17 +716,106 @@ def enrich_items_with_book_dois(
     }
 
 
+#: Fields a media inherits from its parent item when the media has no value.
+INHERITED_MEDIA_FIELDS = ("dcterms:language", "dcterms:temporal")
+
+#: Omeka custom vocabulary used by most existing media dcterms:format values.
+FORMAT_VALUE_TEMPLATE = {
+    "type": "customvocab:15",
+    "property_id": 9,
+    "property_label": "Format",
+    "is_public": True,
+    "@language": "en",
+}
+
+# Hyphenated Creative Commons notation ("CC-BY-SA 4.0") -> official ("CC BY-SA 4.0").
+_CC_HYPHEN_RE = re.compile(r"\bCC-BY(?=[\s-])")
+
+
+@lru_cache(maxsize=1)
+def load_mime_types() -> frozenset[str]:
+    """Return the MIME types of the controlled vocabulary."""
+    from src.vocabularies import VocabularyLoader
+
+    vocab_file = Path(__file__).parent.parent / "data" / "raw" / "vocabularies.json"
+    return frozenset(VocabularyLoader(vocab_file).mime_types)
+
+
+def fill_media_from_parent(
+    media_data: dict[str, Any], parent_item: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Copy dcterms:language and dcterms:temporal from the parent item.
+
+    Only fills fields that are empty on the media. Never overwrites a value.
+    """
+    if not parent_item:
+        return media_data
+    result = dict(media_data)
+    for field in INHERITED_MEDIA_FIELDS:
+        if not result.get(field) and parent_item.get(field):
+            result[field] = [dict(v) for v in parent_item[field]]
+    return result
+
+
+def fill_media_format(
+    media_data: dict[str, Any], allowed_mime_types: set[str] | None
+) -> dict[str, Any]:
+    """Set dcterms:format from o:media_type when dcterms:format is empty.
+
+    Only uses o:media_type values that are in the MIME vocabulary.
+    """
+    media_type = media_data.get("o:media_type")
+    if (
+        media_data.get("dcterms:format")
+        or not media_type
+        or not allowed_mime_types
+        or media_type not in allowed_mime_types
+    ):
+        return media_data
+    result = dict(media_data)
+    result["dcterms:format"] = [{**FORMAT_VALUE_TEMPLATE, "@value": media_type}]
+    return result
+
+
+def normalize_rights_notation(media_data: dict[str, Any]) -> dict[str, Any]:
+    """Write Creative Commons names in dcterms:rights in official notation.
+
+    Example: "CC-BY-SA 4.0, Philippe Saurbeck" -> "CC BY-SA 4.0, Philippe Saurbeck".
+    """
+    rights = media_data.get("dcterms:rights")
+    if not isinstance(rights, list):
+        return media_data
+    new_rights = []
+    changed = False
+    for prop in rights:
+        value = prop.get("@value") if isinstance(prop, dict) else None
+        if isinstance(value, str) and _CC_HYPHEN_RE.search(value):
+            prop = {**prop, "@value": _CC_HYPHEN_RE.sub("CC BY", value)}
+            changed = True
+        new_rights.append(prop)
+    if not changed:
+        return media_data
+    return {**media_data, "dcterms:rights": new_rights}
+
+
 def transform_media(
-    media_data: dict[str, Any], apply_all: bool = False, upgrade_https: bool = True
+    media_data: dict[str, Any],
+    apply_all: bool = False,
+    upgrade_https: bool = True,
+    parent_item: dict[str, Any] | None = None,
+    allowed_mime_types: set[str] | None = None,
 ) -> dict[str, Any]:
     """Transform a media object's data by normalizing text in all text fields.
 
     This function also sets o:is_public to False for media with placeholder images.
+    With apply_all, it also fills empty fields from context (see Args).
 
     Args:
         media_data: The media data dictionary
         apply_all: If True, apply all transformations; if False, only whitespace
         upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
+        parent_item: Parent item; fills empty language/temporal (apply_all only)
+        allowed_mime_types: MIME vocabulary; fills empty format (apply_all only)
 
     Returns:
         A new dictionary with transformed data
@@ -733,6 +824,11 @@ def transform_media(
     result = transform_item(
         media_data, apply_all=apply_all, upgrade_https=upgrade_https
     )
+
+    if apply_all:
+        result = normalize_rights_notation(result)
+        result = fill_media_from_parent(result, parent_item)
+        result = fill_media_format(result, allowed_mime_types)
 
     # Set private flag for media with placeholder images
     result = set_media_private_flag(result)
@@ -785,8 +881,15 @@ def transform_item_set_data(
     transformed_items, doi_report = enrich_items_with_book_dois(transformed_items)
 
     # Transform all media (includes setting private flag for placeholders)
+    items_by_id = {i.get("o:id"): i for i in transformed_items}
     transformed_media = [
-        transform_media(m, apply_all=apply_all, upgrade_https=upgrade_https)
+        transform_media(
+            m,
+            apply_all=apply_all,
+            upgrade_https=upgrade_https,
+            parent_item=items_by_id.get((m.get("o:item") or {}).get("o:id")),
+            allowed_mime_types=load_mime_types() if apply_all else None,
+        )
         for m in media
     ]
 

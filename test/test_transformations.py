@@ -4,6 +4,9 @@ from src.transformations import (
     BOOK_DOI_METADATA,
     enrich_item_with_book_doi,
     enrich_items_with_book_dois,
+    fill_media_format,
+    fill_media_from_parent,
+    normalize_rights_notation,
     normalize_whitespace,
     transform_item,
     transform_item_set_data,
@@ -443,6 +446,86 @@ def test_transform_item_set_data_can_return_doi_report() -> None:
     assert transformed_items[0]["dcterms:isPartOf"][0]["@id"] == "https://doi.org/10.21255/sgb-08-796384"
     assert doi_report["items_enriched"] == 1
     assert doi_report["enriched_items"][0]["doi"] == "10.21255/SGB-08-796384"
+
+
+PARENT_ITEM = {
+    "o:id": 1,
+    "dcterms:language": [
+        {"type": "valuesuggest:lc:iso6392", "property_id": 12, "@value": "de"}
+    ],
+    "dcterms:temporal": [
+        {"type": "customvocab:14", "property_id": 41, "@value": "Mittelalter"}
+    ],
+}
+
+
+def test_fill_media_from_parent_fills_empty_fields() -> None:
+    media = {"o:id": 2, "o:item": {"o:id": 1}}
+    result = fill_media_from_parent(media, PARENT_ITEM)
+    assert result["dcterms:language"] == PARENT_ITEM["dcterms:language"]
+    assert result["dcterms:temporal"] == PARENT_ITEM["dcterms:temporal"]
+    # The copy must not share dicts with the parent.
+    assert result["dcterms:language"][0] is not PARENT_ITEM["dcterms:language"][0]
+    assert "dcterms:language" not in media
+
+
+def test_fill_media_from_parent_never_overwrites() -> None:
+    own = [{"type": "literal", "@value": "fr"}]
+    media = {"o:id": 2, "dcterms:language": own}
+    result = fill_media_from_parent(media, PARENT_ITEM)
+    assert result["dcterms:language"] == own
+    assert fill_media_from_parent(media, None) is media
+
+
+def test_fill_media_format_uses_vocab_only() -> None:
+    vocab = {"image/png", "image/tiff"}
+    filled = fill_media_format({"o:media_type": "image/png"}, vocab)
+    assert filled["dcterms:format"][0]["@value"] == "image/png"
+    assert filled["dcterms:format"][0]["type"] == "customvocab:15"
+    # Not in vocabulary: no change.
+    html_media = {"o:media_type": "text/html"}
+    assert fill_media_format(html_media, vocab) is html_media
+    # Existing format: no change.
+    own = {"o:media_type": "image/png", "dcterms:format": [{"@value": "image/tiff"}]}
+    assert fill_media_format(own, vocab) is own
+
+
+def test_normalize_rights_notation() -> None:
+    cases = {
+        "CC-BY-SA 4.0, Philippe Saurbeck": "CC BY-SA 4.0, Philippe Saurbeck",
+        "CC-BY 4.0": "CC BY 4.0",
+        "CC-BY-NC-SA 4.0": "CC BY-NC-SA 4.0",
+        "CC BY-SA 4.0": "CC BY-SA 4.0",
+        "Public Domain Mark": "Public Domain Mark",
+    }
+    for before, after in cases.items():
+        media = {"dcterms:rights": [{"type": "literal", "@value": before}]}
+        result = normalize_rights_notation(media)
+        assert result["dcterms:rights"][0]["@value"] == after
+
+
+def test_transform_media_context_fixes_need_apply_all() -> None:
+    media = {"o:id": 2, "o:media_type": "image/png", "o:item": {"o:id": 1}}
+    plain = transform_media(media, parent_item=PARENT_ITEM)
+    assert "dcterms:language" not in plain
+    full = transform_media(
+        media,
+        apply_all=True,
+        upgrade_https=False,
+        parent_item=PARENT_ITEM,
+        allowed_mime_types={"image/png"},
+    )
+    assert full["dcterms:language"][0]["@value"] == "de"
+    assert full["dcterms:format"][0]["@value"] == "image/png"
+
+
+def test_transform_item_set_data_fills_media_from_parent() -> None:
+    media = {"o:id": 2, "o:media_type": "image/png", "o:item": {"o:id": 1}}
+    _, _, out_media = transform_item_set_data(
+        {}, [PARENT_ITEM], [media], apply_all=True, upgrade_https=False
+    )
+    assert out_media[0]["dcterms:temporal"][0]["@value"] == "Mittelalter"
+    assert out_media[0]["dcterms:format"][0]["@value"] == "image/png"
 
 
 if __name__ == "__main__":
