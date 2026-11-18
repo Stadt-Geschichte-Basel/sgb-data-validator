@@ -43,19 +43,13 @@ RECENT_DAYS = 14
 GITHUB_LOGINS: dict[int, str] = {}
 
 #: Records that need a team decision. They go to one section, not to co-workers.
-JULY_2025_BLOCK = {
-    f"{p}{n}"
-    for p in ("abb", "m")
-    for n in (92486, 92806, 93036, 93170, 93240, 93262, 93490)
-}
 DECISIONS = {
     "data_story": "Data Stories ohne Identifier: Identifier-Schema festlegen. "
     "Danach kann ein Skript alle Identifier setzen.",
-    "july_2025": "Juli-2025-Block (Marktplatz/Mustermesse, Items 12622–12661) "
-    "nutzt die Identifier der Serie vom Mai 2025 (Items 12373–12390). "
-    "Festlegen, welche Seite neue Identifier bekommt.",
-    "abb21892": "abb21892 (Items 12755 / 13553): öffentliche URL auf "
-    "forschung.stadtgeschichtebasel.ch. Festlegen, welches Objekt die neue ID bekommt.",
+    "abb21892": "abb21892 (Items 12755 / 13553): Die Bildredaktionstabelle Band 7 "
+    "führt beide unter ABB21892 (Foto Steuerverwaltung und Grafik «Öffentliches "
+    "Personal», die mit ABB21912 zusammengehört). Festlegen, welches Objekt "
+    "die neue ID bekommt (Vorschlag für die Grafik: abb21912).",
     "stub_13371": "Media 13371 «Topfhelm» ist ein Platzhalter ohne Metadaten. "
     "Ergänzen oder löschen.",
 }
@@ -153,14 +147,28 @@ def suggest_media_identifier(media: dict, parent: dict | None) -> str | None:
     return f"m{number}{suffix}"
 
 
-def classify_error(entry: Entry, field_name: str, msg: str, title_by_id) -> None:
+def classify_error(
+    entry: Entry, field_name: str, msg: str, title_by_id, parent_by_id=None
+) -> None:
     dup = re.search(r"Duplicate identifier '([^']+)' found in \w+: \[([\d, ]+)\]", msg)
     if dup:
         others = [int(x) for x in dup.group(2).split(",") if int(x) != entry.rid]
         other_titles = {title_by_id(entry.kind, o) for o in others}
         refs = ", ".join(f"{entry.kind} {o}" for o in others)
         some = "einem der beiden" if len(others) == 1 else "allen ausser einem"
-        if other_titles == {title_of(entry.record)}:
+        own_parent = (entry.record.get("o:item") or {}).get("o:id")
+        if (
+            entry.kind == "Media"
+            and own_parent
+            and parent_by_id
+            and all(parent_by_id(o) == own_parent for o in others)
+        ):
+            text = (
+                f"Gleicher Identifier `{dup.group(1)}` wie {refs}, am selben Item "
+                "(mehrere Dateien eines Objekts). **Nicht löschen.** Suffix "
+                f"vergeben: `{dup.group(1)}_1`, `{dup.group(1)}_2` …"
+            )
+        elif other_titles == {title_of(entry.record)}:
             text = (
                 f"Gleicher Titel und Identifier wie {refs}. Prüfen: Ist es "
                 "dasselbe Objekt, die Doppel löschen (einer bleibt). Sonst "
@@ -222,7 +230,11 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
 
     for err in validator.errors:
         classify_error(
-            entry(err.resource_type, err.resource_id), err.field, err.error, title_by_id
+            entry(err.resource_type, err.resource_id),
+            err.field,
+            err.error,
+            title_by_id,
+            lambda o: (media.get(o, {}).get("o:item") or {}).get("o:id"),
         )
 
     # Media numbers per parent item, to propose at most one new item identifier.
@@ -328,8 +340,6 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
         ident = first_value(e.record, "dcterms:identifier") or ""
         if not ident and title_of(e.record).startswith("Data Story"):
             e.decision = "data_story"
-        elif ident in JULY_2025_BLOCK:
-            e.decision = "july_2025"
         elif ident == "abb21892":
             e.decision = "abb21892"
         elif (e.kind, e.rid) == ("Media", 13371):

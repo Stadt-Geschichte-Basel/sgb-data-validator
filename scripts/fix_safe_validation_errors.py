@@ -75,12 +75,85 @@ def changed_fields(before: dict, after: dict) -> list[str]:
     )
 
 
+def apply_renames(args, base_url: str, key_id: str, key_cred: str) -> int:
+    """Set dcterms:identifier old -> new for the CSV rows. Nothing else changes."""
+    import csv
+
+    with args.renames.open(encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    new_counts = Counter((r["kind"], r["new"]) for r in rows)
+    backup_dir = ROOT / "backups" / f"rename_{datetime.now():%Y%m%d_%H%M%S}"
+    stats: Counter[str] = Counter()
+    with OmekaAPI(base_url, key_id, key_cred) as api:
+        for row in rows:
+            kind, rid = row["kind"], int(row["id"])
+            if row["old"] == row["new"]:
+                continue
+            if new_counts[(kind, row["new"])] > 1:
+                print(f"  SKIP [{kind} {rid}] new value used twice in CSV")
+                stats["skipped"] += 1
+                continue
+            rec = fresh_get(api, kind, rid)
+            values = rec.get("dcterms:identifier") or []
+            if len(values) != 1 or values[0].get("@value") != row["old"]:
+                print(f"  SKIP [{kind} {rid}] identifier is not {row['old']!r} any more")
+                stats["skipped"] += 1
+                continue
+            if modified_recently(rec, args.skip_recent_hours):
+                print(f"  SKIP [{kind} {rid}] changed < {args.skip_recent_hours} h ago")
+                stats["skipped"] += 1
+                continue
+            new_rec = {
+                **rec,
+                "dcterms:identifier": [{**values[0], "@value": row["new"]}],
+            }
+            if args.apply:
+                current = fresh_get(api, kind, rid)
+                if current.get("o:modified") != rec.get("o:modified"):
+                    print(f"  SKIP [{kind} {rid}] changed during this run")
+                    stats["skipped"] += 1
+                    continue
+                backup_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                fd = os.open(
+                    backup_dir / f"{kind}_{rid}.json",
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                    0o600,
+                )
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(rec, f, ensure_ascii=False, indent=2)
+            update = api.update_item if kind == "items" else api.update_media
+            result = update(rid, new_rec, dry_run=not args.apply)
+            if not result.get("validation_passed") or (
+                args.apply and not result.get("updated")
+            ):
+                print(f"  FAIL [{kind} {rid}] {result.get('errors') or result.get('message')}")
+                stats["failed"] += 1
+            else:
+                stats["changed"] += 1
+                print(
+                    f"  {'OK ' if args.apply else 'would'} [{kind} {rid}] "
+                    f"{row['old']} -> {row['new']}"
+                )
+    print(
+        f"\nchanged: {stats['changed']}  skipped: {stats['skipped']}  "
+        f"failed: {stats['failed']}"
+    )
+    if args.apply and stats["changed"]:
+        print(f"Backups: {backup_dir}")
+    return 1 if stats["failed"] else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--apply", action="store_true", help="write (default: dry run)")
     ap.add_argument("--limit", type=int, default=0, help="stop after N changed records")
     ap.add_argument("--skip-recent-hours", type=float, default=2.0)
     ap.add_argument("--item-set-id", type=int, default=None)
+    ap.add_argument(
+        "--renames",
+        type=Path,
+        help="CSV (kind,id,old,new,reason): set dcterms:identifier old -> new only",
+    )
     args = ap.parse_args()
 
     load_dotenv(ROOT / ".env")
@@ -89,6 +162,8 @@ def main() -> int:
     item_set_id = args.item_set_id or int(os.environ.get("ITEM_SET_ID", "10780"))
 
     print(f"Mode: {'APPLY' if args.apply else 'DRY RUN'}  item set {item_set_id}")
+    if args.renames:
+        return apply_renames(args, base_url, key_id, key_cred)
     item_ids = [
         i["o:id"]
         for i in OmekaValidator(base_url, key_id, key_cred).fetch_items(item_set_id)
