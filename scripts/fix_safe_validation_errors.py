@@ -30,6 +30,7 @@ from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,14 +42,20 @@ from validate import OmekaValidator  # noqa: E402
 
 def fresh_get(api: OmekaAPI, kind: str, rid: int) -> dict:
     """GET one record, bypassing the reverse-proxy cache."""
-    params = api._add_auth_params({"_": str(time.time_ns())})
-    response = api.client.get(
-        f"{api.base_url}/api/{kind}/{rid}",
-        params=params,
-        headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},
-    )
-    response.raise_for_status()
-    return response.json()
+    for attempt in range(4):
+        try:
+            params = api._add_auth_params({"_": str(time.time_ns())})
+            response = api.client.get(
+                f"{api.base_url}/api/{kind}/{rid}",
+                params=params,
+                headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.TransportError:
+            if attempt == 3:
+                raise
+            time.sleep(2 * (attempt + 1))
 
 
 def modified_recently(record: dict, hours: float) -> bool:

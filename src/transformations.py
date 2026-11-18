@@ -520,6 +520,9 @@ def transform_item(
     result = {}
 
     for key, value in item_data.items():
+        if apply_all and key == "dcterms:subject":
+            # The data model dropped subjects (issue #44); remove leftovers.
+            continue
         if key == "o:title" and isinstance(value, str):
             # Transform the title directly
             if apply_all:
