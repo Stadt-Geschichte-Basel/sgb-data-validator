@@ -75,49 +75,94 @@ def changed_fields(before: dict, after: dict) -> list[str]:
     )
 
 
+# Properties that the edit mode may write, with the shape of a new value.
+EDIT_FIELDS: dict[str, dict] = {
+    "dcterms:identifier": {
+        "type": "literal",
+        "property_id": 10,
+        "property_label": "Identifier",
+        "is_public": True,
+    },
+    "dcterms:rights": {
+        "type": "literal",
+        "property_id": 15,
+        "property_label": "Rights",
+        "is_public": True,
+    },
+    "dcterms:license": {
+        "type": "customvocab:16",
+        "property_id": 49,
+        "property_label": "License",
+        "is_public": True,
+        "@language": "en",
+    },
+}
+
+
+def plan_edits(rec: dict, rows: list[dict]) -> tuple[dict | None, str | None]:
+    """Return (new record, None), or (None, reason) when the record cannot change.
+
+    All rows for one record are applied together, so one record gets one PUT.
+    Every row's `old` must match the live value exactly (empty: no value yet).
+    """
+    new_rec = dict(rec)
+    for row in rows:
+        field = row.get("field") or "dcterms:identifier"
+        if field not in EDIT_FIELDS:
+            return None, f"field {field!r} is not allowed"
+        values = rec.get(field) or []
+        if len(values) > 1 or (values and values[0].get("@value") != row["old"]):
+            return None, f"{field} is not {row['old']!r} any more"
+        if not values and row["old"]:
+            return None, f"{field} is not {row['old']!r} any more"
+        base = values[0] if values else dict(EDIT_FIELDS[field])
+        new_rec[field] = [{**base, "@value": row["new"]}]
+    if all(
+        json.dumps(new_rec.get(k), sort_keys=True)
+        == json.dumps(rec.get(k), sort_keys=True)
+        for k in new_rec
+    ):
+        return None, "no change"
+    return new_rec, None
+
+
 def apply_renames(args, base_url: str, key_id: str, key_cred: str) -> int:
-    """Set dcterms:identifier old -> new for the CSV rows. Nothing else changes."""
+    """Edit identifier, rights or license from a reviewed CSV. Nothing else changes."""
     import csv
 
-    with args.renames.open(encoding="utf-8") as f:
+    with args.renames.open(encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
-    new_counts = Counter((r["kind"], r["new"]) for r in rows)
+    new_counts = Counter(
+        (r["kind"], r["new"])
+        for r in rows
+        if (r.get("field") or "dcterms:identifier") == "dcterms:identifier"
+    )
+    by_record: dict[tuple[str, int], list[dict]] = {}
+    for row in rows:
+        by_record.setdefault((row["kind"], int(row["id"])), []).append(row)
     backup_dir = ROOT / "backups" / f"rename_{datetime.now():%Y%m%d_%H%M%S}"
     stats: Counter[str] = Counter()
     with OmekaAPI(base_url, key_id, key_cred) as api:
-        for row in rows:
-            kind, rid = row["kind"], int(row["id"])
-            if row["old"] == row["new"]:
-                continue
-            if new_counts[(kind, row["new"])] > 1:
-                print(f"  SKIP [{kind} {rid}] new value used twice in CSV")
+        for (kind, rid), group in by_record.items():
+            if any(
+                (r.get("field") or "dcterms:identifier") == "dcterms:identifier"
+                and new_counts[(kind, r["new"])] > 1
+                for r in group
+            ):
+                print(f"  SKIP [{kind} {rid}] new identifier used twice in CSV")
                 stats["skipped"] += 1
                 continue
             rec = fresh_get(api, kind, rid)
-            values = rec.get("dcterms:identifier") or []
-            if not row["old"] and not values:
-                # Record has no identifier yet: add one (property 10).
-                values = [
-                    {
-                        "type": "literal",
-                        "property_id": 10,
-                        "property_label": "Identifier",
-                        "is_public": True,
-                        "@value": "",
-                    }
-                ]
-            if len(values) != 1 or values[0].get("@value") != row["old"]:
-                print(f"  SKIP [{kind} {rid}] identifier is not {row['old']!r} any more")
-                stats["skipped"] += 1
+            new_rec, reason = plan_edits(rec, group)
+            if new_rec is None:
+                if reason != "no change":
+                    print(f"  SKIP [{kind} {rid}] {reason}")
+                    stats["skipped"] += 1
                 continue
             if modified_recently(rec, args.skip_recent_hours):
                 print(f"  SKIP [{kind} {rid}] changed < {args.skip_recent_hours} h ago")
                 stats["skipped"] += 1
                 continue
-            new_rec = {
-                **rec,
-                "dcterms:identifier": [{**values[0], "@value": row["new"]}],
-            }
             if args.apply:
                 current = fresh_get(api, kind, rid)
                 if current.get("o:modified") != rec.get("o:modified"):
@@ -137,14 +182,17 @@ def apply_renames(args, base_url: str, key_id: str, key_cred: str) -> int:
             if not result.get("validation_passed") or (
                 args.apply and not result.get("updated")
             ):
-                print(f"  FAIL [{kind} {rid}] {result.get('errors') or result.get('message')}")
+                detail = result.get("errors") or result.get("message")
+                print(f"  FAIL [{kind} {rid}] {detail}")
                 stats["failed"] += 1
             else:
                 stats["changed"] += 1
-                print(
-                    f"  {'OK ' if args.apply else 'would'} [{kind} {rid}] "
-                    f"{row['old']} -> {row['new']}"
+                shown = "; ".join(
+                    f"{(r.get('field') or 'dcterms:identifier').split(':')[1]}: "
+                    f"{r['old'][:40]!r} -> {r['new'][:40]!r}"
+                    for r in group
                 )
+                print(f"  {'OK ' if args.apply else 'would'} [{kind} {rid}] {shown}")
     print(
         f"\nchanged: {stats['changed']}  skipped: {stats['skipped']}  "
         f"failed: {stats['failed']}"
@@ -161,9 +209,14 @@ def main() -> int:
     ap.add_argument("--skip-recent-hours", type=float, default=2.0)
     ap.add_argument("--item-set-id", type=int, default=None)
     ap.add_argument(
+        "--edits",
         "--renames",
+        dest="renames",
         type=Path,
-        help="CSV (kind,id,old,new,reason): set dcterms:identifier old -> new only",
+        help=(
+            "CSV (kind,id,field,old,new,reason): set identifier, rights or license "
+            "old -> new only. 'field' may be missing (then dcterms:identifier)."
+        ),
     )
     args = ap.parse_args()
 

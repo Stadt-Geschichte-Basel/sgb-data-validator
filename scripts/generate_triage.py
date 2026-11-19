@@ -129,6 +129,39 @@ def license_family(uri: str) -> str | None:
     return next((name for part, name in LICENSE_URI_FAMILY if part in uri), None)
 
 
+#: License URI for each family named in dcterms:rights (the text decides).
+URI_BY_FAMILY = {
+    "CC BY": "https://creativecommons.org/licenses/by/4.0/",
+    "CC BY-SA": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "CC BY-NC-SA": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+    "Public Domain": "https://creativecommons.org/publicdomain/mark/1.0/",
+    "In Copyright": "http://rightsstatements.org/vocab/InC/1.0/",
+}
+CC0_URI = "https://creativecommons.org/publicdomain/zero/1.0/"
+
+
+def suggested_license_uri(rights: str) -> str | None:
+    """License URI that matches the rights text, or None if the text names none."""
+    family = rights_family(rights)
+    if family == "Public Domain" and re.search(r"cc0", rights.lower()):
+        return CC0_URI
+    return URI_BY_FAMILY.get(family) if family else None
+
+
+#: Media whose rights need a decision by the editors (no write by script).
+RIGHTS_CHECK = {
+    11509: "Rights «In Copyright», Foto Saurbeck. Andere Saurbeck-Fotos sind CC BY-SA. "
+    "Rechteinhaber fragen.",
+    11549: "Rights «In Copyright», Foto Thierry Le Mage. Rechteinhaber fragen.",
+    12011: "Rights nennt keine Lizenz, License ist «In Copyright». "
+    "Rights ergänzen, wenn bestätigt.",
+    12659: "Foto Hans Bertolf (StABS BSL 1013), License «Public Domain Mark». "
+    "Prüfen, ob das Werk gemeinfrei ist (Todesjahr des Fotografen).",
+    13262: "Codex Manesse (UB Heidelberg): Rights «CC BY-SA». Die UB Heidelberg "
+    "nutzt je Seite PDM oder CC0. Prüfen.",
+}
+
+
 def parent_number(item: dict | None) -> str | None:
     m = re.match(r"abb(\d+)", first_value(item or {}, "dcterms:identifier") or "")
     return m.group(1) if m else None
@@ -326,13 +359,24 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
             first_value(m, "dcterms:rights"),
             first_value(m, "dcterms:license"),
         )
+        if mid in RIGHTS_CHECK:
+            e = entry("Media", mid)
+            e.problems.append(f"Rechte klären: {RIGHTS_CHECK[mid]}")
+            e.groups.add("Rights und License passen nicht")
+        uri = suggested_license_uri(rights or "")
+        if rights and not lic and uri:
+            entry("Media", mid).problems.append(
+                f"Rights nennt «{rights_family(rights)}». License setzen: `{uri}`."
+            )
+            continue
         if not rights or not lic:
             continue
         r_fam, l_fam = rights_family(rights), license_family(lic)
-        if r_fam and l_fam and r_fam != l_fam:
+        if r_fam and l_fam and r_fam != l_fam and mid not in RIGHTS_CHECK:
             e = entry("Media", mid)
             e.problems.append(
-                f"Rights nennt «{r_fam}», License ist «{l_fam}» (`{lic}`). Angleichen."
+                f"Rights nennt «{r_fam}», License ist «{l_fam}» (`{lic}`). "
+                f"Der Rights-Text gilt: License auf `{uri}` setzen."
             )
             e.groups.add("Rights und License passen nicht")
 
