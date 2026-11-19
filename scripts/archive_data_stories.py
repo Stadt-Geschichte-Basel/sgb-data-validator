@@ -814,6 +814,9 @@ def item_payload(slug: str, row: dict[str, str], temporal: list[str]) -> dict[st
         "o:is_public": row["rights_status"] == "verified",
         "o:resource_template": {"o:id": ITEM_TEMPLATE},
         "o:item_set": [{"o:id": ITEM_SET_ID}],
+        # Explicit empty list: Omeka otherwise adds new items to every site
+        # with "assign new items" enabled (sites 48 and 49 on omeka.unibe.ch).
+        "o:site": [],
         "dcterms:identifier": [literal(10, "Identifier", row["identifier"])],
         "dcterms:title": [literal(1, "Title", row["title"])],
         "dcterms:description": [literal(4, "Description", row["description"])],
