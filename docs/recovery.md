@@ -33,9 +33,9 @@ For a metadata-only backup, the restore applies metadata to surviving IDs. The c
 
 ## Verification
 
-The recovery drill used disposable Omeka S 3.2.3 and 4.2.1 instances. It restored an item, an uploaded file, and HTML media on each instance. It also restored a deleted item set on 4.2.1.
+The recovery drill used disposable Omeka S 3.2.3 and 4.2.1 instances. It restored a deleted item set, an item, an uploaded file, and HTML media on each instance.
 
-The drill stopped after Omeka accepted a media upload. It resumed with the saved progress file. The checks covered SHA-256, file bytes, visibility, media order, and links in both directions.
+The drill stopped after Omeka accepted a media upload. It resumed with the saved progress file. The checks covered SHA-256, file bytes, visibility, media order, and links in both directions. The drill also rejected a changed file in the backup.
 
 Omeka S 3.2.3 returned HTTP 500 for the fixture deletes after it removed the records. Separate reads verified that the resources were absent.
 

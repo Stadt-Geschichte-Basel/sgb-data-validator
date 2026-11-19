@@ -8,6 +8,7 @@ from sgb_validator.api import OmekaAPI, OmekaError
 
 def test_credentials_and_nonce_go_only_to_the_configured_api(caplog):
     caplog.set_level("INFO", logger="httpx2")
+
     def handler(request):
         assert request.url.host == "omeka.example"
         assert request.url.path == "/collection/api/items/5"
