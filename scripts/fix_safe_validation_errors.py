@@ -99,6 +99,21 @@ EDIT_FIELDS: dict[str, dict] = {
 }
 
 
+def identifier_in_use(api: OmekaAPI, kind: str, value: str, own_id: int) -> bool:
+    """True if another record of this kind already has this dcterms:identifier."""
+    params = api._add_auth_params(
+        {
+            "property[0][property]": "10",
+            "property[0][type]": "eq",
+            "property[0][text]": value,
+            "_": str(time.time_ns()),
+        }
+    )
+    response = api.client.get(f"{api.base_url}/api/{kind}", params=params)
+    response.raise_for_status()
+    return any(r["o:id"] != own_id for r in response.json())
+
+
 def plan_edits(rec: dict, rows: list[dict]) -> tuple[dict | None, str | None]:
     """Return (new record, None), or (None, reason) when the record cannot change.
 
@@ -144,6 +159,8 @@ def apply_renames(args, base_url: str, key_id: str, key_cred: str) -> int:
     stats: Counter[str] = Counter()
     with OmekaAPI(base_url, key_id, key_cred) as api:
         for (kind, rid), group in by_record.items():
+            if args.limit and stats["changed"] >= args.limit:
+                break
             if any(
                 (r.get("field") or "dcterms:identifier") == "dcterms:identifier"
                 and new_counts[(kind, r["new"])] > 1
@@ -158,6 +175,19 @@ def apply_renames(args, base_url: str, key_id: str, key_cred: str) -> int:
                 if reason != "no change":
                     print(f"  SKIP [{kind} {rid}] {reason}")
                     stats["skipped"] += 1
+                continue
+            taken = next(
+                (
+                    r["new"]
+                    for r in group
+                    if (r.get("field") or "dcterms:identifier") == "dcterms:identifier"
+                    and identifier_in_use(api, kind, r["new"], rid)
+                ),
+                None,
+            )
+            if taken:
+                print(f"  SKIP [{kind} {rid}] identifier {taken!r} is already in use")
+                stats["skipped"] += 1
                 continue
             if modified_recently(rec, args.skip_recent_hours):
                 print(f"  SKIP [{kind} {rid}] changed < {args.skip_recent_hours} h ago")

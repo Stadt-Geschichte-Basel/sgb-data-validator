@@ -335,7 +335,10 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
     # Duplicate pairs: if one side has a clear fix, the other side is fine.
     for mid in clear_fixes:
         current = first_value(media[mid], "dcterms:identifier")
-        for other_id in validator.media_identifiers.get(current, []):
+        holders = validator.media_identifiers.get(current, [])
+        if len([i for i in holders if i not in clear_fixes]) > 1:
+            continue  # several records still share it after the renames
+        for other_id in holders:
             if other_id != mid and other_id not in suggestions:
                 other = entries.get(("Media", other_id))
                 if other and other.groups == {"Doppelte Identifier"}:
@@ -344,7 +347,7 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
     # Extra check: item identifier spelling.
     for iid, item in items.items():
         ident = first_value(item, "dcterms:identifier")
-        if ident and not re.match(r"abb\d|dataset\d|story-", ident):
+        if ident and not re.match(r"abb\d|dataset\d|story-\S", ident):
             e = entry("Item", iid)
             e.problems.append(
                 f"Identifier `{ident}` beginnt nicht mit `abb` + Ziffer "

@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from build_license_edits import build_rows, fix_typos  # noqa: E402
-from fix_safe_validation_errors import plan_edits  # noqa: E402
+from fix_safe_validation_errors import identifier_in_use, plan_edits  # noqa: E402
 from generate_triage import suggested_license_uri  # noqa: E402
 
 BY = "https://creativecommons.org/licenses/by/4.0/"
@@ -154,3 +154,46 @@ def test_build_rows_uses_the_fixed_text_and_skips_matching_records():
         (1, "dcterms:license", BY_SA),
         (3, "dcterms:license", PDM),
     ]
+
+
+def test_records_for_editors_get_no_automatic_edit():
+    records = [
+        {
+            "o:id": 13262,
+            "dcterms:rights": rights("CC BY-SA 4.0"),
+            "dcterms:license": lic(BY),
+        }
+    ]
+    assert build_rows(records) == []
+
+
+class FakeResponse:
+    def __init__(self, records):
+        self.records = records
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self.records
+
+
+class FakeApi:
+    base_url = "https://example.org"
+
+    def __init__(self, records):
+        self.records = records
+        self.client = self
+
+    def _add_auth_params(self, params):
+        return params
+
+    def get(self, url, params):
+        assert params["property[0][text]"] == "abb1"
+        return FakeResponse(self.records)
+
+
+def test_identifier_in_use_ignores_the_record_itself():
+    assert identifier_in_use(FakeApi([{"o:id": 5}]), "items", "abb1", 5) is False
+    assert identifier_in_use(FakeApi([{"o:id": 6}]), "items", "abb1", 5) is True
+    assert identifier_in_use(FakeApi([]), "items", "abb1", 5) is False

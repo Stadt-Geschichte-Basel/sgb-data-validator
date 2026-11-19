@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
-from generate_triage import suggested_license_uri  # noqa: E402
+from generate_triage import RIGHTS_CHECK, suggested_license_uri  # noqa: E402
 
 from validate import OmekaValidator  # noqa: E402
 
@@ -61,8 +61,8 @@ def build_rows(media_records: list[dict]) -> list[dict]:
     for m in media_records:
         mid = m["o:id"]
         rights, lic = first(m, "dcterms:rights"), first(m, "dcterms:license")
-        if not rights:
-            continue
+        if not rights or mid in RIGHTS_CHECK:
+            continue  # editors decide these records
         fixed = fix_typos(rights)
         if fixed != rights:
             rows.append(
