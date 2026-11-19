@@ -347,6 +347,11 @@ def omeka_env() -> tuple[str, str | None, str | None]:
 # --------------------------------------------------------------------------- collect
 
 
+MEDIA_TYPES = {"image", "video", "audio", "webmap", "embed"}
+# Blocks whose images share the text that follows the block.
+GROUP_TYPES = {"gallery", "carousel", "swipe"}
+
+
 def walk(
     nodes: dict[str, Any], root: str
 ) -> list[tuple[str, dict[str, Any], str, str, str]]:
@@ -375,15 +380,15 @@ def walk(
             parent[child] = node_id
             visit(child)
 
-    def subtree_texts(node_id: str) -> list[str]:
+    def subtree_texts(node_id: str, paragraphs: bool = False) -> list[str]:
         node = nodes.get(node_id, {})
-        texts = (
-            [clean((node.get("data") or {}).get("text"))]
-            if node.get("type") == "text"
-            else []
-        )
+        data = node.get("data") or {}
+        is_text = node.get("type") == "text"
+        if paragraphs:
+            is_text = is_text and data.get("type") == "paragraph"
+        texts = [clean(data.get("text"))] if is_text else []
         for child in node.get("children", []) or []:
-            texts += subtree_texts(child)
+            texts += subtree_texts(child, paragraphs)
         return texts
 
     def slide_source(node_id: str) -> str:
@@ -395,6 +400,20 @@ def walk(
                 return " ".join(hits)
         return ""
 
+    def slide_narrative(node_id: str) -> str | None:
+        """First non-credit paragraph of the enclosing immersive slide, or None."""
+        current = node_id
+        while current in parent:
+            current = parent[current]
+            if nodes.get(current, {}).get("type") == "immersive-slide":
+                texts = [
+                    t
+                    for t in subtree_texts(current, paragraphs=True)
+                    if t and not re.match(r"Quellen?:", t)
+                ]
+                return texts[0][:500] if texts else ""
+        return None
+
     visit(root)
     result = []
     heading = ""
@@ -403,16 +422,27 @@ def walk(
         data = node.get("data", {}) or {}
         if node.get("type") == "text" and data.get("type", "").startswith("h"):
             heading = clean(data.get("text"))
-        if node.get("type") in {"image", "video", "audio", "webmap", "embed"}:
+        if node.get("type") in MEDIA_TYPES:
             following = ""
             for later in order[i + 1 : i + 6]:
                 ldata = nodes.get(later, {}).get("data", {}) or {}
+                if nodes.get(later, {}).get("type") in MEDIA_TYPES and not (
+                    parent.get(later) == parent.get(node_id)
+                    and nodes.get(parent.get(node_id, ""), {}).get("type")
+                    in GROUP_TYPES
+                ):
+                    break  # the text after the next media belongs to that media
                 if (
                     nodes.get(later, {}).get("type") == "text"
                     and ldata.get("type") == "paragraph"
                 ):
                     following = clean(ldata.get("text"))[:500]
                     break
+            narrative = slide_narrative(node_id)
+            if narrative is not None:
+                # Sidecar: the text of the same slide describes the image. The
+                # next paragraph in reading order belongs to the next slide.
+                following = narrative
             result.append((node_id, node, heading, following, slide_source(node_id)))
     return result
 
@@ -943,6 +973,11 @@ def validation_errors(payload: dict[str, Any], kind: str) -> list[str]:
 # --------------------------------------------------------------------------- upload
 
 
+def masked_url(url: httpx.URL | str) -> str:
+    """URL without the query string, so the API key never shows in a message."""
+    return str(httpx.URL(str(url)).copy_with(query=None))
+
+
 class Omeka:
     def __init__(self) -> None:
         self.base, self.key_id, self.key_cred = omeka_env()
@@ -958,9 +993,22 @@ class Omeka:
             **extra,
         }
 
+    def check(self, response: httpx.Response) -> None:
+        """Raise on an HTTP error. Keep the key and credential out of the message."""
+        if not response.is_error:
+            return
+        text = response.text[:500]
+        for secret in (self.key_id, self.key_cred):
+            if secret:
+                text = text.replace(secret, "***")
+        raise RuntimeError(
+            f"{response.request.method} {masked_url(response.request.url)}: "
+            f"HTTP {response.status_code}: {text}"
+        )
+
     def get(self, kind: str, rid: int) -> dict[str, Any]:
         response = self.client.get(f"{self.base}/api/{kind}/{rid}", params=self.auth())
-        response.raise_for_status()
+        self.check(response)
         return response.json()
 
     def find(self, kind: str, identifier: str) -> list[dict[str, Any]]:
@@ -974,7 +1022,7 @@ class Omeka:
                 }
             ),
         )
-        response.raise_for_status()
+        self.check(response)
         return response.json()
 
     def post(
@@ -999,30 +1047,21 @@ class Omeka:
                         "file[0]": (file.name, f, mime),
                     },
                 )
-        if response.is_error:
-            raise RuntimeError(
-                f"POST {kind}: HTTP {response.status_code}: {response.text[:500]}"
-            )
+        self.check(response)
         return response.json()
 
     def put(self, kind: str, rid: int, payload: dict[str, Any]) -> dict[str, Any]:
         response = self.client.put(
             f"{self.base}/api/{kind}/{rid}", params=self.auth(), json=payload
         )
-        if response.is_error:
-            raise RuntimeError(
-                f"PUT {kind}/{rid}: HTTP {response.status_code}: {response.text[:500]}"
-            )
+        self.check(response)
         return response.json()
 
     def delete(self, kind: str, rid: int) -> None:
         response = self.client.delete(
             f"{self.base}/api/{kind}/{rid}", params=self.auth()
         )
-        if response.is_error:
-            raise RuntimeError(
-                f"DELETE {kind}/{rid}: HTTP {response.status_code}: {response.text[:500]}"
-            )
+        self.check(response)
 
 
 def backup(records: list[dict[str, Any]], name: str) -> Path:

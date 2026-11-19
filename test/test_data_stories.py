@@ -127,3 +127,61 @@ def test_upload_resumes_item_without_media(tmp_path, monkeypatch):
     assert posted == [("media", 999, "x.jpg")]
     row = ads.read_manifest("schulden")[0]
     assert (row["omeka_item"], row["omeka_media"]) == ("999", "5")
+
+
+def test_walk_takes_sidecar_text_from_the_same_slide():
+    nodes = {
+        "root": {"type": "story", "children": ["s1", "s2"]},
+        "s1": {"type": "immersive-slide", "children": ["p1", "i1"]},
+        "p1": {"type": "immersive-narrative-panel", "children": ["t1"]},
+        "t1": {"type": "text", "data": {"type": "paragraph", "text": "Text A"}},
+        "i1": {"type": "image", "data": {}},
+        "s2": {"type": "immersive-slide", "children": ["p2", "i2"]},
+        "p2": {"type": "immersive-narrative-panel", "children": ["t2"]},
+        "t2": {"type": "text", "data": {"type": "paragraph", "text": "Text B"}},
+        "i2": {"type": "image", "data": {}},
+    }
+    media = ads.walk(nodes, "root")
+    assert [(m[0], m[3]) for m in media] == [("i1", "Text A"), ("i2", "Text B")]
+
+
+def test_walk_does_not_take_text_across_the_next_media():
+    nodes = {
+        "root": {"type": "story", "children": ["i1", "i2", "t2"]},
+        "i1": {"type": "image", "data": {}},
+        "i2": {"type": "image", "data": {}},
+        "t2": {"type": "text", "data": {"type": "paragraph", "text": "Text B"}},
+    }
+    media = ads.walk(nodes, "root")
+    assert [(m[0], m[3]) for m in media] == [("i1", ""), ("i2", "Text B")]
+
+
+def test_http_error_does_not_show_the_api_key():
+    import httpx
+    import pytest
+
+    api = ads.Omeka.__new__(ads.Omeka)
+    api.key_id, api.key_cred = "ID123secret", "CRED456secret"
+    request = httpx.Request(
+        "GET",
+        "https://omeka.example/api/items/1",
+        params={"key_identity": api.key_id, "key_credential": api.key_cred},
+    )
+    response = httpx.Response(500, request=request, text="bad key CRED456secret")
+    with pytest.raises(RuntimeError) as err:
+        api.check(response)
+    message = str(err.value)
+    assert "secret" not in message
+    assert "https://omeka.example/api/items/1" in message
+
+
+def test_walk_gives_gallery_images_the_text_after_the_gallery():
+    nodes = {
+        "root": {"type": "story", "children": ["g", "t"]},
+        "g": {"type": "gallery", "children": ["i1", "i2"]},
+        "i1": {"type": "image", "data": {}},
+        "i2": {"type": "image", "data": {}},
+        "t": {"type": "text", "data": {"type": "paragraph", "text": "Text G"}},
+    }
+    media = ads.walk(nodes, "root")
+    assert [(m[0], m[3]) for m in media] == [("i1", "Text G"), ("i2", "Text G")]
