@@ -21,6 +21,12 @@ uv run --locked sgb validate --item-set-id 10780 --export-csv
 
 Use the directory that `download` prints. Add `--check-uris` to check external links. View the CSV files and metrics on the [Validation Reports](validation-reports.qmd) page.
 
+## Edit records
+
+Use `sgb transform` to write a new snapshot. Use `sgb update SOURCE EDITED` to preview the changes. Add `--apply` to write them.
+
+Use `sgb create item` or `sgb create media` with native Omeka JSON. Use `--file` to upload a local media file.
+
 See the [repository guide](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator#readme) for the full commands and examples.
 
 

@@ -22,15 +22,24 @@ Use a snapshot directory for offline validation. Add `--check-uris` to check ext
 
 The CLI reads `items_raw.json`, `items_transformed.json`, or `items.json` and the matching media files. Supply `--base-url` to add edit links to a snapshot that has no source URL.
 
-## Transform
-
-Run the following command with the directory that the download prints.
+## Edit and create
 
 ```sh
 sgb transform data/raw_itemset_10780_TIMESTAMP
+sgb update data/raw_itemset_10780_TIMESTAMP data/transformed_itemset_10780_TIMESTAMP
+sgb create item item.json --item-set-id 10780
+sgb create media media.json --item-id 12345 --file illustration.tif
 ```
 
-The transform writes a new snapshot and lists the fields that changed.
+Use the paths that `download` and `transform` print. To edit a record by hand, change the Omeka JSON in a separate snapshot. Keep the record ID.
+
+The transform writes a new snapshot and lists the fields that changed. It normalizes text, fills selected empty media fields, and applies the SGB privacy rules. Supply each book or story DOI in `dcterms:isPartOf` in the Omeka JSON.
+
+Review the output of `update` or `create`. Add `--apply` to write the changes. The update command saves private before-edit copies in `backups/`. It skips records that changed after the source snapshot and records edited within two hours. Set `--skip-recent-hours` to change this interval.
+
+Omeka S has no conditional write for this workflow. Another edit can occur between the final read and the write. A failed read-back or a skipped record gives a failing exit status.
+
+See the [native JSON examples](examples/omeka-json.md) for items and media.
 
 ## Project work
 

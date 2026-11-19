@@ -155,6 +155,144 @@ def transform(
         typer.echo(destination)
 
 
+def plan_snapshot_update(source: Snapshot, edited: Snapshot):
+    if source.item_set_id != edited.item_set_id or source.source != edited.source:
+        raise ValueError("The edited snapshot must describe the same source item set")
+    for kind, left, right in (
+        ("item_sets", [source.item_set], [edited.item_set]),
+        ("items", source.items, edited.items),
+        ("media", source.media, edited.media),
+    ):
+        if left == right:
+            continue
+        original = {record["o:id"]: record for record in left}
+        updated = {record["o:id"]: record for record in right}
+        if len(original) != len(left) or len(updated) != len(right):
+            raise ValueError(f"Duplicate {kind} IDs in snapshot")
+        if original.keys() != updated.keys():
+            raise ValueError(
+                f"Use create for new {kind}; keep all source records in the edit"
+            )
+        for rid, before in original.items():
+            yield kind, before, updated[rid]
+
+
+@app.command()
+def update(
+    source: Path,
+    edited: Path,
+    item_set_id: ItemSetID = None,
+    base_url: BaseURL = None,
+    key_identity: Identity = None,
+    key_credential: Credential = None,
+    apply: bool = False,
+    backup_dir: Path = Path("backups"),
+    skip_recent_hours: float = 2,
+) -> None:
+    """Compare two snapshots and apply changes when requested."""
+    from .changes import record_changes
+    from .writes import update_record
+
+    with command_errors():
+        baseline = read_snapshot(source)
+        proposed = read_snapshot(edited)
+        if item_set_id is not None and baseline.item_set_id != item_set_id:
+            raise ValueError("The selected item set differs from the source snapshot")
+        plan = list(plan_snapshot_update(baseline, proposed))
+        with connect(base_url or baseline.source, key_identity, key_credential) as api:
+            if not baseline.source or api.base_url != baseline.source:
+                raise ValueError(
+                    "The update target must match the source snapshot instance"
+                )
+            failures = 0
+            copies = dated_dir(backup_dir, "before_edit", baseline.item_set_id)
+            for kind, before, after in plan:
+                changes = record_changes(kind, before, after)
+                if not changes:
+                    continue
+                label = f"{kind}/{before['o:id']}"
+                try:
+                    update_record(
+                        api,
+                        kind,
+                        before,
+                        after,
+                        apply=apply,
+                        backup_dir=copies,
+                        skip_recent_hours=skip_recent_hours,
+                    )
+                except (OmekaError, OSError, ValueError) as exc:
+                    typer.echo(f"{label} skipped or failed: {exc}", err=True)
+                    failures += 1
+                else:
+                    action = "Verified" if apply else "Would change"
+                    typer.echo(f"{action} {label}  {', '.join(changes)}")
+            if failures:
+                typer.echo(f"{failures} record changes skipped or failed", err=True)
+                raise typer.Exit(1)
+
+
+create_app = typer.Typer(no_args_is_help=True)
+app.add_typer(create_app, name="create")
+
+
+@create_app.command("item")
+def create_item(
+    json_file: Path,
+    item_set_id: ItemSetID = None,
+    base_url: BaseURL = None,
+    key_identity: Identity = None,
+    key_credential: Credential = None,
+    apply: bool = False,
+) -> None:
+    """Create an item from Omeka JSON."""
+    from .snapshots import read_json
+    from .writes import create_record
+
+    with command_errors(), connect(base_url, key_identity, key_credential) as api:
+        record = create_record(
+            api,
+            "items",
+            read_json(json_file),
+            target_id=target(item_set_id),
+            apply=apply,
+        )
+        show_creation(record, apply)
+
+
+@create_app.command("media")
+def create_media(
+    json_file: Path,
+    item_id: int | None = None,
+    file: Path | None = None,
+    base_url: BaseURL = None,
+    key_identity: Identity = None,
+    key_credential: Credential = None,
+    apply: bool = False,
+) -> None:
+    """Attach media from Omeka JSON and an optional local file."""
+    from .snapshots import read_json
+    from .writes import create_record
+
+    with command_errors(), connect(base_url, key_identity, key_credential) as api:
+        record = create_record(
+            api,
+            "media",
+            read_json(json_file),
+            target_id=item_id,
+            file=file,
+            apply=apply,
+        )
+        show_creation(record, apply)
+
+
+def show_creation(record: dict, apply: bool) -> None:
+    if apply:
+        typer.echo(f"Created and verified {record.get('@id', record['o:id'])}")
+    else:
+        typer.echo(f"Would create a record with fields: {', '.join(sorted(record))}")
+
+
 def main() -> None:
     load_dotenv(Path.cwd() / ".env")
     app()
