@@ -1350,10 +1350,9 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
         "o:item": {"o:id": story["item"]},
         "o:resource_template": {"o:id": MEDIA_TEMPLATE},
         "o:title": f"Data Story: {story['title']} ({kind})",
-        "dcterms:identifier": [
-            literal(10, "Identifier", f"m-story-{slug}"),
-            uri(10, "Identifier", doi, doi),
-        ],
+        # One identifier only (datamodel). The DOI goes to dcterms:relation.
+        "dcterms:identifier": [literal(10, "Identifier", f"m-story-{slug}")],
+        "dcterms:relation": [uri(13, "Relation", doi, doi)],
         "dcterms:title": [
             literal(1, "Title", f"Data Story: {story['title']} ({kind})")
         ],
