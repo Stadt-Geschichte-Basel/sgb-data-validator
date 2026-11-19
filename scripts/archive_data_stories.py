@@ -623,6 +623,7 @@ def collect(slug: str, force: bool) -> int:
     rows: list[dict[str, Any]] = []
     seen_res: set[str] = set()
     seen_layers: set[str] = set()
+    seen_sha: dict[str, str] = {}
     for node_id, node, heading, following, source in walk(nodes, data["root"]):
         ndata = node.get("data", {}) or {}
         kind = node["type"]
@@ -679,6 +680,11 @@ def collect(slug: str, force: bool) -> int:
         row["title"] = row["caption"]
         holder, shelf = guess_holder(row["caption"] + " " + row["attribution"])
         row.update(holder=holder, shelfmark=shelf)
+        if row["sha256"] in seen_sha:
+            row["decision"] = f"exclude:Duplikat von {seen_sha[row['sha256']]}"
+            rows.append(row)
+            continue
+        seen_sha[row["sha256"]] = row["key"]
         if row["sha256"] in index["sha"]:
             hit = index["sha"][row["sha256"]]
             row.update(
@@ -1118,6 +1124,17 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
     api = Omeka()
     item = api.get("items", story["item"])
     old_media = [api.get("media", m["o:id"]) for m in item.get("o:media", [])]
+    done = [
+        m["o:id"]
+        for m in old_media
+        if any(
+            v.get("@value") == f"m-story-{slug}"
+            for v in m.get("dcterms:identifier", [])
+        )
+    ]
+    if done:
+        print(f"item {story['item']} already has the story media {done}: nothing to do")
+        return 0
     doi = f"https://doi.org/{story['doi']}"
     url = story.get("url") or f"https://storymaps.arcgis.com/stories/{story['arcgis']}"
     temporal = [v["@value"] for v in item.get("dcterms:temporal", [])]
