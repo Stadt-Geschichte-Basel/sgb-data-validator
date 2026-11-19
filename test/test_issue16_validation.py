@@ -600,3 +600,27 @@ if __name__ == "__main__":
 
         traceback.print_exc()
         sys.exit(1)
+
+
+def test_single_value_fields() -> None:
+    """Fields without brackets in the datamodel take exactly one value."""
+    validator = OmekaValidator("https://example.com")
+    validator.validate_item(create_minimal_item(20))
+    assert not any("Only one value" in str(e) for e in validator.errors)
+
+    item = create_minimal_item(21)
+    item["dcterms:temporal"] = item["dcterms:temporal"] * 2
+    validator.validate_item(item)
+    assert any(
+        e.field == "dcterms:temporal" and "Only one value" in e.error
+        for e in validator.errors
+    )
+
+    validator = OmekaValidator("https://example.com")
+    media = create_minimal_media(22)
+    media["dcterms:language"] = media["dcterms:language"] * 2
+    validator.validate_media(media)
+    assert any(
+        e.field == "dcterms:language" and "Only one value" in e.error
+        for e in validator.errors
+    )
