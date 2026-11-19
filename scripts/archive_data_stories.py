@@ -1015,26 +1015,33 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
     url = story.get("url") or f"https://storymaps.arcgis.com/stories/{story['arcgis']}"
     temporal = [v["@value"] for v in item.get("dcterms:temporal", [])]
     licensed = bool(story["license"])
+    is_pdf = screenshot.suffix.lower() == ".pdf"
+    kind = "PDF" if is_pdf else "Screenshot"
+    note = (
+        f"PDF-Fassung der Data Story, archiviert auf Zenodo ({doi})."
+        if is_pdf
+        else f"Bildschirmfoto der interaktiven Data Story, aufgenommen am {datetime.now(UTC):%Y-%m-%d}."
+    )
     media = {
         "o:is_public": licensed,
         "o:ingester": "upload",
         "file_index": 0,
         "o:item": {"o:id": story["item"]},
         "o:resource_template": {"o:id": MEDIA_TEMPLATE},
-        "o:title": f"Data Story: {story['title']} (Screenshot)",
+        "o:title": f"Data Story: {story['title']} ({kind})",
         "dcterms:identifier": [
             literal(10, "Identifier", f"m-story-{slug}"),
             uri(10, "Identifier", doi, doi),
         ],
         "dcterms:title": [
-            literal(1, "Title", f"Data Story: {story['title']} (Screenshot)")
+            literal(1, "Title", f"Data Story: {story['title']} ({kind})")
         ],
         "dcterms:description": [
             literal(
                 4,
                 "Description",
                 clean((item.get("dcterms:description") or [{}])[0].get("@value"))
-                + f"\n\nBildschirmfoto der interaktiven Data Story, aufgenommen am {datetime.now(UTC):%Y-%m-%d}.",
+                + f"\n\n{note}",
             )
         ],
         "dcterms:creator": [literal(2, "Creator", a) for a in story["authors"]],
