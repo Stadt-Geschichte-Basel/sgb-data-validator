@@ -185,3 +185,23 @@ def test_walk_gives_gallery_images_the_text_after_the_gallery():
     }
     media = ads.walk(nodes, "root")
     assert [(m[0], m[3]) for m in media] == [("i1", "Text G"), ("i2", "Text G")]
+
+
+def test_omeka_api_error_does_not_show_the_api_key():
+    import httpx
+    import pytest
+
+    from src.api import OmekaAPI
+
+    api = OmekaAPI("https://omeka.example", "ID123secret", "CRED456secret")
+    request = httpx.Request(
+        "GET",
+        "https://omeka.example/api/items/1",
+        params=api._add_auth_params({}),
+    )
+    response = httpx.Response(404, request=request)
+    with pytest.raises(httpx.HTTPStatusError) as err:
+        api._raise_for_status(response)
+    assert "secret" not in str(err.value)
+    assert err.value.response.status_code == 404
+    api.close()
