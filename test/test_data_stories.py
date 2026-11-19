@@ -90,7 +90,7 @@ def test_upload_skips_existing_identifier(tmp_path, monkeypatch):
             return {"dcterms:temporal": [{"@value": "Mittelalter"}]}
 
         def find(self, kind, identifier):
-            return [{"o:id": 999}]
+            return [{"o:id": 999, "o:media": [{"o:id": 5}]}]
 
         def post(self, *args, **kwargs):
             posted.append(args)
@@ -99,3 +99,31 @@ def test_upload_skips_existing_identifier(tmp_path, monkeypatch):
     assert ads.upload("schulden", apply=True, limit=None) == 0
     assert posted == []
     assert ads.read_manifest("schulden")[0]["omeka_item"] == "999"
+
+
+def test_upload_resumes_item_without_media(tmp_path, monkeypatch):
+    monkeypatch.setattr(ads, "WORK", tmp_path)
+    (tmp_path / "schulden" / "files").mkdir(parents=True)
+    (tmp_path / "schulden" / "files" / "x.jpg").write_bytes(b"jpg")
+    ads.write_manifest("schulden", [ROW])
+    posted = []
+
+    class FakeOmeka:
+        def get(self, kind, rid):
+            return {
+                "dcterms:temporal": [{"@value": "Mittelalter"}],
+                "o:media": [{"o:id": 5}],
+            }
+
+        def find(self, kind, identifier):
+            return [{"o:id": 999, "o:media": []}]
+
+        def post(self, kind, payload, file=None):
+            posted.append((kind, payload["o:item"]["o:id"], file.name))
+            return {"o:id": 5}
+
+    monkeypatch.setattr(ads, "Omeka", FakeOmeka)
+    assert ads.upload("schulden", apply=True, limit=None) == 0
+    assert posted == [("media", 999, "x.jpg")]
+    row = ads.read_manifest("schulden")[0]
+    assert (row["omeka_item"], row["omeka_media"]) == ("999", "5")

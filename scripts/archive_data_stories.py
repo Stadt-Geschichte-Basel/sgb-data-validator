@@ -639,6 +639,11 @@ def collect(slug: str, force: bool) -> int:
 # --------------------------------------------------------------------------- payloads
 
 
+def story_url(slug: str) -> str:
+    story = STORIES[slug]
+    return story.get("url") or f"https://storymaps.arcgis.com/stories/{story['arcgis']}"
+
+
 def literal(pid: int, label: str, value: str) -> dict[str, Any]:
     return {
         "type": "literal",
@@ -740,7 +745,13 @@ def media_payload(
         "dcterms:format": [vocab(9, "Format", "customvocab:15", row["mime"])],
         "dcterms:language": [vocab(12, "Language", "valuesuggest:lc:iso6392", "de")],
         "dcterms:relation": [
-            uri(13, "Relation", f"https://doi.org/{story['doi']}", story["title"])
+            uri(13, "Relation", f"https://doi.org/{story['doi']}", story["title"]),
+            uri(
+                13,
+                "Relation",
+                story_url(slug),
+                "Verwendet in der interaktiven Data Story",
+            ),
         ],
         "dcterms:rights": [literal(15, "Rights", row["rights"])],
         "dcterms:license": [
@@ -934,22 +945,32 @@ def upload(slug: str, apply: bool, limit: int | None) -> int:
             continue
         existing = api.find("items", row["identifier"])
         if existing:
-            row["omeka_item"] = str(existing[0]["o:id"])
-            print(f"EXISTS {row['identifier']} -> item {row['omeka_item']}")
-            continue
+            item_id = existing[0]["o:id"]
+            row["omeka_item"] = str(item_id)
+            if existing[0].get("o:media"):
+                print(f"EXISTS {row['identifier']} -> item {item_id}")
+                continue
+            # The item exists without a file: an earlier run stopped after the item POST.
+            print(f"RESUME {row['identifier']}: item {item_id} has no media")
+        else:
+            item_id = None
         public = "public" if item["o:is_public"] else "private"
         if not apply:
             print(f"DRY {row['identifier']} ({public}): {row['title'][:70]}")
             done += 1
             continue
-        created = api.post("items", item)
-        media["o:item"] = {"o:id": created["o:id"]}
+        if item_id is None:
+            item_id = api.post("items", item)["o:id"]
+            row["omeka_item"] = str(item_id)
+            write_manifest(slug, rows)  # Record the item before the file upload.
+        media["o:item"] = {"o:id": item_id}
         new_media = api.post("media", media, out / row["file"])
-        check = api.get("items", created["o:id"])
+        check = api.get("items", item_id)
         ok = [m["o:id"] for m in check.get("o:media", [])] == [new_media["o:id"]]
-        row.update(omeka_item=str(created["o:id"]), omeka_media=str(new_media["o:id"]))
+        row["omeka_media"] = str(new_media["o:id"])
         print(
-            f"{'OK' if ok else 'CHECK'} {row['identifier']} -> item {created['o:id']} media {new_media['o:id']} ({public})"
+            f"{'OK' if ok else 'CHECK'} {row['identifier']} -> item {item_id} "
+            f"media {new_media['o:id']} ({public})"
         )
         done += 1
         write_manifest(slug, rows)  # Keep the ledger current after each write.
