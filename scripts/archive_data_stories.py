@@ -827,7 +827,9 @@ def collect(slug: str, force: bool) -> int:
     for key, row in old.items():
         if key not in keys:
             # Keep the row and its Omeka ids, even if the story no longer has it.
-            row["notes"] = f"{row.get('notes', '')} Nicht mehr in der Story.".strip()
+            gone = "Nicht mehr in der Story."
+            if gone not in row.get("notes", ""):
+                row["notes"] = f"{row.get('notes', '')} {gone}".strip()
             rows.append(row)
     path = write_manifest(slug, rows)
     counts: dict[str, int] = {}
@@ -1331,10 +1333,10 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
     is_pdf = screenshot.suffix.lower() == ".pdf"
     # Decision 2026-11-19: all Zenodo story PDFs are public, also without a CC license.
     # Only a PDF that matches a file of the story's Zenodo record counts.
-    on_zenodo = is_pdf and zenodo_has_file(story["doi"], screenshot)
-    if is_pdf and not on_zenodo:
-        print(f"{screenshot}: not a file of {doi}, the media stays private")
-    public = licensed or on_zenodo
+    if is_pdf and not zenodo_has_file(story["doi"], screenshot):
+        print(f"{screenshot}: not a file of {doi}. Use the Zenodo PDF.")
+        return 1
+    public = licensed or is_pdf
     kind = "PDF" if is_pdf else "Screenshot"
     note = (
         f"PDF-Fassung der Data Story, archiviert auf Zenodo ({doi})."
@@ -1431,13 +1433,9 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
                     path.parent / f"{m['o:id']}_{m.get('o:filename')}",
                 )
     print(f"backup: {path}")
-    # Post the media first: if it fails, the item stays as it was.
+    # PUT first: if the POST fails, a rerun finds no story media and recovers.
+    api.put("items", story["item"], new_item)
     created = api.post("media", media, screenshot)
-    # Re-read the item: a PUT replaces o:media, and the new media must stay.
-    fresh = api.get("items", story["item"])
-    for key in ("o:title", "dcterms:title", "dcterms:isPartOf"):
-        fresh[key] = new_item[key]
-    api.put("items", story["item"], fresh)
     check = api.get("items", story["item"])
     print(
         f"OK media {created['o:id']} on item {story['item']}: {[m['o:id'] for m in check['o:media']]}"
