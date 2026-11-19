@@ -48,7 +48,10 @@ ITEM_SET_ID = 10780
 ITEM_TEMPLATE = 48
 MEDIA_TEMPLATE = 33
 WORK = ROOT / "data" / "data_stories"
-AI_NOTE = "Metadaten mit KI-Unterstützung (Claude) erfasst und redaktionell geprüft."
+AI_NOTE = "Metadaten mit KI-Unterstützung erstellt."
+OLD_AI_NOTE = (
+    "Metadaten mit KI-Unterstützung (Claude) erfasst und redaktionell geprüft."
+)
 
 # slug -> story facts. DOI and license: index.qmd front matter in
 # Stadt-Geschichte-Basel/stadt-geschichte-basel.github.io/products/publications/.
@@ -860,7 +863,9 @@ def item_payload(slug: str, row: dict[str, str], temporal: list[str]) -> dict[st
         "o:site": [],
         "dcterms:identifier": [literal(10, "Identifier", row["identifier"])],
         "dcterms:title": [literal(1, "Title", row["title"])],
-        "dcterms:description": [literal(4, "Description", row["description"])],
+        "dcterms:description": [
+            literal(4, "Description", f"{row['description']}\n\n{AI_NOTE}")
+        ],
         "dcterms:temporal": [
             vocab(41, "Temporal Coverage", "customvocab:14", t, "de") for t in temporal
         ],
@@ -1169,6 +1174,45 @@ def link_existing(
     return True
 
 
+def with_note(text: str) -> str:
+    """Return the description with the current AI note at its end."""
+    text = text.replace(OLD_AI_NOTE, AI_NOTE)
+    return text if AI_NOTE in text else f"{text}\n\n{AI_NOTE}".strip()
+
+
+def ainote(slug: str, apply: bool) -> int:
+    """Set the current AI note on the uploaded items and media of a story."""
+    api = Omeka()
+    changed = failed = 0
+    for row in read_manifest(slug):
+        if row["decision"] != "ingest":
+            continue
+        for kind, rid in (("items", row["omeka_item"]), ("media", row["omeka_media"])):
+            if not rid:
+                continue
+            record = api.get(kind, int(rid))
+            values = record.setdefault("dcterms:description", [])
+            if not values:
+                values.append(literal(4, "Description", ""))
+            old = values[0].get("@value", "")
+            new = with_note(old)
+            if new == old:
+                continue
+            changed += 1
+            if not apply:
+                print(f"DRY {kind} {rid} {row['identifier']}")
+                continue
+            backup([record], f"{kind}_{rid}")
+            values[0]["@value"] = new
+            api.put(kind, int(rid), record)
+            check = api.get(kind, int(rid))["dcterms:description"][0]["@value"]
+            ok = check == new
+            failed += not ok
+            print(f"{'OK' if ok else 'CHECK'} {kind} {rid} {row['identifier']}")
+    print(f"{'applied' if apply else 'dry run'}: {changed} changes, {failed} failed")
+    return 1 if failed else 0
+
+
 # --------------------------------------------------------------------------- parent
 
 
@@ -1325,6 +1369,9 @@ def main() -> int:
     p.add_argument("slug", choices=STORIES)
     p.add_argument("--apply", action="store_true")
     p.add_argument("--limit", type=int)
+    p = sub.add_parser("ainote")
+    p.add_argument("slug", choices=STORIES)
+    p.add_argument("--apply", action="store_true")
     p = sub.add_parser("parent")
     p.add_argument("slug", choices=STORIES)
     p.add_argument("--screenshot", type=Path, required=True)
@@ -1339,6 +1386,8 @@ def main() -> int:
         return collect(args.slug, args.force)
     if args.cmd == "upload":
         return upload(args.slug, args.apply, args.limit)
+    if args.cmd == "ainote":
+        return ainote(args.slug, args.apply)
     return parent(args.slug, args.screenshot, args.apply, args.delete_old)
 
 
