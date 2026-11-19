@@ -78,10 +78,7 @@ def test_complete_item_transformation() -> None:
         f"Got: {repr(desc_value)}"
     )
 
-    subject_value = result["dcterms:subject"][0]["@value"]
-    assert subject_value == "Basel d. Ä. Stadt", (
-        f"Subject should have normalized abbreviation, got: {subject_value}"
-    )
+    assert "dcterms:subject" not in result, "Subjects are stripped (issue #44)"
 
     references_value = result["dcterms:references"][0]["@value"]
     assert references_value == "[Source](https://example.com)", (

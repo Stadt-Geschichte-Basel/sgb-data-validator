@@ -43,19 +43,13 @@ RECENT_DAYS = 14
 GITHUB_LOGINS: dict[int, str] = {}
 
 #: Records that need a team decision. They go to one section, not to co-workers.
-JULY_2025_BLOCK = {
-    f"{p}{n}"
-    for p in ("abb", "m")
-    for n in (92486, 92806, 93036, 93170, 93240, 93262, 93490)
-}
 DECISIONS = {
     "data_story": "Data Stories ohne Identifier: Identifier-Schema festlegen. "
     "Danach kann ein Skript alle Identifier setzen.",
-    "july_2025": "Juli-2025-Block (Marktplatz/Mustermesse, Items 12622–12661) "
-    "nutzt die Identifier der Serie vom Mai 2025 (Items 12373–12390). "
-    "Festlegen, welche Seite neue Identifier bekommt.",
-    "abb21892": "abb21892 (Items 12755 / 13553): öffentliche URL auf "
-    "forschung.stadtgeschichtebasel.ch. Festlegen, welches Objekt die neue ID bekommt.",
+    "abb21892": "abb21892 (Items 12755 / 13553): Die Bildredaktionstabelle Band 7 "
+    "führt beide unter ABB21892 (Foto Steuerverwaltung und Grafik «Öffentliches "
+    "Personal», die mit ABB21912 zusammengehört). Festlegen, welches Objekt "
+    "die neue ID bekommt (Vorschlag für die Grafik: abb21912).",
     "stub_13371": "Media 13371 «Topfhelm» ist ein Platzhalter ohne Metadaten. "
     "Ergänzen oder löschen.",
 }
@@ -135,6 +129,39 @@ def license_family(uri: str) -> str | None:
     return next((name for part, name in LICENSE_URI_FAMILY if part in uri), None)
 
 
+#: License URI for each family named in dcterms:rights (the text decides).
+URI_BY_FAMILY = {
+    "CC BY": "https://creativecommons.org/licenses/by/4.0/",
+    "CC BY-SA": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "CC BY-NC-SA": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+    "Public Domain": "https://creativecommons.org/publicdomain/mark/1.0/",
+    "In Copyright": "http://rightsstatements.org/vocab/InC/1.0/",
+}
+CC0_URI = "https://creativecommons.org/publicdomain/zero/1.0/"
+
+
+def suggested_license_uri(rights: str) -> str | None:
+    """License URI that matches the rights text, or None if the text names none."""
+    family = rights_family(rights)
+    if family == "Public Domain" and re.search(r"cc0", rights.lower()):
+        return CC0_URI
+    return URI_BY_FAMILY.get(family) if family else None
+
+
+#: Media whose rights need a decision by the editors (no write by script).
+RIGHTS_CHECK = {
+    11509: "Rights «In Copyright», Foto Saurbeck. Andere Saurbeck-Fotos sind CC BY-SA. "
+    "Rechteinhaber fragen.",
+    11549: "Rights «In Copyright», Foto Thierry Le Mage. Rechteinhaber fragen.",
+    12011: "Rights nennt keine Lizenz, License ist «In Copyright». "
+    "Rights ergänzen, wenn bestätigt.",
+    12659: "Foto Hans Bertolf (StABS BSL 1013), License «Public Domain Mark». "
+    "Prüfen, ob das Werk gemeinfrei ist (Todesjahr des Fotografen).",
+    13262: "Codex Manesse (UB Heidelberg): Rights «CC BY-SA». Die UB Heidelberg "
+    "nutzt je Seite PDM oder CC0. Prüfen.",
+}
+
+
 def parent_number(item: dict | None) -> str | None:
     m = re.match(r"abb(\d+)", first_value(item or {}, "dcterms:identifier") or "")
     return m.group(1) if m else None
@@ -153,14 +180,28 @@ def suggest_media_identifier(media: dict, parent: dict | None) -> str | None:
     return f"m{number}{suffix}"
 
 
-def classify_error(entry: Entry, field_name: str, msg: str, title_by_id) -> None:
+def classify_error(
+    entry: Entry, field_name: str, msg: str, title_by_id, parent_by_id=None
+) -> None:
     dup = re.search(r"Duplicate identifier '([^']+)' found in \w+: \[([\d, ]+)\]", msg)
     if dup:
         others = [int(x) for x in dup.group(2).split(",") if int(x) != entry.rid]
         other_titles = {title_by_id(entry.kind, o) for o in others}
         refs = ", ".join(f"{entry.kind} {o}" for o in others)
         some = "einem der beiden" if len(others) == 1 else "allen ausser einem"
-        if other_titles == {title_of(entry.record)}:
+        own_parent = (entry.record.get("o:item") or {}).get("o:id")
+        if (
+            entry.kind == "Media"
+            and own_parent
+            and parent_by_id
+            and all(parent_by_id(o) == own_parent for o in others)
+        ):
+            text = (
+                f"Gleicher Identifier `{dup.group(1)}` wie {refs}, am selben Item "
+                "(mehrere Dateien eines Objekts). **Nicht löschen.** Suffix "
+                f"vergeben: `{dup.group(1)}_1`, `{dup.group(1)}_2` …"
+            )
+        elif other_titles == {title_of(entry.record)}:
             text = (
                 f"Gleicher Titel und Identifier wie {refs}. Prüfen: Ist es "
                 "dasselbe Objekt, die Doppel löschen (einer bleibt). Sonst "
@@ -222,7 +263,11 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
 
     for err in validator.errors:
         classify_error(
-            entry(err.resource_type, err.resource_id), err.field, err.error, title_by_id
+            entry(err.resource_type, err.resource_id),
+            err.field,
+            err.error,
+            title_by_id,
+            lambda o: (media.get(o, {}).get("o:item") or {}).get("o:id"),
         )
 
     # Media numbers per parent item, to propose at most one new item identifier.
@@ -290,7 +335,10 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
     # Duplicate pairs: if one side has a clear fix, the other side is fine.
     for mid in clear_fixes:
         current = first_value(media[mid], "dcterms:identifier")
-        for other_id in validator.media_identifiers.get(current, []):
+        holders = validator.media_identifiers.get(current, [])
+        if len([i for i in holders if i not in clear_fixes]) > 1:
+            continue  # several records still share it after the renames
+        for other_id in holders:
             if other_id != mid and other_id not in suggestions:
                 other = entries.get(("Media", other_id))
                 if other and other.groups == {"Doppelte Identifier"}:
@@ -299,11 +347,11 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
     # Extra check: item identifier spelling.
     for iid, item in items.items():
         ident = first_value(item, "dcterms:identifier")
-        if ident and not re.match(r"abb\d|dataset\d", ident):
+        if ident and not re.match(r"abb\d|dataset\d|story-\S", ident):
             e = entry("Item", iid)
             e.problems.append(
                 f"Identifier `{ident}` beginnt nicht mit `abb` + Ziffer "
-                "(oder `dataset` + Ziffer). "
+                "(oder `dataset` + Ziffer, `story-` + Name). "
                 "Schreibweise prüfen."
             )
             e.groups.add("Falscher Inhalt")
@@ -314,13 +362,24 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
             first_value(m, "dcterms:rights"),
             first_value(m, "dcterms:license"),
         )
+        if mid in RIGHTS_CHECK:
+            e = entry("Media", mid)
+            e.problems.append(f"Rechte klären: {RIGHTS_CHECK[mid]}")
+            e.groups.add("Rights und License passen nicht")
+        uri = suggested_license_uri(rights or "")
+        if rights and not lic and uri:
+            entry("Media", mid).problems.append(
+                f"Rights nennt «{rights_family(rights)}». License setzen: `{uri}`."
+            )
+            continue
         if not rights or not lic:
             continue
         r_fam, l_fam = rights_family(rights), license_family(lic)
-        if r_fam and l_fam and r_fam != l_fam:
+        if r_fam and l_fam and r_fam != l_fam and mid not in RIGHTS_CHECK:
             e = entry("Media", mid)
             e.problems.append(
-                f"Rights nennt «{r_fam}», License ist «{l_fam}» (`{lic}`). Angleichen."
+                f"Rights nennt «{r_fam}», License ist «{l_fam}» (`{lic}`). "
+                f"Der Rights-Text gilt: License auf `{uri}` setzen."
             )
             e.groups.add("Rights und License passen nicht")
 
@@ -328,8 +387,6 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
         ident = first_value(e.record, "dcterms:identifier") or ""
         if not ident and title_of(e.record).startswith("Data Story"):
             e.decision = "data_story"
-        elif ident in JULY_2025_BLOCK:
-            e.decision = "july_2025"
         elif ident == "abb21892":
             e.decision = "abb21892"
         elif (e.kind, e.rid) == ("Media", 13371):

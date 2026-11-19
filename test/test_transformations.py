@@ -549,3 +549,14 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 60)
     print("✓ All transformation tests passed!")
+
+
+def test_subjects_are_stripped_only_with_apply_all() -> None:
+    record = {
+        "o:id": 1,
+        "dcterms:subject": [{"type": "literal", "@value": "Tier"}],
+        "dcterms:title": [{"type": "literal", "@value": "x"}],
+    }
+    assert "dcterms:subject" in transform_item(record)
+    assert "dcterms:subject" not in transform_item(record, apply_all=True)
+    assert "dcterms:subject" not in transform_media(record, apply_all=True)
