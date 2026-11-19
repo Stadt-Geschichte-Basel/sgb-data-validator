@@ -247,7 +247,8 @@ def suggest(row: dict[str, Any], authors: list[str]) -> None:
         has_source = row.get("holder") or row.get("creator")
         row["decision"] = "ingest" if row.get("title") and has_source else "review"
     if row.get("context") and not row.get("description"):
-        sentences = re.split(r"(?<=[.!?])\s+", row["context"].split(" | ")[-1])
+        # A period after a digit is an ordinal ("17. Jh."), not a sentence end.
+        sentences = re.split(r"(?<=[^\d\s][.!?])\s+", row["context"].split(" | ")[-1])
         row["description"] = " ".join(sentences[:2])
         row["notes"] = (
             row.get("notes", "") + " Beschreibung aus dem Story-Text, prüfen."
