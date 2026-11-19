@@ -126,6 +126,7 @@ STORIES: dict[str, dict[str, Any]] = {
         "authors": ["Cristina Wildisen-Münch", "Nico Görlich", "Moritz Mähr"],
         "date": "2022-06-07",
         "license": None,  # CC BY-NC-ND 4.0 is not in the Omeka license list.
+        "zenodo_license": "CC BY-NC-ND 4.0",
     },
 }
 
@@ -1171,6 +1172,15 @@ def link_existing(
 # --------------------------------------------------------------------------- parent
 
 
+def story_rights(story: dict[str, Any]) -> str:
+    """Rights text of a story PDF; the license field holds the matching URI."""
+    if story["license"]:
+        return "CC BY 4.0, Stadt.Geschichte.Basel"
+    if story.get("zenodo_license"):
+        return f"{story['zenodo_license']} (Zenodo), Stadt.Geschichte.Basel"
+    return "In Copyright, Stadt.Geschichte.Basel"
+
+
 def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
     story = STORIES[slug]
     api = Omeka()
@@ -1192,6 +1202,8 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
     temporal = [v["@value"] for v in item.get("dcterms:temporal", [])]
     licensed = bool(story["license"])
     is_pdf = screenshot.suffix.lower() == ".pdf"
+    # Decision 2026-11-19: all Zenodo story PDFs are public, also without a CC license.
+    public = licensed or is_pdf
     kind = "PDF" if is_pdf else "Screenshot"
     note = (
         f"PDF-Fassung der Data Story, archiviert auf Zenodo ({doi})."
@@ -1199,7 +1211,7 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
         else f"Bildschirmfoto der interaktiven Data Story, aufgenommen am {datetime.now(UTC):%Y-%m-%d}."
     )
     media = {
-        "o:is_public": licensed,
+        "o:is_public": public,
         "o:ingester": "upload",
         "file_index": 0,
         "o:item": {"o:id": story["item"]},
@@ -1250,9 +1262,7 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
             literal(
                 15,
                 "Rights",
-                "CC BY 4.0, Stadt.Geschichte.Basel"
-                if licensed
-                else "Rechte in Prüfung",
+                story_rights(story) if is_pdf else "Rechte in Prüfung",
             )
         ],
         "dcterms:license": [
@@ -1272,7 +1282,7 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
     problems = validation_errors(media, "media")
     print(f"item {story['item']}: title -> {new_item['o:title']!r}, isPartOf -> {doi}")
     print(
-        f"new media: {screenshot} ({'public' if licensed else 'private'}), old media {[m['o:id'] for m in old_media]}"
+        f"new media: {screenshot} ({'public' if public else 'private'}), old media {[m['o:id'] for m in old_media]}"
     )
     if problems:
         print("validation:", *problems, sep="\n  ")
