@@ -1,0 +1,44 @@
+# Item set recovery
+
+## Make a backup
+
+Use an Omeka account that can read all items, private media, and dependencies in the set.
+
+1. Run `sgb backup --item-set-id ID`.
+2. Save the directory path that the command prints.
+3. Check that `manifest.json` gives `"complete": true`.
+4. Store the directory in a private location.
+
+The backup stores the item set, items, media, and original files. The manifest records file sizes and SHA-256 hashes. The backup verifies these values against Omeka.
+
+The tool can recreate media from the upload and HTML ingesters. Other ingesters can depend on modules or external content. The manifest identifies these ingesters and missing resources.
+
+## Recover records
+
+1. Run `sgb restore DIRECTORY` on the source instance.
+2. Review the planned actions and external references.
+3. Run `sgb restore DIRECTORY --apply` when you are ready.
+4. If the run stops, use the same directory to resume.
+5. Review the verification output and external references.
+
+The restore saves new resource IDs in `restore-progress.json`. Keep this file with the backup. The tool uses it to reconcile an interrupted creation and to repair links between recovered resources.
+
+The restore puts backed-up media in their recorded order. It keeps media added after the backup and puts them after the backed-up media. It checks the original file bytes after recovery.
+
+An Omeka resource can have links from records outside the set. The tool lists known external links for editorial review. Check sites, page blocks, and external systems separately. The API limits the links that it exposes in resource metadata.
+
+The restore skips recent edits on surviving resources. Review those records before you change `--skip-recent-hours`. Before-edit copies are in the backup directory. Omeka assigns IDs and timestamps to recreated records.
+
+For a metadata-only backup, the restore applies metadata to surviving IDs. The command lists missing IDs and returns a failing status.
+
+## Verification
+
+The recovery drill used disposable Omeka S 3.2.3 and 4.2.1 instances. It restored an item, an uploaded file, and HTML media on each instance. It also restored a deleted item set on 4.2.1.
+
+The drill stopped after Omeka accepted a media upload. It resumed with the saved progress file. The checks covered SHA-256, file bytes, visibility, media order, and links in both directions.
+
+Omeka S 3.2.3 returned HTTP 500 for the fixture deletes after it removed the records. Separate reads verified that the resources were absent.
+
+Set \`SGB_DRILL_URLS\` to a comma-separated list of disposable loopback Omeka URLs. Use the same test API key on each instance. Set \`SGB_DRILL_KEY_IDENTITY\` and \`SGB_DRILL_KEY_CREDENTIAL\`.
+
+Run \`uv run --locked pytest test/test_recovery.py\`. The drill creates and deletes its own fixture records.

@@ -293,6 +293,51 @@ def show_creation(record: dict, apply: bool) -> None:
         typer.echo(f"Would create a record with fields: {', '.join(sorted(record))}")
 
 
+@app.command("backup")
+def backup_command(
+    item_set_id: ItemSetID = None,
+    base_url: BaseURL = None,
+    key_identity: Identity = None,
+    key_credential: Credential = None,
+    output_dir: Path = Path("backups"),
+) -> None:
+    """Back up an item set and verify its original files."""
+    from .recovery import backup
+
+    with command_errors(), connect(base_url, key_identity, key_credential) as api:
+        rid = target(item_set_id)
+        directory = dated_dir(output_dir, "backup", rid)
+        manifest = backup(api, rid, directory)
+        typer.echo(directory)
+        if not manifest["complete"]:
+            typer.echo("\n".join(manifest["errors"]), err=True)
+            raise typer.Exit(1)
+
+
+@app.command("restore")
+def restore_command(
+    directory: Path,
+    base_url: BaseURL = None,
+    key_identity: Identity = None,
+    key_credential: Credential = None,
+    apply: bool = False,
+    skip_recent_hours: float = 2,
+) -> None:
+    """Preview or apply recovery on the source instance."""
+    from .recovery import restore
+
+    with command_errors():
+        source = base_url or read_snapshot(directory).source
+        with connect(source, key_identity, key_credential) as api:
+            restore(
+                api,
+                directory,
+                apply=apply,
+                skip_recent_hours=skip_recent_hours,
+                announce=typer.echo,
+            )
+
+
 def main() -> None:
     load_dotenv(Path.cwd() / ".env")
     app()

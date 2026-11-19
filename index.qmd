@@ -27,6 +27,10 @@ Use `sgb transform` to write a new snapshot. Use `sgb update SOURCE EDITED` to p
 
 Use `sgb create item` or `sgb create media` with native Omeka JSON. Use `--file` to upload a local media file.
 
+## Recover an item set
+
+Use `sgb backup` to save the metadata and verify the original files. Use `sgb restore DIRECTORY` to preview recovery. Add `--apply` to recover the records on the source instance.
+
 See the [repository guide](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator#readme) for the full commands and examples.
 
 

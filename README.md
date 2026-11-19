@@ -41,6 +41,20 @@ Omeka S has no conditional write for this workflow. Another edit can occur betwe
 
 See the [native JSON examples](examples/omeka-json.md) for items and media.
 
+## Backup and restore
+
+```sh
+sgb backup --item-set-id 10780
+sgb restore backups/backup_itemset_10780_TIMESTAMP
+sgb restore backups/backup_itemset_10780_TIMESTAMP --apply
+```
+
+Use credentials with access to all private records in the set. Keep the backup directory private. Restore to the source instance. Keep `restore-progress.json` with the backup to resume an interrupted restore.
+
+Full recovery supports local file uploads and HTML media. The backup records unsupported ingesters and missing dependencies in its manifest. Metadata-only backups can restore metadata on the surviving records.
+
+See the [recovery guide](docs/recovery.md) for the recovery steps and limits.
+
 ## Project work
 
 The [Data Story archive script](scripts/archive_data_stories.py) keeps the story rights checks and upload manifests. The [issue #44 worklist generator](scripts/generate_triage.py) reads the shared validator findings.
