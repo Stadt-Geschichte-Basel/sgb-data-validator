@@ -311,11 +311,11 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
     # Extra check: item identifier spelling.
     for iid, item in items.items():
         ident = first_value(item, "dcterms:identifier")
-        if ident and not re.match(r"abb\d|dataset\d", ident):
+        if ident and not re.match(r"abb\d|dataset\d|story-", ident):
             e = entry("Item", iid)
             e.problems.append(
                 f"Identifier `{ident}` beginnt nicht mit `abb` + Ziffer "
-                "(oder `dataset` + Ziffer). "
+                "(oder `dataset` + Ziffer, `story-` + Name). "
                 "Schreibweise prüfen."
             )
             e.groups.add("Falscher Inhalt")

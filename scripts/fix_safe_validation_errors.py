@@ -95,6 +95,17 @@ def apply_renames(args, base_url: str, key_id: str, key_cred: str) -> int:
                 continue
             rec = fresh_get(api, kind, rid)
             values = rec.get("dcterms:identifier") or []
+            if not row["old"] and not values:
+                # Record has no identifier yet: add one (property 10).
+                values = [
+                    {
+                        "type": "literal",
+                        "property_id": 10,
+                        "property_label": "Identifier",
+                        "is_public": True,
+                        "@value": "",
+                    }
+                ]
             if len(values) != 1 or values[0].get("@value") != row["old"]:
                 print(f"  SKIP [{kind} {rid}] identifier is not {row['old']!r} any more")
                 stats["skipped"] += 1
