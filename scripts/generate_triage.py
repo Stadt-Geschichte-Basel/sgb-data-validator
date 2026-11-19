@@ -44,8 +44,8 @@ GITHUB_LOGINS: dict[int, str] = {}
 
 #: Records that need a team decision. They go to one section, not to co-workers.
 DECISIONS = {
-    "data_story": "Data Stories ohne Identifier: Identifier-Schema festlegen. "
-    "Danach kann ein Skript alle Identifier setzen.",
+    "data_story": "Data Story ohne Identifier: Die Story ist ein Parent-Eintrag "
+    "(`story-<slug>`, DOI, Screenshot). Quellen: `scripts/archive_data_stories.py`.",
     "abb21892": "abb21892 (Items 12755 / 13553): Die Bildredaktionstabelle Band 7 "
     "führt beide unter ABB21892 (Foto Steuerverwaltung und Grafik «Öffentliches "
     "Personal», die mit ABB21912 zusammengehört). Festlegen, welches Objekt "
@@ -347,11 +347,11 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
     # Extra check: item identifier spelling.
     for iid, item in items.items():
         ident = first_value(item, "dcterms:identifier")
-        if ident and not re.match(r"abb\d|dataset\d|story-\S", ident):
+        if ident and not re.match(r"abb\d|dataset\d|story-\S|ds-\S", ident):
             e = entry("Item", iid)
             e.problems.append(
                 f"Identifier `{ident}` beginnt nicht mit `abb` + Ziffer "
-                "(oder `dataset` + Ziffer, `story-` + Name). "
+                "(oder `dataset` + Ziffer, `story-` + Name, `ds-` + Story). "
                 "Schreibweise prüfen."
             )
             e.groups.add("Falscher Inhalt")

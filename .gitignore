@@ -8,6 +8,9 @@ _site/
 examples/output/
 examples/backups/
 
+# Data Story archive work (downloads, manifests)
+data/data_stories/
+
 # Validation reports
 validation_reports/
 analysis/
