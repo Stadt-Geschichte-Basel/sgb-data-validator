@@ -61,7 +61,7 @@ Do this procedure story by story, in the order of the tables below.
 6. If the user does not know the image, keep `decision=review`. Write "Benutzer: unbekannt, <date>" into `notes`.
 7. After each story, run the dry run: `uv run python scripts/archive_data_stories.py upload <story>`.
 
-Links (`kind=link`) point to dashboards, external videos or web maps. The data of a web map is already archived as a GeoJSON layer. Ask the user whether each link has a separate source. If not, exclude it.
+Links (`kind=link`) point to dashboards, external videos or web maps. A link alone does not show that its data is archived. Exclude a web map link only if the manifest has a dataset row for its layers with a `file` and a `sha256` (a successful export). Otherwise keep the row for review. Ask the user whether each other link has a separate source. If not, exclude it.
 
 ### seide (25 rows)
 

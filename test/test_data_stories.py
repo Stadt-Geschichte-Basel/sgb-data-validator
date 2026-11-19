@@ -205,3 +205,91 @@ def test_omeka_api_error_does_not_show_the_api_key():
     assert "secret" not in str(err.value)
     assert err.value.response.status_code == 404
     api.close()
+
+
+def test_walk_gives_the_first_of_six_gallery_images_the_text_after_it():
+    images = [f"i{n}" for n in range(1, 7)]
+    nodes = {
+        "root": {"type": "story", "children": ["g", "t"]},
+        "g": {"type": "gallery", "children": images},
+        "t": {"type": "text", "data": {"type": "paragraph", "text": "Text G"}},
+        **{i: {"type": "image", "data": {}} for i in images},
+    }
+    media = ads.walk(nodes, "root")
+    assert media[0][3] == "Text G"
+
+
+def test_suggest_without_creator_does_not_fail():
+    row = {"holder": "Stadt.Geschichte.Basel", "caption": "Karte"}
+    ads.suggest(row, [])
+    assert row["rights"] == "CC BY-SA 4.0"
+
+
+def test_upload_resumes_from_a_manifest_with_omeka_item(tmp_path, monkeypatch):
+    monkeypatch.setattr(ads, "WORK", tmp_path)
+    (tmp_path / "schulden" / "files").mkdir(parents=True)
+    (tmp_path / "schulden" / "files" / "x.jpg").write_bytes(b"jpg")
+    ads.write_manifest("schulden", [{**ROW, "omeka_item": "999"}])
+    posted = []
+
+    class FakeOmeka:
+        def get(self, kind, rid):
+            return {
+                "dcterms:temporal": [{"@value": "Mittelalter"}],
+                "o:media": [{"o:id": 5}],
+            }
+
+        def find(self, kind, identifier):
+            return [{"o:id": 999, "o:media": []}]
+
+        def post(self, kind, payload, file=None):
+            posted.append(kind)
+            return {"o:id": 5}
+
+    monkeypatch.setattr(ads, "Omeka", FakeOmeka)
+    assert ads.upload("schulden", apply=True, limit=None) == 0
+    assert posted == ["media"]
+    assert ads.read_manifest("schulden")[0]["omeka_media"] == "5"
+
+
+def test_dry_run_leaves_the_manifest_unchanged(tmp_path, monkeypatch):
+    monkeypatch.setattr(ads, "WORK", tmp_path)
+    path = ads.write_manifest("schulden", [ROW])
+    before = path.read_text(encoding="utf-8")
+
+    class FakeOmeka:
+        def get(self, kind, rid):
+            return {"dcterms:temporal": [{"@value": "Mittelalter"}]}
+
+        def find(self, kind, identifier):
+            return [{"o:id": 999, "o:media": []}]
+
+    monkeypatch.setattr(ads, "Omeka", FakeOmeka)
+    assert ads.upload("schulden", apply=False, limit=None) == 0
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_upload_skips_an_unsupported_kind(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(ads, "WORK", tmp_path)
+    ads.write_manifest("schulden", [{**ROW, "kind": "video"}])
+
+    class FakeOmeka:
+        def get(self, kind, rid):
+            return {"dcterms:temporal": [{"@value": "Mittelalter"}]}
+
+    monkeypatch.setattr(ads, "Omeka", FakeOmeka)
+    assert ads.upload("schulden", apply=False, limit=None) == 1
+    assert "kind video not supported" in capsys.readouterr().out
+
+
+def test_export_layer_raises_on_an_arcgis_error_body(tmp_path):
+    import httpx
+    import pytest
+
+    def handler(request):
+        return httpx.Response(200, json={"error": {"code": 499}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(httpx.HTTPError):
+        ads.export_layer(client, "https://x.example/FeatureServer/0", tmp_path / "a")
+    assert not (tmp_path / "a").exists()

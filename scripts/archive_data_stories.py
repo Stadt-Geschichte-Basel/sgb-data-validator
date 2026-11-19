@@ -166,6 +166,28 @@ COLUMNS = [
     "omeka_media",
 ]
 
+# Manifest columns that hold review work. A forced collect keeps them.
+REVIEWED = [
+    c
+    for c in COLUMNS
+    if c
+    not in {
+        "key",
+        "kind",
+        "caption",
+        "attribution",
+        "context",
+        "file",
+        "source_url",
+        "mime",
+        "width",
+        "height",
+        "bytes",
+        "sha256",
+        "match",
+    }
+]
+
 HOLDERS = {
     "StABS": "Staatsarchiv Basel-Stadt",
     "Staatsarchiv Basel": "Staatsarchiv Basel-Stadt",
@@ -235,7 +257,7 @@ def suggest(row: dict[str, Any], authors: list[str]) -> None:
             row.get("notes", "") + " Rechte nach Hauspraxis (ungeprüft)."
         ).strip()
     elif row.get("holder") == "Stadt.Geschichte.Basel" and not row.get("rights"):
-        row["rights"] = f"CC BY-SA 4.0, {row['creator']}"
+        row["rights"] = ", ".join(x for x in ("CC BY-SA 4.0", row.get("creator")) if x)
         row["license"] = BY_SA
         row["notes"] = (
             row.get("notes", "")
@@ -303,11 +325,16 @@ def get_json(client: httpx.Client, url: str, **params: Any) -> dict[str, Any]:
         try:
             response = client.get(url, params={"f": "json", **params})
             response.raise_for_status()
-            return response.json()
+            data = response.json()
         except httpx.TransportError:
             if attempt == 3:
                 raise
             time.sleep(2 * (attempt + 1))
+            continue
+        if isinstance(data, dict) and "error" in data:
+            # ArcGIS reports errors (e.g. a missing token) with HTTP 200.
+            raise httpx.HTTPError(f"{url}: {data['error']}")
+        return data
     raise RuntimeError("unreachable")
 
 
@@ -430,18 +457,19 @@ def walk(
             heading = clean(data.get("text"))
         if node.get("type") in MEDIA_TYPES:
             following = ""
-            for later in order[i + 1 : i + 6]:
-                ldata = nodes.get(later, {}).get("data", {}) or {}
-                if nodes.get(later, {}).get("type") in MEDIA_TYPES and not (
-                    parent.get(later) == parent.get(node_id)
-                    and nodes.get(parent.get(node_id, ""), {}).get("type")
-                    in GROUP_TYPES
-                ):
+            in_group = nodes.get(parent.get(node_id, ""), {}).get("type") in GROUP_TYPES
+            steps = 0
+            for later in order[i + 1 :]:
+                lnode = nodes.get(later, {})
+                ldata = lnode.get("data", {}) or {}
+                if lnode.get("type") in MEDIA_TYPES:
+                    if in_group and parent.get(later) == parent.get(node_id):
+                        continue  # other images of the same gallery do not count
                     break  # the text after the next media belongs to that media
-                if (
-                    nodes.get(later, {}).get("type") == "text"
-                    and ldata.get("type") == "paragraph"
-                ):
+                steps += 1
+                if steps > 5:
+                    break
+                if lnode.get("type") == "text" and ldata.get("type") == "paragraph":
                     following = clean(ldata.get("text"))[:500]
                     break
             narrative = slide_narrative(node_id)
@@ -606,21 +634,23 @@ def export_layer(client: httpx.Client, url: str, path: Path) -> None:
             timeout=120,
         )
         response.raise_for_status()
-        batch = response.json().get("features", [])
+        body = response.json()
+        if "error" in body:
+            raise httpx.HTTPError(f"{url}: {body['error']}")
+        batch = body.get("features", [])
         features.extend(batch)
         if len(batch) < 1000:
             break
         offset += len(batch)
-    count = (
-        client.get(
-            f"{url}/query",
-            params={"where": "1=1", "returnCountOnly": "true", "f": "json"},
-            timeout=120,
-        )
-        .json()
-        .get("count")
-    )
-    if count is not None and count != len(features):
+    count = client.get(
+        f"{url}/query",
+        params={"where": "1=1", "returnCountOnly": "true", "f": "json"},
+        timeout=120,
+    ).json()
+    if "error" in count or count.get("count") is None:
+        raise httpx.HTTPError(f"{url}: no feature count ({count.get('error')})")
+    count = count["count"]
+    if count != len(features):
         raise httpx.HTTPError(f"exported {len(features)} of {count} features")
     path.write_text(
         json.dumps(
@@ -643,6 +673,12 @@ def collect(slug: str, force: bool) -> int:
             f"{out / 'manifest.csv'} exists (it may hold review work). Use --force to replace it."
         )
         return 1
+    # Rows of an earlier run keep their review work and identifiers.
+    old = (
+        {r["key"]: r for r in read_manifest(slug)}
+        if (out / "manifest.csv").exists()
+        else {}
+    )
     portal = story.get("portal", "https://www.arcgis.com")
     sid = story["arcgis"]
     client = httpx.Client(timeout=120, follow_redirects=True)
@@ -749,10 +785,18 @@ def collect(slug: str, force: bool) -> int:
         rows.append(row)
 
     # Export datasets and assign identifiers.
-    n = 0
+    numbers = [
+        int(m.group(1))
+        for r in old.values()
+        if (m := re.fullmatch(rf"ds-{re.escape(slug)}-(\d+)", r.get("identifier", "")))
+    ]
+    n = max(numbers, default=0)
     for row in rows:
         if row["kind"] == "dataset":
-            name = re.sub(r"[^\w-]+", "_", row["title"] or "layer")[:60] + ".geojson"
+            # The URL hash keeps layers with the same title apart.
+            url_hash = hashlib.sha256(row["source_url"].encode()).hexdigest()[:8]
+            title = re.sub(r"[^\w-]+", "_", row["title"] or "layer")[:60]
+            name = f"{title}-{url_hash}.geojson"
             path = out / "files" / name
             try:
                 export_layer(client, row["source_url"], path)
@@ -771,10 +815,20 @@ def collect(slug: str, force: bool) -> int:
                     decision="review",
                     notes=f"{row.get('notes', '')} export failed: {exc}",
                 )
+        if row["key"] in old:
+            row.update({k: v for k in REVIEWED if (v := old[row["key"]].get(k))})
         row.setdefault("decision", "review")
-        if not row["decision"].startswith(("exclude", "reuse")):
+        if not row["decision"].startswith(("exclude", "reuse")) and not row.get(
+            "identifier"
+        ):
             n += 1
             row["identifier"] = f"ds-{slug}-{n:02d}"
+    keys = {row["key"] for row in rows}
+    for key, row in old.items():
+        if key not in keys:
+            # Keep the row and its Omeka ids, even if the story no longer has it.
+            row["notes"] = f"{row.get('notes', '')} Nicht mehr in der Story.".strip()
+            rows.append(row)
     path = write_manifest(slug, rows)
     counts: dict[str, int] = {}
     for row in rows:
@@ -1103,14 +1157,18 @@ def upload(slug: str, apply: bool, limit: int | None) -> int:
                 api, slug, row, int(decision.split(":")[1]), apply
             )
             continue
-        if decision != "ingest" or row.get("omeka_item"):
+        # A row with omeka_item but no omeka_media goes on to the RESUME check.
+        if decision != "ingest" or row.get("omeka_media"):
             continue
         if limit is not None and done >= limit:
             break
         problems = rights_problems(row)
-        item = item_payload(slug, row, temporal)
-        media = media_payload(slug, row, None, temporal)
-        problems += validation_errors(item, "item") + validation_errors(media, "media")
+        if not problems:
+            item = item_payload(slug, row, temporal)
+            media = media_payload(slug, row, None, temporal)
+            problems = validation_errors(item, "item") + validation_errors(
+                media, "media"
+            )
         if problems:
             print(f"SKIP {row['identifier']}: {'; '.join(problems)}")
             failed += 1
@@ -1118,9 +1176,11 @@ def upload(slug: str, apply: bool, limit: int | None) -> int:
         existing = api.find("items", row["identifier"])
         if existing:
             item_id = existing[0]["o:id"]
-            row["omeka_item"] = str(item_id)
             if existing[0].get("o:media"):
                 print(f"EXISTS {row['identifier']} -> item {item_id}")
+                if apply:  # A dry run writes nothing, also not to the manifest.
+                    row["omeka_item"] = str(item_id)
+                    row["omeka_media"] = str(existing[0]["o:media"][0]["o:id"])
                 continue
             # The item exists without a file: an earlier run stopped after the item POST.
             print(f"RESUME {row['identifier']}: item {item_id} has no media")
@@ -1133,8 +1193,8 @@ def upload(slug: str, apply: bool, limit: int | None) -> int:
             continue
         if item_id is None:
             item_id = api.post("items", item)["o:id"]
-            row["omeka_item"] = str(item_id)
-            write_manifest(slug, rows)  # Record the item before the file upload.
+        row["omeka_item"] = str(item_id)
+        write_manifest(slug, rows)  # Record the item before the file upload.
         media["o:item"] = {"o:id": item_id}
         new_media = api.post("media", media, out / row["file"])
         check = api.get("items", item_id)
@@ -1146,7 +1206,8 @@ def upload(slug: str, apply: bool, limit: int | None) -> int:
         )
         done += 1
         write_manifest(slug, rows)  # Keep the ledger current after each write.
-    write_manifest(slug, rows)
+    if apply:
+        write_manifest(slug, rows)
     print(f"{'applied' if apply else 'dry run'}: {done} new, {failed} skipped")
     return 1 if failed else 0
 
@@ -1204,6 +1265,11 @@ def ainote(slug: str, apply: bool) -> int:
                 print(f"DRY {kind} {rid} {row['identifier']}")
                 continue
             backup([record], f"{kind}_{rid}")
+            # The PUT sends the whole record. Do not overwrite a concurrent edit.
+            if api.get(kind, int(rid)).get("o:modified") != record.get("o:modified"):
+                print(f"SKIP {kind} {rid}: changed during the run")
+                failed += 1
+                continue
             values[0]["@value"] = new
             api.put(kind, int(rid), record)
             check = api.get(kind, int(rid))["dcterms:description"][0]["@value"]
@@ -1226,8 +1292,24 @@ def story_rights(story: dict[str, Any]) -> str:
     return "In Copyright, Stadt.Geschichte.Basel"
 
 
+def zenodo_has_file(doi: str, path: Path) -> bool:
+    """True if the Zenodo record of the DOI holds a file with the same MD5."""
+    record_id = doi.rsplit("zenodo.", 1)[-1]
+    response = httpx.get(
+        f"https://zenodo.org/api/records/{record_id}",
+        timeout=60,
+        follow_redirects=True,
+    )
+    response.raise_for_status()
+    md5 = "md5:" + hashlib.md5(path.read_bytes()).hexdigest()  # noqa: S324
+    return any(f.get("checksum") == md5 for f in response.json().get("files", []))
+
+
 def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
     story = STORIES[slug]
+    if not screenshot.is_file():
+        print(f"{screenshot}: file not found")
+        return 1
     api = Omeka()
     item = api.get("items", story["item"])
     old_media = [api.get("media", m["o:id"]) for m in item.get("o:media", [])]
@@ -1248,7 +1330,11 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
     licensed = bool(story["license"])
     is_pdf = screenshot.suffix.lower() == ".pdf"
     # Decision 2026-11-19: all Zenodo story PDFs are public, also without a CC license.
-    public = licensed or is_pdf
+    # Only a PDF that matches a file of the story's Zenodo record counts.
+    on_zenodo = is_pdf and zenodo_has_file(story["doi"], screenshot)
+    if is_pdf and not on_zenodo:
+        print(f"{screenshot}: not a file of {doi}, the media stays private")
+    public = licensed or on_zenodo
     kind = "PDF" if is_pdf else "Screenshot"
     note = (
         f"PDF-Fassung der Data Story, archiviert auf Zenodo ({doi})."
@@ -1345,8 +1431,13 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
                     path.parent / f"{m['o:id']}_{m.get('o:filename')}",
                 )
     print(f"backup: {path}")
-    api.put("items", story["item"], new_item)
+    # Post the media first: if it fails, the item stays as it was.
     created = api.post("media", media, screenshot)
+    # Re-read the item: a PUT replaces o:media, and the new media must stay.
+    fresh = api.get("items", story["item"])
+    for key in ("o:title", "dcterms:title", "dcterms:isPartOf"):
+        fresh[key] = new_item[key]
+    api.put("items", story["item"], fresh)
     check = api.get("items", story["item"])
     print(
         f"OK media {created['o:id']} on item {story['item']}: {[m['o:id'] for m in check['o:media']]}"
