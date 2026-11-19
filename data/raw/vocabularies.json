@@ -23,7 +23,8 @@
 			"text/csv",
 			"image/png",
 			"text/plain",
-			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			"image/gif"
 		]
 	},
 	{

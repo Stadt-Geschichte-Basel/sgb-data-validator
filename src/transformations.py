@@ -647,12 +647,16 @@ def enrich_item_with_book_doi(
 
     if not is_part_of_literals:
         if abb_identifiers:
-            return item_data, None, {
-                "item_id": item_data.get("o:id"),
-                "title": item_data.get("o:title"),
-                "identifiers": abb_identifiers,
-                "reason": "missing_literal_dcterms_isPartOf",
-            }
+            return (
+                item_data,
+                None,
+                {
+                    "item_id": item_data.get("o:id"),
+                    "title": item_data.get("o:title"),
+                    "identifiers": abb_identifiers,
+                    "reason": "missing_literal_dcterms_isPartOf",
+                },
+            )
         return item_data, None, None
 
     match = _best_book_doi_match(is_part_of_literals)
@@ -685,14 +689,18 @@ def enrich_item_with_book_doi(
         },
     ]
 
-    return result, {
-        "item_id": item_data.get("o:id"),
-        "title": item_data.get("o:title"),
-        "doi": metadata["DOI"],
-        "doi_uri": metadata["id"],
-        "doi_title": metadata["title"],
-        "match_score": round(score, 3),
-    }, None
+    return (
+        result,
+        {
+            "item_id": item_data.get("o:id"),
+            "title": item_data.get("o:title"),
+            "doi": metadata["DOI"],
+            "doi_uri": metadata["id"],
+            "doi_title": metadata["title"],
+            "match_score": round(score, 3),
+        },
+        None,
+    )
 
 
 def enrich_items_with_book_dois(
@@ -903,9 +911,14 @@ def transform_item_set_data(
     )
 
     if return_report:
-        return transformed_item_set, transformed_items, transformed_media, {
-            "doi_is_part_of_enrichment": doi_report,
-        }
+        return (
+            transformed_item_set,
+            transformed_items,
+            transformed_media,
+            {
+                "doi_is_part_of_enrichment": doi_report,
+            },
+        )
 
     return transformed_item_set, transformed_items, transformed_media
 

@@ -443,7 +443,10 @@ def test_transform_item_set_data_can_return_doi_report() -> None:
     )
 
     doi_report = report["doi_is_part_of_enrichment"]
-    assert transformed_items[0]["dcterms:isPartOf"][0]["@id"] == "https://doi.org/10.21255/sgb-08-796384"
+    assert (
+        transformed_items[0]["dcterms:isPartOf"][0]["@id"]
+        == "https://doi.org/10.21255/sgb-08-796384"
+    )
     assert doi_report["items_enriched"] == 1
     assert doi_report["enriched_items"][0]["doi"] == "10.21255/SGB-08-796384"
 

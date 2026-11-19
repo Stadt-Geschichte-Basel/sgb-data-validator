@@ -66,6 +66,19 @@ class OmekaAPI:
     # READ OPERATIONS
     # =========================================================================
 
+    def _raise_for_status(self, response: httpx.Response) -> None:
+        """Raise HTTPStatusError like httpx, but without the API key in the message."""
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as err:
+            message = str(err)
+            for secret in (self.key_identity, self.key_credential):
+                if secret:
+                    message = message.replace(secret, "***")
+            raise httpx.HTTPStatusError(
+                message, request=err.request, response=err.response
+            ) from None
+
     def _add_auth_params(self, params: dict[str, Any]) -> dict[str, Any]:
         """Add authentication parameters if configured."""
         if self.key_identity and self.key_credential:
@@ -105,7 +118,7 @@ class OmekaAPI:
         url = f"{self.base_url}/api/item_sets/{item_set_id}"
         params = self._add_auth_params({})
         response = self.client.get(url, params=params)
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json()
 
     def get_item_sets(
@@ -125,7 +138,7 @@ class OmekaAPI:
         url = f"{self.base_url}/api/item_sets"
         params = self._add_auth_params({"page": page, "per_page": per_page, **filters})
         response = self.client.get(url, params=params)
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json()
 
     def get_items_from_set(
@@ -149,7 +162,7 @@ class OmekaAPI:
                 {"item_set_id": item_set_id, "page": page, "per_page": per_page}
             )
             response = self.client.get(url, params=params)
-            response.raise_for_status()
+            self._raise_for_status(response)
             return response.json()
 
         # Fetch all pages
@@ -165,7 +178,7 @@ class OmekaAPI:
                 }
             )
             response = self.client.get(url, params=params)
-            response.raise_for_status()
+            self._raise_for_status(response)
             page_items = response.json()
             if not page_items:
                 break
@@ -186,7 +199,7 @@ class OmekaAPI:
         url = f"{self.base_url}/api/items/{item_id}"
         params = self._add_auth_params({})
         response = self.client.get(url, params=params)
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json()
 
     def get_media(self, media_id: int) -> dict[str, Any]:
@@ -202,7 +215,7 @@ class OmekaAPI:
         url = f"{self.base_url}/api/media/{media_id}"
         params = self._add_auth_params({})
         response = self.client.get(url, params=params)
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json()
 
     def get_media_from_item(self, item_id: int) -> list[dict[str, Any]]:
@@ -218,7 +231,7 @@ class OmekaAPI:
         url = f"{self.base_url}/api/media"
         params = self._add_auth_params({"item_id": item_id})
         response = self.client.get(url, params=params)
-        response.raise_for_status()
+        self._raise_for_status(response)
         return response.json()
 
     # =========================================================================
@@ -665,7 +678,7 @@ class OmekaAPI:
 
         try:
             response = self.client.post(url, json=data_copy, params=params)
-            response.raise_for_status()
+            self._raise_for_status(response)
             created_item = response.json()
             result["created"] = True
             result["item_id"] = created_item.get("o:id")
@@ -748,7 +761,7 @@ class OmekaAPI:
 
         try:
             response = self.client.post(url, json=data_copy, params=params)
-            response.raise_for_status()
+            self._raise_for_status(response)
             created_media = response.json()
             result["created"] = True
             result["media_id"] = created_media.get("o:id")
@@ -803,7 +816,7 @@ class OmekaAPI:
 
         try:
             response = self.client.put(url, json=data, params=params)
-            response.raise_for_status()
+            self._raise_for_status(response)
             result["updated"] = True
             result["message"] = "Item updated successfully"
         except httpx.HTTPStatusError as e:
@@ -851,7 +864,7 @@ class OmekaAPI:
 
         try:
             response = self.client.put(url, json=data, params=params)
-            response.raise_for_status()
+            self._raise_for_status(response)
             result["updated"] = True
             result["message"] = "Media updated successfully"
         except httpx.HTTPStatusError as e:

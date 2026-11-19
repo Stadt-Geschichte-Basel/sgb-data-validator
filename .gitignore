@@ -8,6 +8,11 @@ _site/
 examples/output/
 examples/backups/
 
+# Data Story archive work (downloads, manifests)
+data/data_stories/*.json
+data/data_stories/*/*
+!data/data_stories/*/manifest.csv
+
 # Validation reports
 validation_reports/
 analysis/

@@ -35,6 +35,32 @@ USER_AGENTS = [
 ]
 
 
+# Fields without brackets in the datamodel diagram take exactly one value.
+# https://dokumentation.stadtgeschichtebasel.ch/products/research-data/datamodel/
+SINGLE_VALUE_FIELDS = {
+    "Item": (
+        "dcterms:identifier",
+        "dcterms:title",
+        "dcterms:description",
+        "dcterms:temporal",
+        "dcterms:language",
+    ),
+    "Media": (
+        "dcterms:identifier",
+        "dcterms:title",
+        "dcterms:description",
+        "dcterms:date",
+        "dcterms:temporal",
+        "dcterms:type",
+        "dcterms:format",
+        "dcterms:extent",
+        "dcterms:language",
+        "dcterms:rights",
+        "dcterms:license",
+    ),
+}
+
+
 class DataValidationError:
     """Represents a validation error"""
 
@@ -360,6 +386,18 @@ class OmekaValidator:
         self, data: dict[str, Any], resource_type: str, resource_id: int
     ) -> None:
         """Validate vocabulary-controlled fields"""
+        for field in SINGLE_VALUE_FIELDS.get(resource_type, ()):
+            values = data.get(field)
+            if isinstance(values, list) and len(values) > 1:
+                self.errors.append(
+                    DataValidationError(
+                        resource_type,
+                        resource_id,
+                        field,
+                        f"Only one value allowed, found {len(values)}",
+                    )
+                )
+
         # Validate dcterms:temporal (Era)
         temporal_values = data.get("dcterms:temporal", [])
         if isinstance(temporal_values, list):
