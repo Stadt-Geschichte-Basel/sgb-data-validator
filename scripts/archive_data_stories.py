@@ -795,6 +795,11 @@ def vocab(
     return out
 
 
+# EDTF levels 0 and 1 as used here: year, month, day, qualifiers ~ ? %, intervals.
+_EDTF_DATE = r"-?\d{4}(?:-\d{2}(?:-\d{2})?)?[~?%]?"
+EDTF = re.compile(rf"{_EDTF_DATE}(?:/(?:{_EDTF_DATE}|\.\.)?)?|\.\./{_EDTF_DATE}")
+
+
 def rights_problems(row: dict[str, str]) -> list[str]:
     problems = [
         f"missing {k}"
@@ -805,6 +810,10 @@ def rights_problems(row: dict[str, str]) -> list[str]:
         problems.append(f"kind {row.get('kind')} not supported")
     if row.get("rights_status") == "verified" and not row.get("rights_evidence"):
         problems.append("verified without rights_evidence")
+    if row.get("date") and not EDTF.fullmatch(row["date"]):
+        problems.append(
+            f"date {row['date']!r} is not EDTF (use e.g. 1497~ for 'um 1497')"
+        )
     return problems
 
 
