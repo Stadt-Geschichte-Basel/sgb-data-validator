@@ -131,13 +131,13 @@ To generate these CSV reports, run the validator with the `--export-csv` flag:
 
 ``` bash
 # Generate CSV reports in default directory (validation_reports/)
-uv run python validate.py --export-csv
+uv run --locked sgb validate --export-csv
 
 # Specify custom output directory
-uv run python validate.py --export-csv --csv-output my_reports/
+uv run --locked sgb validate --export-csv --csv-output my_reports/
 
 # Generate reports with URI checking enabled
-uv run python validate.py --export-csv --check-uris
+uv run --locked sgb validate --export-csv --check-uris
 ```
 
 See the [README](index.qmd) for more usage examples and configuration options.
@@ -183,9 +183,9 @@ For questions or issues with validation reports:
 Below are the actual validation reports generated during the last site build by running:
 
 ``` bash
-uv run python validate.py --output validation_report.txt \
-  --check-uris --check-redirects --profile \
-  --profile-output analysis/ --export-csv --csv-output analysis/
+uv run --locked sgb validate --output validation_report.txt \
+  --check-uris --check-redirects \
+  --export-csv --csv-output analysis/
 ```
 
 ::: callout-note

@@ -1,150 +1,116 @@
-"""Test creation methods for migration support"""
+"""Exercise guarded creation and update with Omeka JSON."""
+
+from copy import deepcopy
 
 import pytest
 
-from src.api import OmekaAPI
+from sgb_validator.api import OmekaError
+from sgb_validator.writes import create_payload, create_record, update_record
 
 
-def test_create_item_validation():
-    """Test that create_item validates data correctly"""
-    api = OmekaAPI("https://example.com")
-
-    # Valid item data (without o:id)
-    valid_item = {
-        "o:item_set": [{"o:id": 123}],
-        "dcterms:title": [{"type": "literal", "property_id": 1, "@value": "Test"}],
-    }
-
-    result = api.create_item(valid_item, dry_run=True)
-
-    assert result["validation_passed"] is True
-    assert result["dry_run"] is True
-    assert result["created"] is False
-    assert result["item_id"] is None
-    assert "validation passed" in result["message"]
+def literal(value, pid=10):
+    return [{"type": "literal", "property_id": pid, "@value": value, "is_public": True}]
 
 
-def test_create_item_removes_id():
-    """Test that create_item removes o:id if present"""
-    api = OmekaAPI("https://example.com")
+class FakeAPI:
+    def __init__(self, record, matches=()):
+        self.record = record
+        self.matches = matches
+        self.writes = []
+        self.reads = 0
+        self.before_last_read = None
 
-    # Item with o:id (should be removed)
-    item_with_id = {
-        "o:id": 999,  # Should be removed
-        "o:item_set": [{"o:id": 123}],
-        "dcterms:title": [{"type": "literal", "property_id": 1, "@value": "Test"}],
-    }
+    def get(self, kind, rid):
+        self.reads += 1
+        if self.reads == 2 and self.before_last_read:
+            self.before_last_read()
+        return deepcopy(self.record)
 
-    result = api.create_item(item_with_id, dry_run=True)
+    def find(self, *args):
+        return list(self.matches)
 
-    # Should still validate (ID removed automatically)
-    assert result["validation_passed"] is True
+    def post(self, *args, **kwargs):
+        self.writes.append(args)
+        raise AssertionError("Unexpected POST")
 
-
-def test_create_item_requires_auth():
-    """Test that create_item requires authentication for actual creation"""
-    api = OmekaAPI("https://example.com")  # No auth
-
-    valid_item = {
-        "o:item_set": [{"o:id": 123}],
-        "dcterms:title": [{"type": "literal", "property_id": 1, "@value": "Test"}],
-    }
-
-    result = api.create_item(valid_item, dry_run=False)
-
-    assert result["created"] is False
-    assert "Authentication required" in result["message"]
+    def patch(self, kind, rid, payload):
+        self.writes.append((kind, rid, payload))
+        self.record.update(
+            {key: val for key, val in payload.items() if key != "clear_property_values"}
+        )
 
 
-def test_create_media_validation():
-    """Test that create_media validates data correctly"""
-    api = OmekaAPI("https://example.com")
-
-    # Valid media data (without o:id)
-    valid_media = {
-        "o:item": {"o:id": 121200},
-        "o:ingester": "url",
-        "o:source": "https://example.com/image.jpg",
-        "ingest_url": "https://example.com/image.jpg",
-    }
-
-    result = api.create_media(valid_media, dry_run=True)
-
-    assert result["validation_passed"] is True
-    assert result["dry_run"] is True
-    assert result["created"] is False
-    assert result["media_id"] is None
+def test_create_preview_includes_target_and_excludes_server_fields():
+    api = FakeAPI({"o:id": 3})
+    data = {"o:id": 101, "dcterms:identifier": literal("new")}
+    plan = create_record(api, "items", data, target_id=3)
+    assert plan == {"o:item_set": [{"o:id": 3}], "dcterms:identifier": literal("new")}
+    assert not api.writes
+    assert data["o:id"] == 101
 
 
-def test_create_media_requires_item():
-    """Test that create_media requires o:item reference"""
-    api = OmekaAPI("https://example.com")
-
-    # Media without o:item (should fail validation)
-    invalid_media = {
-        "o:ingester": "url",
-        "o:source": "https://example.com/image.jpg",
-    }
-
-    result = api.create_media(invalid_media, dry_run=True)
-
-    assert result["validation_passed"] is False
-    assert len(result["errors"]) > 0
+def test_duplicate_identifier_blocks_creation():
+    api = FakeAPI({"o:id": 3}, matches=[{"o:id": 9}])
+    with pytest.raises(OmekaError, match="Identifier collision"):
+        create_record(
+            api,
+            "items",
+            {"dcterms:identifier": literal("existing")},
+            target_id=3,
+            apply=True,
+        )
+    assert not api.writes
 
 
-def test_migrate_item_set_missing_files():
-    """Test that migrate_item_set handles missing files gracefully"""
-    api = OmekaAPI("https://example.com")
+def test_upload_requires_a_parent_and_a_file(tmp_path):
+    with pytest.raises(ValueError, match="parent item"):
+        create_payload("media", {"o:ingester": "upload"})
+    with pytest.raises(ValueError, match="Missing media file"):
+        create_payload("media", {}, target_id=3, file=tmp_path / "missing")
 
-    result = api.migrate_item_set(
-        source_dir="/nonexistent/path",
-        target_item_set_id=456,
-        dry_run=True,
+
+def test_concurrent_edit_detected_after_before_copy(tmp_path):
+    before = {"o:id": 3, "dcterms:identifier": literal("source")}
+    api = FakeAPI(deepcopy(before))
+    api.before_last_read = lambda: api.record.update(
+        {"dcterms:creator": literal("editor", 2)}
     )
+    after = {**before, "dcterms:identifier": literal("changed")}
+    with pytest.raises(OmekaError, match="immediately before"):
+        update_record(api, "items", before, after, apply=True, backup_dir=tmp_path)
+    assert not api.writes
+    copy = next(tmp_path.iterdir())
+    assert copy.stat().st_mode & 0o777 == 0o600
 
-    assert result["items_processed"] == 0
-    assert len(result["errors"]) > 0
-    assert "not found" in result["errors"][0]
 
+def test_recent_edit_is_skipped(tmp_path):
+    from datetime import UTC, datetime
 
-def test_migrate_item_set_requires_auth():
-    """Test that migrate_item_set requires authentication for actual migration"""
-    import json
-    import tempfile
-    from pathlib import Path
-
-    api = OmekaAPI("https://example.com")  # No auth
-
-    # Create temporary directory with test data
-    with tempfile.TemporaryDirectory() as tmpdir:
-        items_file = Path(tmpdir) / "items.json"
-        items_file.write_text(
-            json.dumps(
-                [
-                    {
-                        "o:id": 123,
-                        "o:item_set": [{"o:id": 10780}],
-                        "dcterms:title": [
-                            {
-                                "type": "literal",
-                                "property_id": 1,
-                                "@value": "Test Item",
-                            }
-                        ],
-                    }
-                ]
-            )
+    before = {"o:id": 3, "o:modified": {"@value": datetime.now(UTC).isoformat()}}
+    api = FakeAPI(before)
+    with pytest.raises(OmekaError, match="edited within"):
+        update_record(
+            api,
+            "items",
+            before,
+            {**before, "o:is_public": False},
+            apply=True,
+            backup_dir=tmp_path,
         )
-
-        result = api.migrate_item_set(
-            source_dir=tmpdir,
-            target_item_set_id=456,
-            dry_run=False,
-        )
-
-        assert result["items_processed"] == 0
-        assert "Authentication required" in result["errors"][0]
+    assert not api.writes
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+def test_update_preserves_unrelated_fields(tmp_path):
+    before = {
+        "o:id": 3,
+        "o:is_public": False,
+        "dcterms:identifier": literal("source"),
+        "custom:field": literal("preserve", 123),
+    }
+    api = FakeAPI(deepcopy(before), matches=[{"o:id": 3}])
+    after = {**before, "dcterms:identifier": literal("changed")}
+    result = update_record(api, "items", before, after, apply=True, backup_dir=tmp_path)
+    assert result["custom:field"] == before["custom:field"]
+    assert result["dcterms:identifier"] == after["dcterms:identifier"]
+    _, _, payload = api.writes[0]
+    assert set(payload) == {"custom:field", "dcterms:identifier"}

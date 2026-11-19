@@ -1,6 +1,6 @@
 """Test data validation with sample Omeka S data"""
 
-from src.models import Item, Media
+from sgb_validator.models import Item, Media
 
 # Sample Item from the issue
 sample_item = {

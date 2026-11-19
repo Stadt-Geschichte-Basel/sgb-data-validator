@@ -78,7 +78,7 @@ uv run pytest -v
 
 - `test_integration_issue31.py` - Complete transformation workflow
 - `test_iconclass_integration.py` - ICONCLASS with real data
-- `test_offline_workflow.py` - Offline download-transform-upload workflow
+- `test_offline_workflow.py` - Offline download, transform, and validate workflow
 - `test_creation.py` - Item and media creation workflows
 
 ## Test Structure
@@ -154,7 +154,7 @@ uv run pytest
 uv run pytest test/test_issue36_private_flag.py -v
 
 # Test with coverage
-uv run pytest --cov=src --cov-report=html
+uv run pytest --cov=sgb_validator --cov-report=html
 ```
 
 ## Troubleshooting

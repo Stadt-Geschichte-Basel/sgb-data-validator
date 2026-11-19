@@ -1,6 +1,6 @@
 """Tests for Issue #31 - Comprehensive Data Validation and Normalization Features."""
 
-from src.transformations import (
+from sgb_validator.transformations import (
     apply_text_transformations,
     convert_html_entities,
     deduplicate_qids,

@@ -1,9 +1,6 @@
 """Tests for data transformation utilities."""
 
-from src.transformations import (
-    BOOK_DOI_METADATA,
-    enrich_item_with_book_doi,
-    enrich_items_with_book_dois,
+from sgb_validator.transformations import (
     fill_media_format,
     fill_media_from_parent,
     normalize_rights_notation,
@@ -277,178 +274,17 @@ def test_real_world_examples() -> None:
     print("  ✓ Multiple line breaks normalized")
 
 
-def test_book_doi_metadata_excludes_chapters() -> None:
-    """Test DOI enrichment only considers book-level DOIs."""
-    assert len(BOOK_DOI_METADATA) == 9
-    assert all(
-        "." not in metadata["DOI"].lower().split("/sgb-", 1)[1]
-        for metadata in BOOK_DOI_METADATA
-    )
-
-
-def test_enrich_item_with_book_doi_replaces_literal_with_uri() -> None:
-    """The inconsistent citation literal is replaced by the canonical DOI URI."""
-    item = {
-        "o:id": 1,
-        "o:title": "Some unrelated image title",
-        "dcterms:identifier": [{"type": "literal", "@value": "abb12345"}],
-        "dcterms:isPartOf": [
-            {
-                "type": "literal",
-                "property_id": 33,
-                "property_label": "Is Part Of",
-                "is_public": True,
-                "@value": "Burghartz, Susanna (Hg,): Aufbrüche, Krisen, Transformationen. 1510-1790, Basel 2024 (Stadt.Geschichte.Basel 4).",
-            }
-        ],
-    }
-
-    result, report, missing = enrich_item_with_book_doi(item)
-
-    assert missing is None
-    assert report is not None
-    assert report["doi"] == "10.21255/SGB-04-283636"
-    # literal dropped, only the canonical DOI URI remains
-    assert result["dcterms:isPartOf"] == [
-        {
-            "type": "uri",
-            "property_id": 33,
-            "property_label": "Is Part Of",
-            "is_public": True,
-            "@id": "https://doi.org/10.21255/sgb-04-283636",
-            "o:label": "Aufbrüche, Krisen, Transformationen. 1510 – 1790",
-        }
-    ]
-
-
-def test_enrich_item_with_book_doi_ignores_non_citation_literal() -> None:
-    """Junk isPartOf like 'stadtgeschichtebasel.ch' must not match a volume.
-
-    Regression: it normalizes to 'ch', which used to score 1.0 against Band 1.
-    """
-    item = {
-        "o:id": 12856,
-        "o:title": "Data Story: Schulden einer Stadt",
-        "dcterms:isPartOf": [
-            {"type": "literal", "property_id": 33, "@value": "stadtgeschichtebasel.ch"}
-        ],
-    }
-
-    result, report, missing = enrich_item_with_book_doi(item)
-
-    assert report is None
-    assert missing is None
-    assert result == item  # untouched, literal preserved
-
-
-def test_enrich_item_with_book_doi_is_idempotent() -> None:
-    """Test an existing DOI URI is not appended again."""
+def test_transform_preserves_collection_citations():
     item = {
         "o:id": 1,
         "dcterms:isPartOf": [
-            {
-                "type": "literal",
-                "property_id": 33,
-                "property_label": "Is Part Of",
-                "is_public": True,
-                "@value": "Stadt in Verhandlung. 1250-1530. Basel 2024 (Stadt.Geschichte.Basel 3).",
-            },
-            {
-                "type": "uri",
-                "property_id": 33,
-                "property_label": "Is Part Of",
-                "is_public": True,
-                "@id": "https://doi.org/10.21255/sgb-03-345800",
-                "o:label": "Stadt in Verhandlung. 1250 – 1530",
-            },
+            {"type": "literal", "@value": "Auf dem Weg ins Jetzt. Seit 1960."}
         ],
+        "dcterms:subject": [{"type": "literal", "@value": "Tier"}],
     }
-
-    result, report, missing = enrich_item_with_book_doi(item)
-
-    assert result == item
-    assert report is None
-    assert missing is None
-
-
-def test_enrich_item_reports_abb_missing_is_part_of_literal() -> None:
-    """Test ABB records without usable dcterms:isPartOf literals are reported."""
-    item = {
-        "o:id": 7,
-        "o:title": "Needs review",
-        "dcterms:identifier": [{"type": "literal", "@value": "abb98765"}],
-    }
-
-    result, report, missing = enrich_item_with_book_doi(item)
-
-    assert result == item
-    assert report is None
-    assert missing == {
-        "item_id": 7,
-        "title": "Needs review",
-        "identifiers": ["abb98765"],
-        "reason": "missing_literal_dcterms_isPartOf",
-    }
-
-
-def test_enrich_items_with_book_dois_report_counts() -> None:
-    """Test batch enrichment returns counts and missing ABB entries."""
-    items = [
-        {
-            "o:id": 1,
-            "dcterms:isPartOf": [
-                {
-                    "type": "literal",
-                    "@value": "Die beschleunigte Stadt. 1856-1914, Basel 2024.",
-                }
-            ],
-        },
-        {
-            "o:id": 2,
-            "o:title": "Missing relation",
-            "dcterms:identifier": [{"type": "literal", "@value": "abb11111"}],
-        },
-        {
-            "o:id": 3,
-            "dcterms:identifier": [{"type": "literal", "@value": "obj11111"}],
-        },
-    ]
-
-    result, report = enrich_items_with_book_dois(items)
-
-    assert len(result[0]["dcterms:isPartOf"]) == 1
-    assert result[0]["dcterms:isPartOf"][0]["type"] == "uri"
-    assert report["book_dois_considered"] == 9
-    assert report["items_enriched"] == 1
-    assert len(report["enriched_items"]) == 1
-    assert len(report["abb_items_missing_is_part_of"]) == 1
-    assert report["abb_items_missing_is_part_of"][0]["item_id"] == 2
-
-
-def test_transform_item_set_data_can_return_doi_report() -> None:
-    """Test end-to-end item set transformation includes the DOI report."""
-    item = {
-        "o:id": 1,
-        "o:title": "Test item",
-        "dcterms:isPartOf": [
-            {
-                "type": "literal",
-                "@value": "Auf dem Weg ins Jetzt. Seit 1960. Basel 2025 (Stadt.Geschichte.Basel 8).",
-            }
-        ],
-    }
-
-    _item_set, transformed_items, _media, report = transform_item_set_data(
-        {}, [item], [], return_report=True
-    )
-
-    doi_report = report["doi_is_part_of_enrichment"]
-    assert (
-        transformed_items[0]["dcterms:isPartOf"][0]["@id"]
-        == "https://doi.org/10.21255/sgb-08-796384"
-    )
-    assert doi_report["items_enriched"] == 1
-    assert doi_report["enriched_items"][0]["doi"] == "10.21255/SGB-08-796384"
+    _, items, _ = transform_item_set_data({}, [item], [], apply_all=True)
+    assert items == [item]
+    assert items[0]["dcterms:isPartOf"] is not item["dcterms:isPartOf"]
 
 
 PARENT_ITEM = {
@@ -514,7 +350,6 @@ def test_transform_media_context_fixes_need_apply_all() -> None:
     full = transform_media(
         media,
         apply_all=True,
-        upgrade_https=False,
         parent_item=PARENT_ITEM,
         allowed_mime_types={"image/png"},
     )
@@ -525,41 +360,7 @@ def test_transform_media_context_fixes_need_apply_all() -> None:
 def test_transform_item_set_data_fills_media_from_parent() -> None:
     media = {"o:id": 2, "o:media_type": "image/png", "o:item": {"o:id": 1}}
     _, _, out_media = transform_item_set_data(
-        {}, [PARENT_ITEM], [media], apply_all=True, upgrade_https=False
+        {}, [PARENT_ITEM], [media], apply_all=True, allowed_mime_types={"image/png"}
     )
     assert out_media[0]["dcterms:temporal"][0]["@value"] == "Mittelalter"
     assert out_media[0]["dcterms:format"][0]["@value"] == "image/png"
-
-
-if __name__ == "__main__":
-    print("Testing data transformation utilities")
-    print("=" * 60)
-
-    test_normalize_whitespace_basic()
-    test_normalize_whitespace_unicode()
-    test_normalize_whitespace_multiline()
-    test_transform_property_value()
-    test_transform_item()
-    test_transform_media()
-    test_real_world_examples()
-    test_book_doi_metadata_excludes_chapters()
-    test_enrich_item_with_book_doi_replaces_literal_with_uri()
-    test_enrich_item_with_book_doi_ignores_non_citation_literal()
-    test_enrich_item_with_book_doi_is_idempotent()
-    test_enrich_item_reports_abb_missing_is_part_of_literal()
-    test_enrich_items_with_book_dois_report_counts()
-    test_transform_item_set_data_can_return_doi_report()
-
-    print("\n" + "=" * 60)
-    print("✓ All transformation tests passed!")
-
-
-def test_subjects_are_stripped_only_with_apply_all() -> None:
-    record = {
-        "o:id": 1,
-        "dcterms:subject": [{"type": "literal", "@value": "Tier"}],
-        "dcterms:title": [{"type": "literal", "@value": "x"}],
-    }
-    assert "dcterms:subject" in transform_item(record)
-    assert "dcterms:subject" not in transform_item(record, apply_all=True)
-    assert "dcterms:subject" not in transform_media(record, apply_all=True)

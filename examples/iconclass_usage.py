@@ -8,8 +8,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from src.iconclass import IconclassNotation, validate_iconclass_notation
-from src.vocabularies import VocabularyLoader
+from sgb_validator.iconclass import IconclassNotation, validate_iconclass_notation
+from sgb_validator.vocabularies import VocabularyLoader
 
 
 def example_basic_validation() -> None:
@@ -59,7 +59,7 @@ def example_vocabulary_validation() -> None:
     print("Example 3: Validation Against Vocabulary")
     print("=" * 60)
 
-    vocab_file = Path("data/raw/vocabularies.json")
+    vocab_file = Path("sgb_validator/vocabularies.json")
     loader = VocabularyLoader(vocab_file)
 
     test_codes = [

@@ -1,5 +1,7 @@
 # Chrome session: verify Data Story sources at the holders
 
+> Historical record. See the [operations index](README.md) for recorded outcomes.
+
 Status: open. Issue #44. Branch `work/issue-44-data-stories`.
 
 ## Purpose
@@ -17,7 +19,7 @@ This session checks each source at its holder and records the evidence in the ma
    CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=0 claude --chrome
    ```
 
-3. Give this prompt: "Execute data/data_stories/CHROME_SESSION.md."
+3. Give this prompt: "Execute docs/transformations/CHROME_SESSION.md."
 
 If the Lesesaal shows the bot check, wait for it to finish in the browser. Do not try to bypass it.
 If it does not finish, stop and ask the user.
@@ -32,15 +34,15 @@ If it does not finish, stop and ask the user.
 
 Pilot rows (story `schulden`):
 
-| Identifier | Signatur |
-|---|---|
+| Identifier     | Signatur                       |
+| -------------- | ------------------------------ |
 | ds-schulden-02 | Gerichtsarchiv A 41, fol. 247v |
 | ds-schulden-05 | Gerichtsarchiv A 41, fol. 233r |
 | ds-schulden-06 | Gerichtsarchiv A 41, fol. 211v |
-| ds-schulden-08 | Gerichtsarchiv D 6, fol. 93v |
-| ds-schulden-12 | Gerichtsarchiv C 16, fol. 59r |
-| ds-schulden-15 | Gerichtsarchiv E 7, fol. 46r |
-| ds-schulden-16 | Gerichtsarchiv E 7, fol. 40v |
+| ds-schulden-08 | Gerichtsarchiv D 6, fol. 93v   |
+| ds-schulden-12 | Gerichtsarchiv C 16, fol. 59r  |
+| ds-schulden-15 | Gerichtsarchiv E 7, fol. 46r   |
+| ds-schulden-16 | Gerichtsarchiv E 7, fol. 40v   |
 | ds-schulden-17 | Gerichtsarchiv A 41, fol. 193v |
 
 For each row, do these steps:

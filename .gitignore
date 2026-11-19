@@ -3,6 +3,7 @@
 .quarto/
 **/*.quarto_ipynb
 _site/
+_freeze/
 
 # API examples output
 examples/output/
@@ -442,8 +443,13 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-# pkgdown site
-docs/
+# Local workbooks and snapshots
+/*.xlsx
+/data/raw_itemset_*/
+/data/transformed_itemset_*/
+
+# Private transformation evidence
+/docs/transformations/local/
 
 # translation temp files
 po/*~

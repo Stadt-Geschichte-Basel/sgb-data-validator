@@ -1,6 +1,6 @@
 """Tests for ISO 639-1 language code validation"""
 
-from src.iso639 import get_all_codes, is_valid_iso639_1_code
+from sgb_validator.iso639 import get_all_codes, is_valid_iso639_1_code
 
 
 def test_valid_codes() -> None:

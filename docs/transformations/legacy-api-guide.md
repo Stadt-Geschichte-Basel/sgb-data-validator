@@ -1,5 +1,7 @@
 # OmekaAPI Documentation
 
+> Historical record. See the [operations index](README.md) for recorded outcomes.
+
 ## Overview
 
 The `OmekaAPI` class provides a high-level Python interface for interacting with Omeka S instances. It supports reading, validating, transforming, creating, and updating cultural heritage metadata while ensuring data quality through comprehensive validation.

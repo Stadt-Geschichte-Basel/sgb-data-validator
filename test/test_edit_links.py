@@ -2,15 +2,17 @@
 
 import csv
 
-from validate import DataValidationError, OmekaValidator
+from sgb_validator.reports import export_validation_csv
+from sgb_validator.validation import DataValidationError, Findings
 
 
 def test_edit_links_use_omeka_admin_routes(tmp_path) -> None:
-    validator = OmekaValidator("https://omeka.unibe.ch")
+    base_url = "https://omeka.unibe.ch"
+    validator = Findings()
     validator.errors.append(DataValidationError("Item", 12755, "dcterms:title", "x"))
     validator.errors.append(DataValidationError("Media", 13371, "dcterms:title", "x"))
 
-    validator.export_validation_csv(tmp_path)
+    export_validation_csv(validator, base_url, tmp_path)
 
     with open(tmp_path / "items_validation.csv", encoding="utf-8") as f:
         item_row = next(csv.DictReader(f))
@@ -22,10 +24,11 @@ def test_edit_links_use_omeka_admin_routes(tmp_path) -> None:
 
 
 def test_edit_links_follow_configured_omeka_instance(tmp_path) -> None:
-    validator = OmekaValidator("https://other.example.org/api")
+    base_url = "https://other.example.org/api"
+    validator = Findings()
     validator.errors.append(DataValidationError("Item", 12755, "dcterms:title", "x"))
 
-    validator.export_validation_csv(tmp_path)
+    export_validation_csv(validator, base_url, tmp_path)
 
     with open(tmp_path / "items_validation.csv", encoding="utf-8") as f:
         item_row = next(csv.DictReader(f))

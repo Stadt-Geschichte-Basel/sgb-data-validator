@@ -56,7 +56,7 @@ test_iso639.py                   # Language codes
 ```
 test_integration_issue31.py      # Complete transformation workflow
 test_iconclass_integration.py    # ICONCLASS with real data
-test_offline_workflow.py         # Download-transform-upload
+test_offline_workflow.py         # Download, transform, and validate
 test_creation.py                 # Item/media creation
 ```
 

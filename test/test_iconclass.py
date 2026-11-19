@@ -2,7 +2,7 @@
 
 from pydantic import ValidationError
 
-from src.iconclass import IconclassNotation, validate_iconclass_notation
+from sgb_validator.iconclass import IconclassNotation, validate_iconclass_notation
 
 
 def test_basic_notation() -> None:

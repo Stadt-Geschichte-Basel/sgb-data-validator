@@ -20,7 +20,7 @@ The validator now supports full ISO 639-1 standard validation for language codes
 Language codes in `dcterms:language` fields are automatically validated:
 
 ```bash
-uv run python validate.py --item-set-id 10780
+uv run sgb validate --item-set-id 10780
 ```
 
 If an invalid language code is detected, you'll see an error like:
@@ -34,7 +34,7 @@ If an invalid language code is detected, you'll see an error like:
 You can use the ISO 639-1 validation module directly in your Python code:
 
 ```python
-from src.iso639 import is_valid_iso639_1_code, get_all_codes
+from sgb_validator.iso639 import is_valid_iso639_1_code, get_all_codes
 
 # Validate a single code
 if is_valid_iso639_1_code("en"):
@@ -90,7 +90,7 @@ The test suite covers:
 
 ## Implementation Details
 
-### Module: `src/iso639.py`
+### Module: `sgb_validator/iso639.py`
 
 The module provides:
 
@@ -102,8 +102,8 @@ The module provides:
 
 The validation is integrated into:
 
-1. **`src/vocabularies.py`**: The `is_valid_language()` method now uses ISO 639-1 validation
-2. **`validate.py`**: The `_validate_vocabularies()` method validates `dcterms:language` fields
+1. **`sgb_validator/vocabularies.py`**: The `is_valid_language()` method now uses ISO 639-1 validation
+2. **`sgb_validator/validation.py`**: The `_validate_vocabularies()` method validates `dcterms:language` fields
 3. **Error messages**: Updated to reflect full ISO 639-1 standard
 
 ## Examples

@@ -10,15 +10,15 @@ Iconclass is a hierarchical classification system for art and iconography. This 
 
 ### Files Created
 
-- `src/iconclass.py` - Core validator module with `IconclassNotation` model
+- `sgb_validator/iconclass.py` - Core validator module with `IconclassNotation` model
 - `test/test_iconclass.py` - Unit tests for the validator
 - `test/test_iconclass_integration.py` - Integration tests with VocabularyLoader
 - `examples/iconclass_usage.py` - Usage examples
 
 ### Files Modified
 
-- `src/vocabularies.py` - Enhanced `is_valid_iconclass()` method to use the new validator
-- `src/__init__.py` - Added exports for `IconclassNotation` and `validate_iconclass_notation`
+- `sgb_validator/vocabularies.py` - Enhanced `is_valid_iconclass()` method to use the new validator
+- `sgb_validator/__init__.py` - Added exports for `IconclassNotation` and `validate_iconclass_notation`
 
 ## Features
 
@@ -34,7 +34,7 @@ Validates that Iconclass notation contains only allowed characters:
 - Spaces and dots for formatting
 
 ```python
-from src.iconclass import IconclassNotation
+from sgb_validator.iconclass import IconclassNotation
 
 # Valid
 notation = IconclassNotation(notation="11H")
@@ -63,11 +63,9 @@ print(notation.parts)
 Validates codes against the controlled vocabulary:
 
 ```python
-from pathlib import Path
-from src.vocabularies import VocabularyLoader
+from sgb_validator.vocabularies import VocabularyLoader
 
-vocab_file = Path("data/raw/vocabularies.json")
-loader = VocabularyLoader(vocab_file)
+loader = VocabularyLoader()
 
 loader.is_valid_iconclass("11H")        # True - in vocabulary
 loader.is_valid_iconclass("ZZZ999")     # False - not in vocabulary
@@ -78,7 +76,7 @@ loader.is_valid_iconclass("ZZZ999")     # False - not in vocabulary
 ### Basic Usage
 
 ```python
-from src.iconclass import IconclassNotation, validate_iconclass_notation
+from sgb_validator.iconclass import IconclassNotation, validate_iconclass_notation
 
 # Using the model directly
 notation = IconclassNotation(notation="11H")
@@ -105,11 +103,9 @@ notation = IconclassNotation(notation="11H(JEROME)(+3)")
 ### Integration with Vocabulary
 
 ```python
-from pathlib import Path
-from src.vocabularies import VocabularyLoader
+from sgb_validator.vocabularies import VocabularyLoader
 
-vocab_file = Path("data/raw/vocabularies.json")
-loader = VocabularyLoader(vocab_file)
+loader = VocabularyLoader()
 
 # Validate format and vocabulary
 code = "11H"
@@ -163,7 +159,7 @@ This will demonstrate:
 The implementation follows the repository's coding style:
 
 - Uses Pydantic BaseModel with field validators
-- Follows patterns from `src/models.py` and `src/vocabularies.py`
+- Follows patterns from `sgb_validator/models.py` and `sgb_validator/vocabularies.py`
 - Comprehensive docstrings for all functions and classes
 - Tests follow pattern from `test/test_validation.py`
 

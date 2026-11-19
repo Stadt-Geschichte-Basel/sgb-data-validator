@@ -4,7 +4,7 @@ This example demonstrates how to use the ISO 639-1 validator in the
 sgb-data-validator package.
 """
 
-from src.iso639 import get_all_codes, is_valid_iso639_1_code
+from sgb_validator.iso639 import get_all_codes, is_valid_iso639_1_code
 
 
 def example_basic_validation() -> None:

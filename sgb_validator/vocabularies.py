@@ -6,14 +6,16 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.iconclass import IconclassNotation
-from src.iso639 import is_valid_iso639_1_code
+from sgb_validator.iconclass import IconclassNotation
+from sgb_validator.iso639 import is_valid_iso639_1_code
+
+DEFAULT_VOCABULARIES = Path(__file__).with_name("vocabularies.json")
 
 
 class VocabularyLoader:
     """Loads and manages controlled vocabularies"""
 
-    def __init__(self, vocab_file: Path) -> None:
+    def __init__(self, vocab_file: Path = DEFAULT_VOCABULARIES) -> None:
         with open(vocab_file, encoding="utf-8") as f:
             data: list[dict[str, Any]] = json.load(f)
 

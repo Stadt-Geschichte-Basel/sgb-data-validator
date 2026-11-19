@@ -82,6 +82,10 @@ def test_verified_needs_evidence():
 
 def test_upload_skips_existing_identifier(tmp_path, monkeypatch):
     monkeypatch.setattr(ads, "WORK", tmp_path)
+    file = tmp_path / "schulden" / ROW["file"]
+    file.parent.mkdir(parents=True)
+    file.write_bytes(b"jpg")
+    size, digest = ads.file_digest(file)
     ads.write_manifest("schulden", [ROW])
     posted = []
 
@@ -90,13 +94,28 @@ def test_upload_skips_existing_identifier(tmp_path, monkeypatch):
             return {"dcterms:temporal": [{"@value": "Mittelalter"}]}
 
         def find(self, kind, identifier):
-            return [{"o:id": 999, "o:media": [{"o:id": 5}]}]
+            if kind == "items":
+                return [
+                    {
+                        "o:id": 999,
+                        "o:media": [{"o:id": 5}],
+                        "o:item_set": [{"o:id": ads.ITEM_SET_ID}],
+                    }
+                ]
+            return [
+                {
+                    "o:id": 5,
+                    "o:item": {"o:id": 999},
+                    "o:is_public": False,
+                    "o:size": size,
+                    "o:sha256": digest,
+                }
+            ]
 
         def post(self, *args, **kwargs):
             posted.append(args)
 
-    monkeypatch.setattr(ads, "Omeka", FakeOmeka)
-    assert ads.upload("schulden", apply=True, limit=None) == 0
+    assert ads.upload_rows(FakeOmeka(), "schulden", apply=True, limit=None) == 0
     assert posted == []
     assert ads.read_manifest("schulden")[0]["omeka_item"] == "999"
 
@@ -116,14 +135,25 @@ def test_upload_resumes_item_without_media(tmp_path, monkeypatch):
             }
 
         def find(self, kind, identifier):
-            return [{"o:id": 999, "o:media": []}]
+            return (
+                [
+                    {
+                        "o:id": 999,
+                        "o:media": [],
+                        "o:item_set": [{"o:id": ads.ITEM_SET_ID}],
+                    }
+                ]
+                if kind == "items"
+                else []
+            )
 
-        def post(self, kind, payload, file=None):
-            posted.append((kind, payload["o:item"]["o:id"], file.name))
-            return {"o:id": 5}
+    def create(api, kind, payload, *, target_id, file, apply):
+        posted.append((kind, target_id, file.name))
+        return {"o:id": 5}
 
-    monkeypatch.setattr(ads, "Omeka", FakeOmeka)
-    assert ads.upload("schulden", apply=True, limit=None) == 0
+    monkeypatch.setattr(ads, "create_record", create)
+
+    assert ads.upload_rows(FakeOmeka(), "schulden", apply=True, limit=None) == 0
     assert posted == [("media", 999, "x.jpg")]
     row = ads.read_manifest("schulden")[0]
     assert (row["omeka_item"], row["omeka_media"]) == ("999", "5")
@@ -156,25 +186,6 @@ def test_walk_does_not_take_text_across_the_next_media():
     assert [(m[0], m[3]) for m in media] == [("i1", ""), ("i2", "Text B")]
 
 
-def test_http_error_does_not_show_the_api_key():
-    import httpx
-    import pytest
-
-    api = ads.Omeka.__new__(ads.Omeka)
-    api.key_id, api.key_cred = "ID123secret", "CRED456secret"
-    request = httpx.Request(
-        "GET",
-        "https://omeka.example/api/items/1",
-        params={"key_identity": api.key_id, "key_credential": api.key_cred},
-    )
-    response = httpx.Response(500, request=request, text="bad key CRED456secret")
-    with pytest.raises(RuntimeError) as err:
-        api.check(response)
-    message = str(err.value)
-    assert "secret" not in message
-    assert "https://omeka.example/api/items/1" in message
-
-
 def test_walk_gives_gallery_images_the_text_after_the_gallery():
     nodes = {
         "root": {"type": "story", "children": ["g", "t"]},
@@ -185,26 +196,6 @@ def test_walk_gives_gallery_images_the_text_after_the_gallery():
     }
     media = ads.walk(nodes, "root")
     assert [(m[0], m[3]) for m in media] == [("i1", "Text G"), ("i2", "Text G")]
-
-
-def test_omeka_api_error_does_not_show_the_api_key():
-    import httpx
-    import pytest
-
-    from src.api import OmekaAPI
-
-    api = OmekaAPI("https://omeka.example", "ID123secret", "CRED456secret")
-    request = httpx.Request(
-        "GET",
-        "https://omeka.example/api/items/1",
-        params=api._add_auth_params({}),
-    )
-    response = httpx.Response(404, request=request)
-    with pytest.raises(httpx.HTTPStatusError) as err:
-        api._raise_for_status(response)
-    assert "secret" not in str(err.value)
-    assert err.value.response.status_code == 404
-    api.close()
 
 
 def test_walk_gives_the_first_of_six_gallery_images_the_text_after_it():
@@ -240,20 +231,33 @@ def test_upload_resumes_from_a_manifest_with_omeka_item(tmp_path, monkeypatch):
             }
 
         def find(self, kind, identifier):
-            return [{"o:id": 999, "o:media": []}]
+            return (
+                [
+                    {
+                        "o:id": 999,
+                        "o:media": [],
+                        "o:item_set": [{"o:id": ads.ITEM_SET_ID}],
+                    }
+                ]
+                if kind == "items"
+                else []
+            )
 
-        def post(self, kind, payload, file=None):
-            posted.append(kind)
-            return {"o:id": 5}
+    def create(api, kind, payload, **kwargs):
+        posted.append(kind)
+        return {"o:id": 5}
 
-    monkeypatch.setattr(ads, "Omeka", FakeOmeka)
-    assert ads.upload("schulden", apply=True, limit=None) == 0
+    monkeypatch.setattr(ads, "create_record", create)
+
+    assert ads.upload_rows(FakeOmeka(), "schulden", apply=True, limit=None) == 0
     assert posted == ["media"]
     assert ads.read_manifest("schulden")[0]["omeka_media"] == "5"
 
 
 def test_dry_run_leaves_the_manifest_unchanged(tmp_path, monkeypatch):
     monkeypatch.setattr(ads, "WORK", tmp_path)
+    (tmp_path / "schulden" / "files").mkdir(parents=True)
+    (tmp_path / "schulden" / "files" / "x.jpg").write_bytes(b"jpg")
     path = ads.write_manifest("schulden", [ROW])
     before = path.read_text(encoding="utf-8")
 
@@ -262,10 +266,19 @@ def test_dry_run_leaves_the_manifest_unchanged(tmp_path, monkeypatch):
             return {"dcterms:temporal": [{"@value": "Mittelalter"}]}
 
         def find(self, kind, identifier):
-            return [{"o:id": 999, "o:media": []}]
+            return (
+                [
+                    {
+                        "o:id": 999,
+                        "o:media": [],
+                        "o:item_set": [{"o:id": ads.ITEM_SET_ID}],
+                    }
+                ]
+                if kind == "items"
+                else []
+            )
 
-    monkeypatch.setattr(ads, "Omeka", FakeOmeka)
-    assert ads.upload("schulden", apply=False, limit=None) == 0
+    assert ads.upload_rows(FakeOmeka(), "schulden", apply=False, limit=None) == 0
     assert path.read_text(encoding="utf-8") == before
 
 
@@ -277,19 +290,18 @@ def test_upload_skips_an_unsupported_kind(tmp_path, monkeypatch, capsys):
         def get(self, kind, rid):
             return {"dcterms:temporal": [{"@value": "Mittelalter"}]}
 
-    monkeypatch.setattr(ads, "Omeka", FakeOmeka)
-    assert ads.upload("schulden", apply=False, limit=None) == 1
+    assert ads.upload_rows(FakeOmeka(), "schulden", apply=False, limit=None) == 1
     assert "kind video not supported" in capsys.readouterr().out
 
 
 def test_export_layer_raises_on_an_arcgis_error_body(tmp_path):
-    import httpx
+    import httpx2
     import pytest
 
     def handler(request):
-        return httpx.Response(200, json={"error": {"code": 499}})
+        return httpx2.Response(200, json={"error": {"code": 499}})
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    with pytest.raises(httpx.HTTPError):
+    client = httpx2.Client(transport=httpx2.MockTransport(handler))
+    with pytest.raises(httpx2.HTTPError):
         ads.export_layer(client, "https://x.example/FeatureServer/0", tmp_path / "a")
     assert not (tmp_path / "a").exists()

@@ -72,19 +72,16 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          uv sync
+          uv sync --locked --group docs
 
       - name: Run validation and generate reports
         env:
           OMEKA_URL: ${{ secrets.OMEKA_URL }}
           ITEM_SET_ID: ${{ secrets.ITEM_SET_ID }}
-          KEY_IDENTITY: ${{ secrets.KEY_IDENTITY }}
-          KEY_CREDENTIAL: ${{ secrets.KEY_CREDENTIAL }}
         run: |
           mkdir -p analysis
-          uv run python validate.py \
+          uv run --locked sgb validate \
             --output analysis/validation_report.txt \
-            --profile \
             --export-csv \
             --csv-output analysis/
         continue-on-error: true

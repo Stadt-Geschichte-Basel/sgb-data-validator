@@ -28,7 +28,7 @@ jobs:
           version: 'latest'
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Run validation
         env:
@@ -37,12 +37,14 @@ jobs:
           KEY_IDENTITY: ${{ secrets.KEY_IDENTITY }}
           KEY_CREDENTIAL: ${{ secrets.KEY_CREDENTIAL }}
         run: |
-          uv run python validate.py --output validation_report.txt
+          uv run --locked sgb validate --output validation_report.txt --export-csv
 
       - name: Upload validation report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: validation-report
-          path: validation_report.txt
+          path: |
+            validation_report.txt
+            validation_reports/*.csv
           retention-days: 30

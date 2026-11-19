@@ -79,7 +79,7 @@ uv run python -m pytest test/ -v
 uv run python test/test_validation.py
 
 # Run with coverage
-uv run python -m pytest test/ --cov=src --cov-report=html
+uv run python -m pytest test/ --cov=sgb_validator --cov-report=html
 ```
 
 ### Running the Linter and Formatter
@@ -133,11 +133,10 @@ Understanding the repository layout:
 
 ```
 sgb-data-validator/
-├── src/                    # Source code
+├── sgb_validator/                    # Source code
 │   ├── models.py          # Pydantic data models
 │   ├── vocabularies.py    # Controlled vocabulary loader
 │   ├── iconclass.py       # Iconclass notation validator
-│   ├── profiling.py       # Data profiling utilities
 │   └── api.py             # API client
 ├── test/                   # Test suite
 │   ├── test_validation.py # Validation tests
@@ -149,7 +148,6 @@ sgb-data-validator/
 ├── examples/               # Usage examples
 │   ├── api_usage.py       # API examples
 │   └── iconclass_usage.py # Iconclass examples
-├── validate.py            # Main validation script
 ├── main.py                # Alternative entry point
 ├── README.md              # Main documentation
 ├── IMPLEMENTATION.md      # Implementation details

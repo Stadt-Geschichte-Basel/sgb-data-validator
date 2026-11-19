@@ -4,66 +4,11 @@ This module provides functions to transform and clean Omeka S data,
 including normalization of whitespace characters and other data cleaning operations.
 """
 
-import asyncio
 import html
 import re
 import unicodedata
-from difflib import SequenceMatcher
-from functools import lru_cache
-from pathlib import Path
+from copy import deepcopy
 from typing import Any
-
-import httpx
-
-BOOK_DOI_METADATA: tuple[dict[str, str], ...] = (
-    {
-        "DOI": "10.21255/SGB-01-406352",
-        "id": "https://doi.org/10.21255/sgb-01-406352",
-        "title": "Auf dem langen Weg zur Stadt. 50 000 v. Chr. – 800 n. Chr.",
-    },
-    {
-        "DOI": "10.21255/SGB-02-404936",
-        "id": "https://doi.org/10.21255/sgb-02-404936",
-        "title": "Eine Bischofsstadt zwischen Oberrhein und Jura. 800 – 1273",
-    },
-    {
-        "DOI": "10.21255/SGB-03-345800",
-        "id": "https://doi.org/10.21255/sgb-03-345800",
-        "title": "Stadt in Verhandlung. 1250 – 1530",
-    },
-    {
-        "DOI": "10.21255/SGB-04-283636",
-        "id": "https://doi.org/10.21255/sgb-04-283636",
-        "title": "Aufbrüche, Krisen, Transformationen. 1510 – 1790",
-    },
-    {
-        "DOI": "10.21255/SGB-05-155353",
-        "id": "https://doi.org/10.21255/sgb-05-155353",
-        "title": "Hinter der Mauer, vor der Moderne. 1760 – 1859",
-    },
-    {
-        "DOI": "10.21255/SGB-06-810743",
-        "id": "https://doi.org/10.21255/sgb-06-810743",
-        "title": "Die beschleunigte Stadt. 1856 – 1914",
-    },
-    {
-        "DOI": "10.21255/SGB-07-663402",
-        "id": "https://doi.org/10.21255/sgb-07-663402",
-        "title": "Stadt an der Grenze in einer Zeit der Gefährdung. 1912 – 1966",
-    },
-    {
-        "DOI": "10.21255/SGB-08-796384",
-        "id": "https://doi.org/10.21255/sgb-08-796384",
-        "title": "Auf dem Weg ins Jetzt. Seit 1960",
-    },
-    {
-        "DOI": "10.21255/SGB-09-486500",
-        "id": "https://doi.org/10.21255/sgb-09-486500",
-        "title": "Stadträume. Offen und begrenzt, gestaltet und umkämpft",
-    },
-)
-
-DOI_MATCH_THRESHOLD = 0.86
 
 
 def normalize_whitespace(text: str) -> str:
@@ -318,118 +263,13 @@ def normalize_urls(text: str) -> str:
     return text
 
 
-async def check_https_available(url: str, timeout: float = 5.0) -> bool:
-    """Check if HTTPS version of an HTTP URL is available.
-
-    Args:
-        url: The HTTP URL to check
-        timeout: Request timeout in seconds
-
-    Returns:
-        True if HTTPS version is available and responds with 2xx or 3xx status,
-        False otherwise
-    """
-    if not url.startswith("http://"):
-        return False
-
-    https_url = url.replace("http://", "https://", 1)
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.head(https_url)
-            # Consider 2xx and 3xx as success
-            return 200 <= response.status_code < 400
-    except (httpx.RequestError, httpx.HTTPError):
-        # If HTTPS fails, keep HTTP
-        return False
-
-
-async def upgrade_http_to_https_async(text: str) -> str:
-    """Upgrade HTTP URLs to HTTPS where available (async version).
-
-    Finds all HTTP URLs in the text and checks if HTTPS is available.
-    If HTTPS works, replaces the HTTP URL with the HTTPS version.
-
-    Args:
-        text: The text containing URLs
-
-    Returns:
-        The text with HTTP URLs upgraded to HTTPS where possible
-    """
-    if not text:
-        return text
-
-    # Find all HTTP URLs (not already HTTPS)
-    # Stop at whitespace, brackets, parentheses, and other common delimiters
-    http_urls = re.findall(r"http://[^\s<>\[\](){}|\\^`]+", text)
-
-    if not http_urls:
-        return text
-
-    # Check all URLs concurrently
-    checks = [check_https_available(url) for url in http_urls]
-    results = await asyncio.gather(*checks)
-
-    # Replace HTTP with HTTPS for URLs where HTTPS is available
-    for url, https_available in zip(http_urls, results, strict=True):
-        if https_available:
-            https_url = url.replace("http://", "https://", 1)
-            text = text.replace(url, https_url)
-
-    return text
-
-
-def upgrade_http_to_https(text: str) -> str:
-    """Upgrade HTTP URLs to HTTPS where available (sync wrapper).
-
-    This is a synchronous wrapper around upgrade_http_to_https_async.
-    Use this in non-async contexts.
-
-    Args:
-        text: The text containing URLs
-
-    Returns:
-        The text with HTTP URLs upgraded to HTTPS where possible
-    """
-    if not text:
-        return text
-
-    # Run the async function in an event loop
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If we're already in an event loop, create a new one
-            import threading
-
-            result = [text]
-
-            def run_in_thread():
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result[0] = new_loop.run_until_complete(
-                    upgrade_http_to_https_async(text)
-                )
-                new_loop.close()
-
-            thread = threading.Thread(target=run_in_thread)
-            thread.start()
-            thread.join()
-            return result[0]
-        else:
-            return loop.run_until_complete(upgrade_http_to_https_async(text))
-    except RuntimeError:
-        # No event loop exists, create one
-        return asyncio.run(upgrade_http_to_https_async(text))
-
-
-def apply_text_transformations(text: str, upgrade_https: bool = True) -> str:
+def apply_text_transformations(text: str) -> str:
     """Apply all text transformations in the correct order.
 
     This is the main function that combines all text transformations.
 
     Args:
         text: The text to transform
-        upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
 
     Returns:
         The transformed text
@@ -456,25 +296,20 @@ def apply_text_transformations(text: str, upgrade_https: bool = True) -> str:
     # 6. Normalize Wikidata URLs
     text = normalize_wikidata_url(text)
 
-    # 7. Upgrade HTTP to HTTPS where available (before URL normalization)
-    if upgrade_https:
-        text = upgrade_http_to_https(text)
-
-    # 8. Normalize other URLs
+    # 7. Normalize other URLs
     text = normalize_urls(text)
 
     return text
 
 
 def transform_property_value(
-    prop: dict[str, Any], apply_all: bool = False, upgrade_https: bool = True
+    prop: dict[str, Any], apply_all: bool = False
 ) -> dict[str, Any]:
     """Transform a single Omeka property.
 
     Args:
         prop: The property dictionary to transform
         apply_all: If True, apply all transformations; if False, only whitespace
-        upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
 
     Returns:
         The transformed property
@@ -487,9 +322,7 @@ def transform_property_value(
         value = prop["@value"]
         if isinstance(value, str):
             if apply_all:
-                normalized = apply_text_transformations(
-                    value, upgrade_https=upgrade_https
-                )
+                normalized = apply_text_transformations(value)
             else:
                 normalized = normalize_whitespace(value)
             # Create a new dict to avoid modifying the original
@@ -501,14 +334,13 @@ def transform_property_value(
 
 
 def transform_item(
-    item_data: dict[str, Any], apply_all: bool = False, upgrade_https: bool = True
+    item_data: dict[str, Any], apply_all: bool = False
 ) -> dict[str, Any]:
     """Transform an item's data by normalizing text in all text fields.
 
     Args:
         item_data: The item data dictionary
         apply_all: If True, apply all transformations; if False, only whitespace
-        upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
 
     Returns:
         A new dictionary with transformed data
@@ -520,24 +352,16 @@ def transform_item(
     result = {}
 
     for key, value in item_data.items():
-        if apply_all and key == "dcterms:subject":
-            # The data model dropped subjects (issue #44); remove leftovers.
-            continue
         if key == "o:title" and isinstance(value, str):
             # Transform the title directly
             if apply_all:
-                result[key] = apply_text_transformations(
-                    value, upgrade_https=upgrade_https
-                )
+                result[key] = apply_text_transformations(value)
             else:
                 result[key] = normalize_whitespace(value)
         elif key.startswith("dcterms:") and isinstance(value, list):
             # Transform Dublin Core properties
             result[key] = [
-                transform_property_value(
-                    prop, apply_all=apply_all, upgrade_https=upgrade_https
-                )
-                for prop in value
+                transform_property_value(prop, apply_all=apply_all) for prop in value
             ]
         else:
             # Keep other fields as-is
@@ -546,188 +370,6 @@ def transform_item(
     return result
 
 
-def normalize_doi_match_text(text: str) -> str:
-    """Normalize text for fuzzy DOI title matching."""
-    if not text:
-        return ""
-
-    text = unicodedata.normalize("NFKC", text).lower()
-    text = text.replace("–", "-").replace("—", "-").replace("−", "-")
-    text = unicodedata.normalize("NFKD", text)
-    text = re.sub(r"[\u0300-\u036f]", "", text)
-    text = text.replace("chr.", "chr")
-    text = re.sub(r"\(hg[.,:]?\)|\bhg[.,:]?", " ", text)
-    text = re.sub(r"\bstadt\.?geschichte\.?basel\b", " ", text)
-    text = re.sub(r"\bbasel\b|\bbd\.?\b|\bband\b", " ", text)
-    text = re.sub(r"[^a-z0-9]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _partial_ratio(needle: str, haystack: str) -> float:
-    """Return how much of ``needle`` appears within ``haystack`` (difflib, no deps).
-
-    Directional on purpose: a ``haystack`` shorter than ``needle`` cannot contain it
-    and scores low. (Swapping the two would let a 2-char citation like "ch" match a
-    full book title at 1.0 — see the stadtgeschichtebasel.ch false positive.)
-    """
-    if not needle or not haystack:
-        return 0.0
-    if needle in haystack:
-        return 1.0
-
-    window = len(needle)
-    best = 0.0
-    for index in range(0, max(len(haystack) - window + 1, 1)):
-        score = SequenceMatcher(None, needle, haystack[index : index + window]).ratio()
-        if score > best:
-            best = score
-    return best
-
-
-def _literal_is_part_of_values(item_data: dict[str, Any]) -> list[str]:
-    values = []
-    for prop in item_data.get("dcterms:isPartOf") or []:
-        if isinstance(prop, dict) and prop.get("type") == "literal":
-            value = prop.get("@value")
-            if isinstance(value, str) and value.strip():
-                values.append(value)
-    return values
-
-
-def _abb_identifiers(item_data: dict[str, Any]) -> list[str]:
-    identifiers = []
-    for prop in item_data.get("dcterms:identifier") or []:
-        if not isinstance(prop, dict):
-            continue
-        value = prop.get("@value")
-        if isinstance(value, str) and re.fullmatch(r"abb\d+", value.strip(), re.I):
-            identifiers.append(value.strip())
-    return identifiers
-
-
-def _doi_uri_exists(is_part_of: list[Any], doi_uri: str) -> bool:
-    doi_uri = doi_uri.lower()
-    return any(
-        isinstance(prop, dict) and str(prop.get("@id", "")).lower() == doi_uri
-        for prop in is_part_of
-    )
-
-
-def _best_book_doi_match(
-    is_part_of_literals: list[str],
-) -> tuple[dict[str, str], float] | None:
-    text = normalize_doi_match_text(" ".join(is_part_of_literals))
-    if not text:
-        return None
-
-    best: tuple[dict[str, str], float] | None = None
-    for metadata in BOOK_DOI_METADATA:
-        title = normalize_doi_match_text(metadata["title"])
-        score = _partial_ratio(title, text)
-        if score >= DOI_MATCH_THRESHOLD and (best is None or score > best[1]):
-            best = (metadata, score)
-    return best
-
-
-def enrich_item_with_book_doi(
-    item_data: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
-    """Replace a literal dcterms:isPartOf citation with the matching book DOI URI.
-
-    Matching uses only existing isPartOf literals; on a confident match the literal
-    value(s) are replaced by a canonical DOI URI (non-literal values are kept), so
-    isPartOf is uniform per volume. Returns (item, enrichment_report, missing_report);
-    ABB items without a usable literal dcterms:isPartOf value are reported for review.
-    """
-    if not isinstance(item_data, dict):
-        return item_data, None, None
-
-    is_part_of_literals = _literal_is_part_of_values(item_data)
-    abb_identifiers = _abb_identifiers(item_data)
-
-    if not is_part_of_literals:
-        if abb_identifiers:
-            return (
-                item_data,
-                None,
-                {
-                    "item_id": item_data.get("o:id"),
-                    "title": item_data.get("o:title"),
-                    "identifiers": abb_identifiers,
-                    "reason": "missing_literal_dcterms_isPartOf",
-                },
-            )
-        return item_data, None, None
-
-    match = _best_book_doi_match(is_part_of_literals)
-    if match is None:
-        return item_data, None, None
-
-    metadata, score = match
-    is_part_of = list(item_data.get("dcterms:isPartOf") or [])
-    if _doi_uri_exists(is_part_of, metadata["id"]):
-        return item_data, None, None
-
-    # Replace the (inconsistent) citation literal(s) with the canonical DOI URI so
-    # isPartOf is uniform per volume. Non-literal values are preserved.
-    # ponytail: assumes one citation literal per item (true in current data).
-    kept = [
-        prop
-        for prop in is_part_of
-        if not (isinstance(prop, dict) and prop.get("type") == "literal")
-    ]
-    result = item_data.copy()
-    result["dcterms:isPartOf"] = [
-        *kept,
-        {
-            "type": "uri",
-            "property_id": 33,
-            "property_label": "Is Part Of",
-            "is_public": True,
-            "@id": metadata["id"],
-            "o:label": metadata["title"],
-        },
-    ]
-
-    return (
-        result,
-        {
-            "item_id": item_data.get("o:id"),
-            "title": item_data.get("o:title"),
-            "doi": metadata["DOI"],
-            "doi_uri": metadata["id"],
-            "doi_title": metadata["title"],
-            "match_score": round(score, 3),
-        },
-        None,
-    )
-
-
-def enrich_items_with_book_dois(
-    items: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Enrich items with book DOI URI values and collect a metadata report."""
-    enriched_items = []
-    enriched_report = []
-    missing_is_part_of = []
-
-    for item in items:
-        enriched_item, report_entry, missing_entry = enrich_item_with_book_doi(item)
-        enriched_items.append(enriched_item)
-        if report_entry:
-            enriched_report.append(report_entry)
-        if missing_entry:
-            missing_is_part_of.append(missing_entry)
-
-    return enriched_items, {
-        "book_dois_considered": len(BOOK_DOI_METADATA),
-        "items_enriched": len(enriched_report),
-        "enriched_items": enriched_report,
-        "abb_items_missing_is_part_of": missing_is_part_of,
-    }
-
-
-#: Fields a media inherits from its parent item when the media has no value.
 INHERITED_MEDIA_FIELDS = ("dcterms:language", "dcterms:temporal")
 
 #: Omeka custom vocabulary used by most existing media dcterms:format values.
@@ -741,15 +383,6 @@ FORMAT_VALUE_TEMPLATE = {
 
 # Hyphenated Creative Commons notation ("CC-BY-SA 4.0") -> official ("CC BY-SA 4.0").
 _CC_HYPHEN_RE = re.compile(r"\bCC-BY(?=[\s-])")
-
-
-@lru_cache(maxsize=1)
-def load_mime_types() -> frozenset[str]:
-    """Return the MIME types of the controlled vocabulary."""
-    from src.vocabularies import VocabularyLoader
-
-    vocab_file = Path(__file__).parent.parent / "data" / "raw" / "vocabularies.json"
-    return frozenset(VocabularyLoader(vocab_file).mime_types)
 
 
 def fill_media_from_parent(
@@ -812,7 +445,6 @@ def normalize_rights_notation(media_data: dict[str, Any]) -> dict[str, Any]:
 def transform_media(
     media_data: dict[str, Any],
     apply_all: bool = False,
-    upgrade_https: bool = True,
     parent_item: dict[str, Any] | None = None,
     allowed_mime_types: set[str] | None = None,
 ) -> dict[str, Any]:
@@ -824,7 +456,6 @@ def transform_media(
     Args:
         media_data: The media data dictionary
         apply_all: If True, apply all transformations; if False, only whitespace
-        upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
         parent_item: Parent item; fills empty language/temporal (apply_all only)
         allowed_mime_types: MIME vocabulary; fills empty format (apply_all only)
 
@@ -832,9 +463,7 @@ def transform_media(
         A new dictionary with transformed data
     """
     # Media has the same structure as items for the fields we care about
-    result = transform_item(
-        media_data, apply_all=apply_all, upgrade_https=upgrade_https
-    )
+    result = transform_item(media_data, apply_all=apply_all)
 
     if apply_all:
         result = normalize_rights_notation(result)
@@ -852,12 +481,8 @@ def transform_item_set_data(
     items: list[dict[str, Any]],
     media: list[dict[str, Any]],
     apply_all: bool = False,
-    upgrade_https: bool = True,
-    return_report: bool = False,
-) -> (
-    tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]
-    | tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]
-):
+    allowed_mime_types: set[str] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     """Transform an entire item set with all its items and media.
 
     This function:
@@ -870,26 +495,15 @@ def transform_item_set_data(
         items: List of item data dictionaries
         media: List of media data dictionaries
         apply_all: If True, apply all transformations; if False, only whitespace
-        upgrade_https: If True, upgrade HTTP URLs to HTTPS where available
-        return_report: If True, include a DOI enrichment report in the return value
 
     Returns:
         Tuple of (transformed_item_set, transformed_items, transformed_media),
-        plus a report dictionary if return_report=True.
     """
     # Transform the item set itself (though it usually doesn't have much text)
-    transformed_item_set = transform_item(
-        item_set_data, apply_all=apply_all, upgrade_https=upgrade_https
-    )
+    transformed_item_set = transform_item(item_set_data, apply_all=apply_all)
 
     # Transform all items
-    transformed_items = [
-        transform_item(item, apply_all=apply_all, upgrade_https=upgrade_https)
-        for item in items
-    ]
-
-    # Enrich item-level isPartOf citations with book DOI URI values.
-    transformed_items, doi_report = enrich_items_with_book_dois(transformed_items)
+    transformed_items = [transform_item(item, apply_all=apply_all) for item in items]
 
     # Transform all media (includes setting private flag for placeholders)
     items_by_id = {i.get("o:id"): i for i in transformed_items}
@@ -897,9 +511,8 @@ def transform_item_set_data(
         transform_media(
             m,
             apply_all=apply_all,
-            upgrade_https=upgrade_https,
             parent_item=items_by_id.get((m.get("o:item") or {}).get("o:id")),
-            allowed_mime_types=load_mime_types() if apply_all else None,
+            allowed_mime_types=allowed_mime_types,
         )
         for m in media
     ]
@@ -910,17 +523,7 @@ def transform_item_set_data(
         transformed_items, transformed_media
     )
 
-    if return_report:
-        return (
-            transformed_item_set,
-            transformed_items,
-            transformed_media,
-            {
-                "doi_is_part_of_enrichment": doi_report,
-            },
-        )
-
-    return transformed_item_set, transformed_items, transformed_media
+    return deepcopy((transformed_item_set, transformed_items, transformed_media))
 
 
 def has_placeholder_media(media_data: dict[str, Any]) -> bool:

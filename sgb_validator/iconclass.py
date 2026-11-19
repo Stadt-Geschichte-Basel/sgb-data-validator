@@ -46,7 +46,7 @@ class IconclassNotation(BaseModel):
         if not v or v.strip() == "":
             raise ValueError("Notation cannot be empty")
 
-        # Allow digits, uppercase letters, 'q', parentheses, plus signs, spaces, and dots
+        # Allow digits, uppercase letters, q, and notation punctuation.
         if not re.match(r"^[0-9A-Zq\(\)\+\s\.]*$", v):
             raise ValueError("Invalid characters in Iconclass notation")
         return v
@@ -69,7 +69,7 @@ class IconclassNotation(BaseModel):
             if not part:
                 continue
 
-            # Handle (+X) style additions - each character after + is added incrementally
+            # Add each character in (+X) style additions in sequence.
             if part.startswith("(+"):
                 temp_last_part = last_part + "(+"
                 for char in part[2:]:

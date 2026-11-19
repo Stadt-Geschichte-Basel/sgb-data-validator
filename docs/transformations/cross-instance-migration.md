@@ -1,5 +1,7 @@
 # Migration and Creation Methods
 
+> Historical record. See the [operations index](README.md) for recorded outcomes.
+
 This document explains how to use the creation methods added to support true data migration between Omeka S instances.
 
 ## Overview
@@ -231,6 +233,6 @@ See `examples/migration_usage.py` for complete working examples:
 
 ## See Also
 
-- `API.md` - Complete API documentation with workflow diagrams
+- [Legacy API guide](legacy-api-guide.md)
 - `examples/migration_usage.py` - Working code examples
 - `test/test_creation.py` - Test cases showing expected behavior

@@ -17,11 +17,8 @@ import csv
 import os
 import re
 import sys
-import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import httpx
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,7 +26,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 from generate_triage import RIGHTS_CHECK, suggested_license_uri  # noqa: E402
 
-from validate import OmekaValidator  # noqa: E402
+from sgb_validator.api import OmekaAPI  # noqa: E402
+from sgb_validator.snapshots import download_snapshot  # noqa: E402
 
 #: Clear spelling errors in rights texts. Meaning does not change.
 TYPO_FIXES = [
@@ -94,36 +92,24 @@ def build_rows(media_records: list[dict]) -> list[dict]:
 def main() -> int:
     out = Path(sys.argv[1])
     load_dotenv(ROOT / ".env")
-    v = OmekaValidator(
-        os.environ["OMEKA_URL"].strip().strip('"').rstrip("/"),
+    with OmekaAPI(
+        os.environ["OMEKA_URL"],
         os.environ["KEY_IDENTITY"],
         os.environ["KEY_CREDENTIAL"],
-    )
-    items = v.fetch_items(int(os.environ.get("ITEM_SET_ID", "10780")))
+    ) as api:
+        snapshot = download_snapshot(api, int(os.environ.get("ITEM_SET_ID", "10780")))
     expected = int(os.environ.get("EXPECTED_ITEMS", "0"))
-    if expected and len(items) != expected:
-        raise SystemExit(f"Got {len(items)} items, expected {expected}: truncated?")
-
-    def fetch(item_id: int) -> list[dict]:
-        for attempt in range(4):
-            try:
-                return v.fetch_media(item_id)
-            except httpx.TransportError:
-                if attempt == 3:
-                    raise
-                time.sleep(2 * (attempt + 1))
-        return []
-
-    with ThreadPoolExecutor(6) as pool:
-        media = [m for ms in pool.map(fetch, [i["o:id"] for i in items]) for m in ms]
-    rows = build_rows(media)
+    if expected and len(snapshot.items) != expected:
+        raise SystemExit(f"Got {len(snapshot.items)} items, expected {expected}")
+    rows = build_rows(snapshot.media)
     with out.open("w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(
             f, fieldnames=["kind", "id", "field", "old", "new", "reason"]
         )
         w.writeheader()
         w.writerows(rows)
-    print(f"{len(items)} items, {len(media)} media, {len(rows)} rows -> {out}")
+    scanned = f"{len(snapshot.items)} items, {len(snapshot.media)} media"
+    print(f"{scanned}, {len(rows)} rows -> {out}")
     return 0
 
 
