@@ -69,10 +69,20 @@ Run the same procedure for each story after `collect <story>`. Stories that are 
 - `kontrollbuero`: `unibas.maps.arcgis.com`. Some items can be visible to the organization only.
 - `juedisches-basel`: not a StoryMap. Collect the sources from https://das-juedische-basel.stadtgeschichtebasel.ch/ and the GitHub repository `Stadt-Geschichte-Basel/juedisches-milieu-basel`.
 
-## Parent screenshots
+## Parent media
 
-For each story, make a full-page screenshot of the interactive story in high resolution. Save it as `data/data_stories/<story>/screenshot.png`.
-Then run the dry run: `uv run python scripts/archive_data_stories.py parent <story> --screenshot data/data_stories/<story>/screenshot.png`.
+The parent media is the PDF of the story from its Zenodo record, not a screenshot (decision 2026-11-19).
+Download the PDF from the DOI in `STORIES` and compare its MD5 with the Zenodo checksum.
+Then run the dry run: `uv run python scripts/archive_data_stories.py parent <story> --screenshot <pdf>`.
+Delete the old story media only after the user confirms.
+
+## Known limits
+
+- Many StABS Gerichtsarchiv volumes (for example A 41, C 16, D 6, E 7) have no scans in the Lesesaal. Then no record-level rights statement exists.
+  In that case, record the volume permalink in `permalink` and keep `rights_status=story_cleared`.
+  To unblock such rows, order scans and a publication permit from StABS, or ask the project lead to confirm the house practice.
+- The binding StABS rights statement is in the viewer of each record ("i" icon), not in the general terms.
+- Give the Chrome extension permission for each holder site before the session (for example sammlungonline.kunstmuseumbasel.ch, hmb.ch).
 
 ## Finish
 

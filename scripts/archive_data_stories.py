@@ -173,7 +173,86 @@ HOLDERS = {
     "Archäologische Bodenforschung": "Archäologische Bodenforschung Basel-Stadt",
     "Kunstmuseum Basel": "Kunstmuseum Basel",
     "Wikimedia": "Wikimedia Commons",
+    "STABS": "Staatsarchiv Basel-Stadt",
+    "Bodenforschung": "Archäologische Bodenforschung Basel-Stadt",
+    "UB,": "Universitätsbibliothek Basel",
+    "ETH-Bibliothek": "ETH-Bibliothek Zürich",
+    "ETH Zürich": "ETH Zürich",
+    "BnF": "Bibliothèque nationale de France",
+    "Kunstmus": "Kunstmuseum Basel",
+    "SRF": "Schweizer Radio und Fernsehen SRF",
 }
+
+PDM = "https://creativecommons.org/publicdomain/mark/1.0/"
+BY_SA = "https://creativecommons.org/licenses/by-sa/4.0/"
+# House practice in Omeka item set 10780 (counts 2026-11-19). Suggestions only:
+# a row stays story_cleared (private) until the rights are checked.
+HOUSE_RIGHTS = {
+    "Archäologische Bodenforschung Basel-Stadt": ("CC BY-SA 4.0", BY_SA),
+    "Historisches Museum Basel": ("CC BY-SA 4.0", BY_SA),
+    "Universitätsbibliothek Basel": ("Public Domain Mark", PDM),
+    "Kunstmuseum Basel": ("Bilddaten gemeinfrei", PDM),
+    "Staatsarchiv Basel-Stadt": ("Bilddaten gemeinfrei", PDM),
+}
+CREDIT = re.compile(
+    r"(?:Foto|Fotos|Bild|Graphik|Grafik|Karte|Plan|Fotograf):\s*([^.;(]+)"
+)
+
+
+def suggest(row: dict[str, Any], authors: list[str]) -> None:
+    """Pre-fill title, creator, holder, rights and decision from the credit text."""
+    text = f"{row.get('caption', '')} {row.get('attribution', '')}"
+    if not row.get("title"):
+        row["title"] = row.get("caption") or row.get("alt", "")
+    if not row.get("title"):
+        # The attribution often holds the description before the credit.
+        head = re.split(
+            r"(?:Foto|Fotos|Bild|Graphik|Grafik|Karte|Plan|Quelle):",
+            row.get("attribution", ""),
+        )[0]
+        head = head.strip(" .,;")
+        if len(head.split()) >= 3:
+            row["title"] = head
+    credits = [c.strip() for c in CREDIT.findall(text)]
+    if credits and not row.get("creator"):
+        row["creator"] = "; ".join(dict.fromkeys(credits))
+    author = next((a for a in authors if a.split()[-1] in text), None)
+    if author and not row.get("holder"):
+        row["holder"] = "Stadt.Geschichte.Basel"
+        row["creator"] = row.get("creator") or author
+    if row.get("holder") in HOUSE_RIGHTS and not row.get("rights"):
+        label, lic = HOUSE_RIGHTS[row["holder"]]
+        credit = ", ".join(
+            x for x in (row["holder"], row.get("shelfmark"), row.get("creator")) if x
+        )
+        row["rights"] = f"{label}, {credit}"
+        row["license"] = lic
+        row["notes"] = (
+            row.get("notes", "") + " Rechte nach Hauspraxis (ungeprüft)."
+        ).strip()
+    elif row.get("holder") == "Stadt.Geschichte.Basel" and not row.get("rights"):
+        row["rights"] = f"CC BY-SA 4.0, {row['creator']}"
+        row["license"] = BY_SA
+        row["notes"] = (
+            row.get("notes", "")
+            + " Eigene Grafik der Story, Lizenz beim Autor bestätigen."
+        ).strip()
+    if "SRF" in text:
+        row["decision"] = "review"
+        row["notes"] = (
+            row.get("notes", "")
+            + " Fernseh-Still: urheberrechtlich geschützt, Bewilligung nötig."
+        ).strip()
+    elif not row.get("decision"):
+        has_source = row.get("holder") or row.get("creator")
+        row["decision"] = "ingest" if row.get("title") and has_source else "review"
+    if row.get("context") and not row.get("description"):
+        sentences = re.split(r"(?<=[.!?])\s+", row["context"].split(" | ")[-1])
+        row["description"] = " ".join(sentences[:2])
+        row["notes"] = (
+            row.get("notes", "") + " Beschreibung aus dem Story-Text, prüfen."
+        ).strip()
+
 
 FORMATS = {
     ".jpg": "image/jpeg",
@@ -248,7 +327,9 @@ def write_manifest(slug: str, rows: list[dict[str, Any]]) -> Path:
     path = WORK / slug / "manifest.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=COLUMNS, extrasaction="ignore")
+        writer = csv.DictWriter(
+            f, fieldnames=COLUMNS, extrasaction="ignore", lineterminator="\n"
+        )
         writer.writeheader()
         writer.writerows(rows)
     return path
@@ -278,8 +359,19 @@ def walk(
     parent: dict[str, str] = {}
 
     def visit(node_id: str) -> None:
+        if node_id in parent.values() and node_id in order:
+            return
         order.append(node_id)
-        for child in nodes.get(node_id, {}).get("children", []) or []:
+        node = nodes.get(node_id, {})
+        # Swipe and similar blocks reference their content in data, not children.
+        refs = [
+            v
+            for v in json.dumps(node.get("data", {})).split('"')
+            if v in nodes and v != node_id
+        ]
+        for child in (node.get("children", []) or []) + refs:
+            if child in order:
+                continue
             parent[child] = node_id
             visit(child)
 
@@ -386,7 +478,7 @@ def bildredaktion() -> dict[str, dict[str, str]]:
                 if "Grafiktitel" in cells:
                     header = cells
                 continue
-            rec = dict(zip(header, cells))
+            rec = dict(zip(header, cells, strict=False))
             title = rec.get("Grafiktitel") or rec.get("Titel (selbst vergeben)")
             if title:
                 result[norm(title)] = {
@@ -420,6 +512,10 @@ def layer_rows(
     data = get_json(client, f"{portal}/sharing/rest/content/items/{webmap_id}/data")
     for layer in data.get("operationalLayers", []):
         url = (layer.get("url") or "").rstrip("/")
+        if not url and layer.get("featureCollection"):
+            print(
+                f"  NOTE webmap {webmap_id}: inline layer {layer.get('title')!r} not exported"
+            )
         if (
             not url
             or "FeatureServer" not in url
@@ -479,6 +575,17 @@ def export_layer(client: httpx.Client, url: str, path: Path) -> None:
         if len(batch) < 1000:
             break
         offset += len(batch)
+    count = (
+        client.get(
+            f"{url}/query",
+            params={"where": "1=1", "returnCountOnly": "true", "f": "json"},
+            timeout=120,
+        )
+        .json()
+        .get("count")
+    )
+    if count is not None and count != len(features):
+        raise httpx.HTTPError(f"exported {len(features)} of {count} features")
     path.write_text(
         json.dumps(
             {"type": "FeatureCollection", "features": features}, ensure_ascii=False
@@ -593,10 +700,10 @@ def collect(slug: str, force: bool) -> int:
             )
             if b["abb"] in index["ident"] and not row.get("decision"):
                 row.update(decision=f"reuse:{index['ident'][b['abb']]['id']}")
-        if not row.get("decision"):
-            row["decision"] = "ingest" if row["caption"] else "review"
-            if kind in {"video", "audio"}:
-                row["decision"] = "review"
+        row["alt"] = clean(ndata.get("alt"))
+        if kind in {"video", "audio"}:
+            row["decision"] = "review"
+        suggest(row, story["authors"])
         rows.append(row)
 
     # Export datasets and assign identifiers.
