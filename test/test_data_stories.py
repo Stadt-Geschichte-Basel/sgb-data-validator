@@ -205,3 +205,15 @@ def test_omeka_api_error_does_not_show_the_api_key():
     assert "secret" not in str(err.value)
     assert err.value.response.status_code == 404
     api.close()
+
+
+def test_video_and_audio_payloads_pass_the_validator():
+    for kind, mime, dctype in (
+        ("video", "video/mp4", "http://purl.org/dc/dcmitype/MovingImage"),
+        ("audio", "audio/mpeg", "http://purl.org/dc/dcmitype/Sound"),
+    ):
+        row = {**ROW, "kind": kind, "mime": mime, "width": "", "height": ""}
+        assert ads.rights_problems(row) == []
+        media = ads.media_payload("schulden", row, None, [])
+        assert media["dcterms:type"][0]["@id"] == dctype
+        assert ads.validation_errors(media, "media") == []

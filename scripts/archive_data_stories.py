@@ -263,6 +263,9 @@ FORMATS = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".png": "image/png",
+    ".gif": "image/gif",
+    ".mp4": "video/mp4",
+    ".mp3": "audio/mpeg",
     ".tif": "image/tiff",
     ".tiff": "image/tiff",
     ".geojson": "application/geo+json",
@@ -273,6 +276,9 @@ FORMATS = {
 TYPES = {
     "image": ("http://purl.org/dc/dcmitype/Image", "Image"),
     "dataset": ("http://purl.org/dc/dcmitype/Dataset", "Dataset"),
+    # Omeka custom vocab 15 must list video/mp4 and audio/mpeg for these two.
+    "video": ("http://purl.org/dc/dcmitype/MovingImage", "Moving Image"),
+    "audio": ("http://purl.org/dc/dcmitype/Sound", "Sound"),
     "story": (
         "http://purl.org/dc/dcmitype/InteractiveResource",
         "Interactive Resource",
