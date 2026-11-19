@@ -24,9 +24,7 @@
 			"image/png",
 			"text/plain",
 			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-			"image/gif",
-			"video/mp4",
-			"audio/mpeg"
+			"image/gif"
 		]
 	},
 	{
@@ -430,9 +428,7 @@
 			"http://purl.org/dc/dcmitype/InteractiveResource",
 			"https://purl.org/dc/dcmitype/Dataset",
 			"https://purl.org/dc/dcmitype/Image",
-			"https://purl.org/dc/dcmitype/InteractiveResource",
-			"http://purl.org/dc/dcmitype/MovingImage",
-			"http://purl.org/dc/dcmitype/Sound"
+			"https://purl.org/dc/dcmitype/InteractiveResource"
 		]
 	},
 	{
