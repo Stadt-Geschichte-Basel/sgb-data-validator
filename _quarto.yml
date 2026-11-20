@@ -3,6 +3,12 @@ project:
   render:
     - index.qmd
     - validation-reports.qmd
+    - CHANGELOG.md
+    - CODE_OF_CONDUCT.md
+    - CONTRIBUTING.md
+    - LICENSE-CCBY.md
+    - LICENSE-AGPL.md
+    - SECURITY.md
   resources:
     - 'analysis/*.csv'
     - 'analysis/validation_report.txt'

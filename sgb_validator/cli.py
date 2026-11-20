@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -24,9 +24,12 @@ BaseURL = Annotated[str | None, typer.Option("--base-url", envvar="OMEKA_URL")]
 ItemSetID = Annotated[int | None, typer.Option(envvar="ITEM_SET_ID")]
 Identity = Annotated[str | None, typer.Option(envvar="KEY_IDENTITY")]
 Credential = Annotated[str | None, typer.Option(envvar="KEY_CREDENTIAL")]
+ExclusiveWrite = Annotated[
+    bool, typer.Option(help="Confirm that other Omeka writers are paused.")
+]
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     warning = "warning"
     error = "error"
 
@@ -223,11 +226,13 @@ def update(
     apply: bool = False,
     backup_dir: Path = Path("backups"),
     skip_recent_hours: float = 2,
+    exclusive_write: ExclusiveWrite = False,
 ) -> None:
     """Compare two snapshots and apply changes when requested."""
-    from .writes import update_record
+    from .writes import require_exclusive_write, update_record
 
     with command_errors():
+        require_exclusive_write(apply, exclusive_write)
         baseline = read_snapshot(source)
         proposed = read_snapshot(edited)
         if item_set_id is not None and baseline.item_set_id != item_set_id:
@@ -251,6 +256,7 @@ def update(
                         apply=apply,
                         backup_dir=copies,
                         skip_recent_hours=skip_recent_hours,
+                        exclusive_write=exclusive_write,
                     )
                 except (OmekaError, OSError, ValueError) as exc:
                     typer.echo(f"{label} skipped or failed: {exc}", err=True)
@@ -358,12 +364,15 @@ def restore_command(
     key_credential: Credential = None,
     apply: bool = False,
     skip_recent_hours: float = 2,
+    exclusive_write: ExclusiveWrite = False,
 ) -> None:
     """Preview or apply recovery on the source instance."""
-    from .recovery import restore
+    from .recovery import backup_source, restore
+    from .writes import require_exclusive_write
 
     with command_errors():
-        source = read_snapshot(directory).source
+        require_exclusive_write(apply, exclusive_write)
+        source = backup_source(directory)
         with connect(source, key_identity, key_credential) as api:
             restore(
                 api,
@@ -371,6 +380,7 @@ def restore_command(
                 apply=apply,
                 skip_recent_hours=skip_recent_hours,
                 announce=typer.echo,
+                exclusive_write=exclusive_write,
             )
 
 

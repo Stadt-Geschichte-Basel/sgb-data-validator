@@ -43,7 +43,13 @@ def test_metadata_only_restore_refuses_deleted_resources(tmp_path, apply):
             return {**item_set, "o:is_public": True}
 
     with pytest.raises(OmekaError, match="deleted records require a complete backup"):
-        restore(FakeAPI(), path, apply=apply, announce=messages.append)
+        restore(
+            FakeAPI(),
+            path,
+            apply=apply,
+            exclusive_write=apply,
+            announce=messages.append,
+        )
     assert any("Missing items/2" in line for line in messages)
     if not apply:
         assert any("Restore item_sets/1: o:is_public" in line for line in messages)
@@ -180,6 +186,7 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
                 before,
                 after,
                 apply=True,
+                exclusive_write=True,
                 backup_dir=tmp_path / "before",
                 skip_recent_hours=0,
             )
@@ -197,7 +204,7 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
         assert not (path / "restore-progress.json").exists()
 
     with InterruptedUpload(*auth) as api, pytest.raises(KeyboardInterrupt):
-        restore(api, path, apply=True, skip_recent_hours=0)
+        restore(api, path, apply=True, exclusive_write=True, skip_recent_hours=0)
     progress = path / "restore-progress.json"
     assert read_json(progress)["pending"]
 
@@ -209,6 +216,7 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
             "restore",
             str(path),
             "--apply",
+            "--exclusive-write",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -246,3 +254,100 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
         assert markup["data"]["html"] == "<p>Drill</p>"
         assert len(api.find("media", f"{tag}-private")) == 1
         assert [ref["o:id"] for ref in aa["o:item_set"]] == [mapping[str(set_id)]]
+
+
+def test_full_restore_reads_only_metadata_verified_by_the_manifest(tmp_path):
+    from sgb_validator.recovery import FILES
+    from sgb_validator.snapshots import write_json
+    from sgb_validator.writes import file_digest
+
+    source = "https://omeka.example"
+    snapshot = Snapshot({"o:id": 1}, [record("verified") | {"o:id": 2}], [], source)
+    directory = tmp_path / "full"
+    write_snapshot(directory, snapshot, "")
+    write_json(
+        directory / "manifest.json",
+        {
+            "version": 1,
+            "complete": True,
+            "source": source,
+            "metadata": {name: file_digest(directory / name)[1] for name in FILES},
+        },
+    )
+    write_json(
+        directory / "items_transformed.json", [record("unverified") | {"o:id": 2}]
+    )
+    loaded, _, full = load_backup(directory)
+    assert full and loaded == snapshot
+
+
+def test_order_required_links_and_report_cycles():
+    from sgb_validator.recovery import creation_order
+
+    class TemplateAPI:
+        def get(self, kind, rid):
+            assert kind == "resource_templates" and rid == 4
+            return {
+                "o:resource_template_property": [
+                    {"o:property": {"o:id": 13}, "o:is_required": True},
+                ]
+            }
+
+    def depends_on(rid, target):
+        return {
+            "o:id": rid,
+            "o:resource_template": {"o:id": 4},
+            "dcterms:relation": [
+                {
+                    "type": "resource:item",
+                    "property_id": 13,
+                    "value_resource_id": target,
+                },
+            ],
+        }
+
+    a = ("items", depends_on(1, 2))
+    b = ("items", {"o:id": 2})
+    assert creation_order(TemplateAPI(), [a, b], "https://omeka.example") == [b, a]
+    with pytest.raises(OmekaError, match=r"Required-link cycle.*items/1.*items/2"):
+        creation_order(
+            TemplateAPI(), [a, ("items", depends_on(2, 1))], "https://omeka.example"
+        )
+
+
+def test_pending_creation_does_not_adopt_a_preexisting_record_after_retries(tmp_path):
+    from sgb_validator.recovery import restore_records
+
+    class UnavailableAPI:
+        base_url = "https://omeka.example"
+
+        def get(self, kind, rid):
+            raise OmekaError("Not found", 404)
+
+        def listing(self, kind, **scope):
+            return [{"o:id": 2, "o:is_public": True}]
+
+        def post(self, *args, **kwargs):
+            raise OmekaError("POST failed")
+
+    snapshot = Snapshot(
+        {"o:id": 1, "o:is_public": True}, [], [], UnavailableAPI.base_url
+    )
+    progress = tmp_path / "restore-progress.json"
+    for _ in range(3):
+        with pytest.raises(OmekaError, match="POST failed"):
+            restore_records(
+                UnavailableAPI(),
+                tmp_path,
+                snapshot,
+                {},
+                True,
+                progress,
+                "backup",
+                True,
+                0,
+                lambda _: None,
+            )
+        state = read_json(progress)
+        assert state["pending"]["1"]["before"] == [2]
+        assert state["ids"] == {}

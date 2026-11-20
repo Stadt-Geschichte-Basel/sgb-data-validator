@@ -74,3 +74,7 @@ def test_external_redirect_warning_without_following():
 
     asyncio.run(check())
     assert "different domain" in findings.warnings[0].message
+
+
+def test_skip_non_string_original_url():
+    assert extract_uris_from_data({"o:original_url": 42}) == []

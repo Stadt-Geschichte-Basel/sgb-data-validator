@@ -30,8 +30,9 @@ def extract_uris_from_data(data: dict[str, Any]) -> list[tuple[str, str]]:
                         uris.append((f"{key}[{idx}].@id", uri))
 
     # Check o:original_url for media
-    if "o:original_url" in data and data["o:original_url"]:
-        uris.append(("o:original_url", data["o:original_url"]))
+    original_url = data.get("o:original_url")
+    if isinstance(original_url, str) and original_url:
+        uris.append(("o:original_url", original_url))
 
     return uris
 

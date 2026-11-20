@@ -116,6 +116,14 @@ def check_property_shapes(record: Record) -> None:
             )
 
 
+def require_exclusive_write(apply: bool, exclusive_write: bool) -> None:
+    if apply and not exclusive_write:
+        raise ValueError(
+            "Pause other Omeka writers during a maintenance window and "
+            "confirm with --exclusive-write"
+        )
+
+
 def update_record(
     api: OmekaAPI,
     kind: str,
@@ -126,7 +134,10 @@ def update_record(
     backup_dir: Path | None = None,
     skip_recent_hours: float = 2,
     backup_record: Record | None = None,
+    exclusive_write: bool = False,
 ) -> UpdateResult:
+    """Apply updates only while the caller has paused other Omeka writers."""
+    require_exclusive_write(apply, exclusive_write)
     if before == after:
         return UpdateResult("unchanged")
     check_property_shapes(after)
@@ -213,6 +224,13 @@ def create_payload(
     if not isinstance(data, dict):
         raise ValueError("Supply one Omeka JSON object")
     check_property_shapes(data)
+    for field, values in properties(data).items():
+        for value in values:
+            literal = value.get("@value")
+            if value["type"] == "literal" and (
+                not isinstance(literal, str) or not literal.strip(" \t\n\r\0\v")
+            ):
+                raise ValueError(f"{field}: supply a non-empty string for a literal")
     payload = writable(kind, data)
     if payload.get("o:owner") is None:
         payload.pop("o:owner", None)
@@ -221,8 +239,6 @@ def create_payload(
             raise ValueError("Create media separately after creating its item")
         if target_id is not None:
             members = {ref["o:id"] for ref in payload.get("o:item_set", [])}
-            if None in members:
-                raise ValueError("Item set references require an integer o:id")
             payload["o:item_set"] = [
                 {"o:id": rid} for rid in sorted(members | {target_id})
             ]
@@ -260,6 +276,33 @@ def create_payload(
     return payload
 
 
+def check_placeholder_parent(data: Record, parent: Record, filename: str) -> None:
+    if parent.get("o:is_public") and has_placeholder_media(
+        {**data, "o:filename": filename}
+    ):
+        raise OmekaError(
+            "Set the parent item to private before attaching a placeholder"
+        )
+
+
+def verify_creation(
+    kind: str,
+    payload: Record,
+    actual: Record,
+    original: tuple[int, str] | None = None,
+) -> None:
+    verify_fields(kind, payload, actual)
+    if kind != "media":
+        return
+    for key in ("o:source", "o:ingester"):
+        if key in payload and actual.get(key) != payload[key]:
+            raise OmekaError(f"media/{actual['o:id']} read-back differs in {key}")
+    if ref_id(actual.get("o:item")) != ref_id(payload["o:item"]):
+        raise OmekaError(f"media/{actual['o:id']} has a different parent")
+    if original and (actual.get("o:size"), actual.get("o:sha256")) != original:
+        raise OmekaError(f"media/{actual['o:id']} has a different file size or SHA-256")
+
+
 def create_record(
     api: OmekaAPI,
     kind: str,
@@ -279,13 +322,8 @@ def create_record(
     if kind == "media":
         parent_id = payload["o:item"]["o:id"]
         parent = api.get("items", parent_id)
-        if file and has_placeholder_media(
-            {**payload, "o:filename": filename or file.name}
-        ):
-            if parent.get("o:is_public"):
-                raise OmekaError(
-                    "Set the parent item to private before attaching a placeholder"
-                )
+        if file:
+            check_placeholder_parent(payload, parent, filename or file.name)
     check_identifiers(api, kind, payload)
     if not apply:
         return payload
@@ -295,13 +333,5 @@ def create_record(
     if on_created is not None:
         on_created(rid)
     verified = api.get(kind, rid)
-    verify_fields(kind, payload, verified)
-    if kind == "media":
-        for key in ("o:source", "o:ingester"):
-            if key in payload and verified.get(key) != payload[key]:
-                raise OmekaError(f"media/{rid} read-back differs in {key}")
-        if ref_id(verified.get("o:item")) != ref_id(payload["o:item"]):
-            raise OmekaError(f"media/{rid} has a different parent")
-        if original and (verified.get("o:size"), verified.get("o:sha256")) != original:
-            raise OmekaError(f"media/{rid} has a different file size or SHA-256")
+    verify_creation(kind, payload, verified, original)
     return verified

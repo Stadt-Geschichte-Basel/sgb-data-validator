@@ -40,7 +40,7 @@ uv run --locked sgb update RAW_DIR EDITED_DIR
 
 Replace `RAW_DIR` with the directory that `download` prints. Replace `EDITED_DIR` with the directory that `transform` prints. The transform keeps the original JSON and writes a cleaned copy. For manual edits, change the JSON in the copy. Keep each record’s `o:id`.
 
-Review the update preview. Add `--apply` to the update command when you are ready to write to Omeka. The command skips recent edits and saves private copies of records before it changes them.
+Review the update preview. Pause other Omeka writers during a maintenance window. Run the update again with `--apply --exclusive-write`. The command skips recent edits and saves private copies before it changes records.
 
 ## Add records or recover an item set
 

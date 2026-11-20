@@ -61,3 +61,23 @@ def test_unverified_listing_names_the_missing_count_header(monkeypatch):
     ) as client:
         with pytest.raises(RuntimeError, match="missing omeka-s-total-results header"):
             client.listing("items")
+
+
+def test_snapshot_item_listing_rejects_a_different_membership_with_the_same_count(
+    monkeypatch,
+):
+    monkeypatch.setattr(api.time, "sleep", lambda _: None)
+
+    def handler(request):
+        descending = request.url.params["sort_order"] == "desc"
+        ids = [5, 4, 3, 2] if descending else [1, 2, 4, 5]
+        body = (
+            [{"o:id": rid} for rid in ids] if request.url.params["page"] == "1" else []
+        )
+        return httpx2.Response(200, json=body, headers={"omeka-s-total-results": "4"})
+
+    with OmekaAPI(
+        "https://omeka.example", transport=httpx2.MockTransport(handler)
+    ) as client:
+        with pytest.raises(RuntimeError, match="Incomplete items listing"):
+            client.listing("items", item_set_id=1)

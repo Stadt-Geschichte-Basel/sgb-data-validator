@@ -248,7 +248,7 @@ def build_entries(snapshot: Snapshot, findings: Findings) -> list[Entry]:
     def index(records: dict) -> dict[str, list[int]]:
         result = {}
         for rid, record in records.items():
-            for _, identifier in identifiers(record):
+            for identifier in dict.fromkeys(value for _, value in identifiers(record)):
                 result.setdefault(identifier, []).append(rid)
         return result
 

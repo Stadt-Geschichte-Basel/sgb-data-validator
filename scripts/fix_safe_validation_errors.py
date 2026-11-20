@@ -11,7 +11,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from sgb_validator.api import OmekaAPI, OmekaError
-from sgb_validator.writes import update_record
+from sgb_validator.writes import require_exclusive_write, update_record
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -41,7 +41,7 @@ EDIT_FIELDS: dict[str, dict] = {
 def plan_edits(rec: dict, rows: list[dict]) -> tuple[dict | None, str | None]:
     """Return (new record, None), or (None, reason) when the record cannot change.
 
-    All rows for one record are applied together, so one record gets one PUT.
+    All rows for one record are applied together, so one record gets one PATCH.
     Every row's `old` must match the live value exactly (empty: no value yet).
     """
     new_rec = dict(rec)
@@ -65,10 +65,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--edits", "--renames", dest="edits", type=Path, required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--exclusive-write",
+        action="store_true",
+        help="Confirm that other Omeka writers are paused",
+    )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--skip-recent-hours", type=float, default=2)
     parser.add_argument("--item-set-id", type=int)
     args = parser.parse_args()
+    try:
+        require_exclusive_write(args.apply, args.exclusive_write)
+    except ValueError as exc:
+        parser.error(str(exc))
     load_dotenv(ROOT / ".env")
     set_id = args.item_set_id or int(os.getenv("ITEM_SET_ID", "10780"))
     with args.edits.open(encoding="utf-8", newline="") as stream:
@@ -83,7 +92,7 @@ def main() -> int:
         grouped.setdefault((row["kind"], int(row["id"])), []).append(row)
 
     copies = ROOT / "backups" / f"issue44_{datetime.now():%Y%m%d_%H%M%S_%f}"
-    failed = changed = 0
+    failed = changed = already_applied = 0
     with OmekaAPI(
         os.environ["OMEKA_URL"],
         os.environ["KEY_IDENTITY"],
@@ -114,7 +123,7 @@ def main() -> int:
                     if reason == "no change":
                         continue
                     raise ValueError(reason)
-                update_record(
+                result = update_record(
                     api,
                     kind,
                     before,
@@ -122,14 +131,22 @@ def main() -> int:
                     apply=args.apply,
                     backup_dir=copies,
                     skip_recent_hours=args.skip_recent_hours,
+                    exclusive_write=args.exclusive_write,
                 )
-                changed += 1
-                action = "Verified" if args.apply else "Would change"
-                print(f"{action} {kind}/{rid}")
+                if result.status == "already_applied":
+                    already_applied += 1
+                    print(f"Already applied {kind}/{rid}")
+                elif result.status == ("updated" if args.apply else "preview"):
+                    changed += 1
+                    action = "Verified" if args.apply else "Would change"
+                    print(f"{action} {kind}/{rid}")
             except (OSError, ValueError, OmekaError) as exc:
                 print(f"{kind}/{rid}: {exc}", file=sys.stderr)
                 failed += 1
-    print(f"{changed} changes, {failed} skipped or failed")
+    print(
+        f"{changed} changes, {already_applied} already applied, "
+        f"{failed} skipped or failed"
+    )
     return int(bool(failed))
 
 

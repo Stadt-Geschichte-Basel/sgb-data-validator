@@ -71,9 +71,19 @@ def writable(kind: str, record: Record) -> Record:
             continue
         value = record[key]
         if key in {"o:item_set", "o:site", "o:media"}:
-            result[key] = [{"o:id": ref_id(ref)} for ref in value or []]
+            ids = []
+            if value is not None and not isinstance(value, list):
+                raise ValueError(f"{key} requires a list of references")
+            for ref in value or []:
+                rid = ref_id(ref)
+                if rid is None or rid <= 0:
+                    raise ValueError(
+                        f"{key} references require a positive integer o:id"
+                    )
+                ids.append(rid)
             if key != "o:media":
-                result[key].sort(key=lambda ref: ref["o:id"])
+                ids.sort()
+            result[key] = [{"o:id": rid} for rid in ids]
         elif key in {
             "o:owner",
             "o:resource_class",

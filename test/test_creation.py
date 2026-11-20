@@ -78,7 +78,15 @@ def test_concurrent_edit_detected_after_before_copy(tmp_path):
     )
     after = {**before, "dcterms:identifier": literal("changed")}
     with pytest.raises(OmekaError, match="immediately before"):
-        update_record(api, "items", before, after, apply=True, backup_dir=tmp_path)
+        update_record(
+            api,
+            "items",
+            before,
+            after,
+            apply=True,
+            exclusive_write=True,
+            backup_dir=tmp_path,
+        )
     assert not api.writes
     copy = next(tmp_path.iterdir())
     assert copy.stat().st_mode & 0o777 == 0o600
@@ -96,6 +104,7 @@ def test_recent_edit_is_skipped(tmp_path):
             before,
             {**before, "o:is_public": False},
             apply=True,
+            exclusive_write=True,
             backup_dir=tmp_path,
         )
     assert not api.writes
@@ -110,7 +119,15 @@ def test_update_preserves_unrelated_fields(tmp_path):
     }
     api = FakeAPI(deepcopy(before), matches=[{"o:id": 3}])
     after = {**before, "dcterms:identifier": literal("changed")}
-    result = update_record(api, "items", before, after, apply=True, backup_dir=tmp_path)
+    result = update_record(
+        api,
+        "items",
+        before,
+        after,
+        apply=True,
+        exclusive_write=True,
+        backup_dir=tmp_path,
+    )
     assert result.status == "updated"
     assert result.record["custom:field"] == before["custom:field"]
     assert result.record["dcterms:identifier"] == after["dcterms:identifier"]
@@ -142,7 +159,38 @@ def test_malformed_property_cannot_be_written(tmp_path, value):
             before,
             {**before, "dcterms:description": value},
             apply=True,
+            exclusive_write=True,
             backup_dir=tmp_path,
         )
     assert not api.writes
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("apply", [False, True])
+@pytest.mark.parametrize("value", [42, "", " \n"])
+def test_create_rejects_invalid_native_literals_before_http(apply, value):
+    api = FakeAPI({"o:id": 3})
+    with pytest.raises(ValueError, match="dcterms:description.*non-empty string"):
+        create_record(
+            api,
+            "items",
+            {"dcterms:description": literal(value, 4)},
+            target_id=3,
+            apply=apply,
+        )
+    assert not api.reads and not api.writes
+
+
+def test_create_rejects_malformed_item_set_references():
+    with pytest.raises(ValueError, match="o:item_set.*integer o:id"):
+        create_payload("items", {"o:item_set": [{"o:id": 5}, {}]}, target_id=3)
+
+
+def test_update_requires_an_exclusive_write_window():
+    before = create_minimal_item(3)
+    api = FakeAPI(before)
+    with pytest.raises(ValueError, match="maintenance window"):
+        update_record(
+            api, "items", before, {**before, "o:is_public": False}, apply=True
+        )
+    assert not api.reads and not api.writes

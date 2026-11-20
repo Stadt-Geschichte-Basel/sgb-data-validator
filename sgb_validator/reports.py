@@ -51,8 +51,8 @@ def warning_column(warning: DataValidationWarning) -> tuple[str, str]:
         return warning.field, text
     if text.startswith("Missing "):
         return text.removeprefix("Missing ").strip(), "Missing field"
-    if ":" in text:
-        field, message = text.split(":", 1)
+    if ": " in text:
+        field, message = text.split(": ", 1)
         return field.strip(), message.strip()
     return "general", text
 

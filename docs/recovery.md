@@ -19,11 +19,14 @@ Other ingesters can depend on modules or external content. The manifest identifi
 
 1. Run `sgb restore DIRECTORY` on the source instance.
 2. Review the planned actions and external references.
-3. Run `sgb restore DIRECTORY --apply` when you are ready.
-4. If the run stops, use the same directory to resume.
-5. Review the verification output and external references.
+3. Pause other Omeka writers during a maintenance window.
+4. Run `sgb restore DIRECTORY --apply --exclusive-write`.
+5. If the run stops, use the same directory to resume.
+6. Review the verification output and external references.
 
-The restore saves new resource IDs in `restore-progress.json`. Keep this file with the backup. The tool uses it to reconcile an interrupted creation and to repair links between recovered resources.
+Omeka S 3 and 4 have no conditional write check. Another writer can change a record after the final read. The flag confirms that you paused other writers.
+
+The restore saves new resource IDs in `restore-progress.json`. Keep this file with the backup. The tool uses it to resume creation and repair links. It creates targets of required links first. Preview reports cycles that block creation.
 
 Before it recreates a placeholder, the restore makes the placeholder and its parent item private. The preview lists the parent visibility change. The restore puts backed-up media in their recorded order. It keeps media added after the backup and puts them after the backed-up media. It checks the original file bytes after recovery.
 
@@ -41,6 +44,6 @@ The drill stopped after Omeka accepted a media upload. It resumed with the saved
 
 Omeka S 3.2.3 returned HTTP 500 for the fixture deletes after it removed the records. Separate reads verified that the resources were absent.
 
-Set \`SGB_DRILL_URLS\` to a comma-separated list of disposable loopback Omeka URLs. Use the same test API key on each instance. If Omeka runs in containers, set `SGB_DRILL_INGEST_BASE` to the URL each server uses to reach itself. Set \`SGB_DRILL_KEY_IDENTITY\` and \`SGB_DRILL_KEY_CREDENTIAL\`.
+Set `SGB_DRILL_URLS` to a comma-separated list of disposable loopback Omeka URLs. Use the same test API key on each instance. If Omeka runs in containers, set `SGB_DRILL_INGEST_BASE` to the URL each server uses to reach itself. Set `SGB_DRILL_KEY_IDENTITY` and `SGB_DRILL_KEY_CREDENTIAL`.
 
-Run \`uv run --locked pytest test/test_recovery.py\`. The drill creates and deletes its own fixture records.
+Run `uv run --locked pytest test/test_recovery.py`. The drill creates and deletes its own fixture records.

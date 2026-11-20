@@ -89,8 +89,18 @@ def test_upload_skips_existing_identifier(tmp_path, monkeypatch):
     ads.write_manifest("schulden", [ROW])
     posted = []
 
+    expected = ads.create_payload(
+        "media",
+        ads.media_payload("schulden", ROW, None, ["Mittelalter"]),
+        target_id=999,
+        file=file,
+    )
+    existing_media = {**expected, "o:id": 5, "o:size": size, "o:sha256": digest}
+
     class FakeOmeka:
         def get(self, kind, rid):
+            if kind == "media":
+                return existing_media
             return {"dcterms:temporal": [{"@value": "Mittelalter"}]}
 
         def find(self, kind, identifier):
@@ -102,19 +112,15 @@ def test_upload_skips_existing_identifier(tmp_path, monkeypatch):
                         "o:item_set": [{"o:id": ads.ITEM_SET_ID}],
                     }
                 ]
-            return [
-                {
-                    "o:id": 5,
-                    "o:item": {"o:id": 999},
-                    "o:is_public": False,
-                    "o:size": size,
-                    "o:sha256": digest,
-                }
-            ]
+            return [existing_media]
 
         def post(self, *args, **kwargs):
             posted.append(args)
 
+    title = existing_media.pop("dcterms:title")
+    assert ads.upload_rows(FakeOmeka(), "schulden", apply=True, limit=None) == 1
+    assert not ads.read_manifest("schulden")[0]["omeka_media"]
+    existing_media["dcterms:title"] = title
     assert ads.upload_rows(FakeOmeka(), "schulden", apply=True, limit=None) == 0
     assert posted == []
     assert ads.read_manifest("schulden")[0]["omeka_item"] == "999"
@@ -305,3 +311,63 @@ def test_export_layer_raises_on_an_arcgis_error_body(tmp_path):
     with pytest.raises(httpx2.HTTPError):
         ads.export_layer(client, "https://x.example/FeatureServer/0", tmp_path / "a")
     assert not (tmp_path / "a").exists()
+
+
+def test_parent_resumes_cleanup_with_replacement_already_saved(tmp_path, monkeypatch):
+    monkeypatch.setattr(ads, "ROOT", tmp_path)
+    slug = "schulden"
+    parent_id = ads.STORIES[slug]["item"]
+    replacement = {
+        "o:item": {"o:id": parent_id},
+        "o:ingester": "upload",
+        "dcterms:identifier": [ads.literal(10, "Identifier", f"m-story-{slug}")],
+    }
+    existing = {**replacement, "o:id": 4, "o:size": 3, "o:sha256": "digest"}
+    old = {"o:id": 3}
+    path = tmp_path / "backups" / f"story_{slug}_parent_cleanup.json"
+    path.parent.mkdir()
+    plan = {
+        "source": "https://omeka.example",
+        "parent": parent_id,
+        "replacement": replacement,
+        "original": [3, "digest"],
+        "old_media": [{"o:id": 2}, old],
+        "completed": [],
+    }
+    ads.write_json(path, plan)
+
+    class FakeOmeka:
+        base_url = plan["source"]
+
+        def __init__(self):
+            self.records = {3: old, 4: existing}
+            self.deleted = []
+
+        def get(self, kind, rid):
+            if kind == "items":
+                return {
+                    "o:id": parent_id,
+                    "o:media": [{"o:id": media} for media in self.records],
+                }
+            if rid not in self.records:
+                raise ads.OmekaError("Not found", 404)
+            return self.records[rid]
+
+        def request(self, method, endpoint):
+            assert method == "DELETE" and endpoint == "media/3"
+            self.deleted.append(self.records.pop(3)["o:id"])
+
+    api = FakeOmeka()
+    assert (
+        ads.apply_parent(
+            api,
+            slug,
+            tmp_path / "old-local-file",
+            apply=True,
+            delete_old=True,
+            exclusive_write=True,
+        )
+        == 0
+    )
+    assert api.deleted == [3]
+    assert ads.json.loads(path.read_text())["completed"] == [2, 3]

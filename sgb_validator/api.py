@@ -110,13 +110,18 @@ class OmekaAPI:
         *,
         expected_ids: set[int] | None = None,
         per_page: int = 50,
+        sort_order: str = "asc",
         **filters: Any,
     ) -> list[Record]:
-        """Verify each listing against counts and, for media, its parent references."""
+        """Check counts and confirm membership for item-set and media listings."""
+        check_membership = (
+            kind == "items" and "item_set_id" in filters and expected_ids is None
+        )
         for attempt in range(5):
             records: dict[int, Record] = {}
             totals: set[int] = set()
             page = 1
+            repeated_ids = False
             while True:
                 response = self.request(
                     "GET",
@@ -126,7 +131,7 @@ class OmekaAPI:
                         "page": page,
                         "per_page": per_page,
                         "sort_by": "id",
-                        "sort_order": "asc",
+                        "sort_order": sort_order,
                     },
                 )
                 total = response.headers.get(TOTAL_RESULTS)
@@ -137,23 +142,31 @@ class OmekaAPI:
                         raise OmekaError(f"Invalid {kind} count header") from None
                 batch = response.json()
                 if not batch:
-                    count_ok = (
-                        totals == {len(records)} if totals else expected_ids is not None
-                    )
-                    if count_ok and (
-                        expected_ids is None or records.keys() == expected_ids
-                    ):
-                        return list(records.values())
                     break
                 ids = {record["o:id"] for record in batch}
                 if len(ids) != len(batch) or ids.intersection(records):
+                    repeated_ids = True
                     break
                 records.update((record["o:id"], record) for record in batch)
-                if totals == {len(records)} and (
-                    expected_ids is None or records.keys() == expected_ids
-                ):
-                    return list(records.values())
+                if totals == {len(records)}:
+                    break
                 page += 1
+            count_ok = totals == {len(records)} if totals else expected_ids is not None
+            if (
+                not repeated_ids
+                and count_ok
+                and (expected_ids is None or records.keys() == expected_ids)
+            ):
+                if check_membership:
+                    # Membership changes can shift pages without changing the count.
+                    self.listing(
+                        kind,
+                        expected_ids=set(records),
+                        per_page=per_page,
+                        sort_order="desc" if sort_order == "asc" else "asc",
+                        **filters,
+                    )
+                return list(records.values())
             if attempt < 4:
                 time.sleep(2 * (attempt + 1))
         if not totals and expected_ids is None:

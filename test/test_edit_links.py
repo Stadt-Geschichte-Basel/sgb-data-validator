@@ -34,3 +34,14 @@ def test_edit_links_follow_configured_omeka_instance(tmp_path) -> None:
         item_row = next(csv.DictReader(f))
 
     assert item_row["edit_link"] == "https://other.example.org/admin/item/12755/edit"
+
+
+def test_warning_column_keeps_the_full_property_term():
+    from sgb_validator.reports import warning_column
+    from sgb_validator.validation import DataValidationWarning
+
+    message = "dcterms:source[0]: Literal field contains URL: https://example.org"
+    assert warning_column(DataValidationWarning("Item", 1, message)) == (
+        "dcterms:source[0]",
+        "Literal field contains URL: https://example.org",
+    )

@@ -29,6 +29,7 @@ from .writes import (
     create_record,
     file_digest,
     modified_recently,
+    require_exclusive_write,
     update_record,
     verify_fields,
 )
@@ -288,13 +289,51 @@ def original_path(directory: Path, entry: Record) -> Path:
     return path
 
 
+def read_manifest(directory: Path) -> Record:
+    manifest = directory / "manifest.json"
+    return read_json(manifest) if manifest.exists() else {}
+
+
+def backup_source(directory: Path) -> str:
+    manifest = read_manifest(directory)
+    return (
+        manifest["source"]
+        if manifest.get("version") == 1
+        else read_snapshot(directory).source
+    )
+
+
 def load_backup(directory: Path) -> tuple[Snapshot, Record, bool]:
-    snapshot = read_snapshot(directory)
-    manifest_path = directory / "manifest.json"
-    manifest = read_json(manifest_path) if manifest_path.exists() else {}
+    manifest = read_manifest(directory)
     full = manifest.get("version") == 1
     if "version" in manifest and not full:
         raise ValueError("Unknown backup manifest version")
+    if full:
+        if not manifest.get("complete"):
+            raise ValueError(
+                "Backup is incomplete: " + "; ".join(manifest.get("errors", []))
+            )
+        metadata = []
+        for name in FILES:
+            raw = (directory / name).read_bytes()
+            if hashlib.sha256(raw).hexdigest() != manifest["metadata"].get(name):
+                raise ValueError(f"Backup metadata changed: {name}")
+            metadata.append(json.loads(raw))
+        item_set, items, media = metadata
+        if not isinstance(item_set, dict) or any(
+            not isinstance(group, list)
+            or any(not isinstance(record, dict) for record in group)
+            for group in (items, media)
+        ):
+            raise ValueError("Expected Omeka JSON objects in verified backup metadata")
+        snapshot = Snapshot(item_set, items, media, manifest["source"])
+        snapshot_metadata = directory / "snapshot.json"
+        if snapshot_metadata.exists() and (
+            read_json(snapshot_metadata).get("source") != snapshot.source
+        ):
+            raise ValueError("The backup has a different source URL")
+    else:
+        snapshot = read_snapshot(directory)
     if not snapshot.item_set_id:
         raise ValueError("The backup needs the item set metadata")
     for label, count in (
@@ -309,15 +348,6 @@ def load_backup(directory: Path) -> tuple[Snapshot, Record, bool]:
     if len(by_id) != 1 + len(snapshot.items) + len(snapshot.media):
         raise ValueError("Duplicate resource IDs in the backup")
     if full:
-        if not manifest.get("complete"):
-            raise ValueError(
-                "Backup is incomplete: " + "; ".join(manifest.get("errors", []))
-            )
-        if manifest["source"] != snapshot.source:
-            raise ValueError("The backup has a different source URL")
-        for name in FILES:
-            if file_digest(directory / name)[1] != manifest["metadata"].get(name):
-                raise ValueError(f"Backup metadata changed: {name}")
         parents = {
             item["o:id"]: [ref_id(ref) for ref in item.get("o:media", [])]
             for item in snapshot.items
@@ -419,6 +449,81 @@ def recovery_payload(
     return remap(kind, data, ids, source)
 
 
+def creation_order(
+    api: OmekaAPI,
+    missing: list[tuple[str, Record]],
+    source: str,
+) -> list[tuple[str, Record]]:
+    """Order creates so each required property can retain at least one value."""
+    unresolved = {record["o:id"] for _, record in missing}
+    requirements: dict[int, list[list[set[int]]]] = {}
+    templates: dict[int, set[int]] = {}
+    for kind, record in missing:
+        rid = record["o:id"]
+        template_id = ref_id(record.get("o:resource_template"))
+        if template_id is not None and template_id not in templates:
+            template = api.get("resource_templates", template_id)
+            templates[template_id] = {
+                prop
+                for entry in template["o:resource_template_property"]
+                if entry["o:is_required"]
+                and (prop := ref_id(entry["o:property"])) is not None
+            }
+        required = (
+            templates.get(template_id, set()) if template_id is not None else set()
+        )
+        values: dict[int, list[set[int]]] = {pid: [] for pid in required}
+        for field, field_values in properties(record).items():
+            for value in field_values:
+                pid = value["property_id"]
+                if pid in values:
+                    values[pid].append(
+                        {
+                            target
+                            for entry in value_objects({field: [value]})
+                            if (target := relationship_id(entry, source)) is not None
+                            and target in unresolved
+                        }
+                    )
+        for pid, candidates in values.items():
+            if not candidates:
+                raise OmekaError(
+                    f"{kind}/{rid}: missing required property {pid} in backup"
+                )
+        dependencies = list(values.values())
+        if kind == "media":
+            parent = ref_id(record.get("o:item"))
+            if parent is not None and parent in unresolved:
+                dependencies.append([{parent}])
+        elif kind == "items":
+            dependencies.extend(
+                [{set_id}]
+                for ref in record.get("o:item_set", [])
+                if (set_id := ref_id(ref)) is not None and set_id in unresolved
+            )
+        requirements[rid] = dependencies
+
+    ordered: list[tuple[str, Record]] = []
+    waiting = missing
+    while waiting:
+        blocked = []
+        for kind, record in waiting:
+            rid = record["o:id"]
+            if any(
+                all(targets & unresolved for targets in alternatives)
+                for alternatives in requirements[rid]
+            ):
+                blocked.append((kind, record))
+            else:
+                ordered.append((kind, record))
+                unresolved.remove(rid)
+        if len(blocked) == len(waiting):
+            labels = ", ".join(f"{kind}/{record['o:id']}" for kind, record in blocked)
+            raise OmekaError(f"Required-link cycle blocks recreation of: {labels}")
+        waiting = blocked
+    return ordered
+
+
 def matches_creation(
     kind: str, payload: Record, actual: Record, original: Record
 ) -> bool:
@@ -469,7 +574,9 @@ def restore(
     apply: bool = False,
     skip_recent_hours: float = 2,
     announce: Callable[[str], None] = print,
+    exclusive_write: bool = False,
 ) -> None:
+    require_exclusive_write(apply, exclusive_write)
     if not api.auth:
         raise OmekaError(
             "Authenticate with access to private records to preview or restore"
@@ -520,7 +627,7 @@ def restore_records(
     skip_recent_hours: float,
     announce: Callable[[str], None],
 ) -> None:
-    ledger = (
+    ledger: Record = (
         read_json(ledger_path)
         if ledger_path.exists()
         else {"source": api.base_url, "backup": fingerprint, "ids": {}, "pending": {}}
@@ -551,6 +658,8 @@ def restore_records(
     missing = [
         (kind, record) for kind, record in all_records if record["o:id"] not in current
     ]
+    if full:
+        missing = creation_order(api, missing, snapshot.source)
     placeholders = [
         medium
         for medium in snapshot.media
@@ -652,6 +761,7 @@ def restore_records(
                         if parent["o:id"] in created
                         else skip_recent_hours,
                         backup_record=items[parent_id],
+                        exclusive_write=True,
                     )
                     assert result.record is not None
                     current[parent_id] = protected[str(parent_id)] = result.record
@@ -679,8 +789,8 @@ def restore_records(
                 candidates = api.find(kind, identifier, property_id)
             else:
                 candidates = api.listing(kind, **scope)
-            if key in ledger["pending"]:
-                earlier = ledger["pending"][key]
+            earlier = ledger["pending"].get(key)
+            if earlier is not None:
                 candidates = [
                     candidate
                     for candidate in candidates
@@ -698,7 +808,9 @@ def restore_records(
                     current[old_id] = same[0]
                     continue
             ledger["pending"][key] = {
-                "before": [r["o:id"] for r in candidates],
+                "before": earlier["before"]
+                if earlier
+                else [r["o:id"] for r in candidates],
                 "payload": payload,
             }
             write_json(ledger_path, ledger)
@@ -783,6 +895,7 @@ def verify_restored_records(
                 backup_dir=directory / "before-edit",
                 skip_recent_hours=0 if before["o:id"] in created else skip_recent_hours,
                 backup_record=record,
+                exclusive_write=True,
             )
             actual = api.get(kind, before["o:id"])
             verify_fields(kind, after, actual)
