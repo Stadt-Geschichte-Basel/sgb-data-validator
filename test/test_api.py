@@ -1,5 +1,9 @@
 """Exercise the Omeka HTTP boundary with an in-process transport."""
 
+import ssl
+import sys
+from pathlib import Path
+
 import httpx2
 import pytest
 
@@ -50,6 +54,19 @@ def test_transport_error_does_not_disclose_credentials(monkeypatch):
 
 
 def test_https_uses_the_system_trust_store():
-    import truststore
+    context = httpx2.create_ssl_context(trust_env=False)
+    assert context.check_hostname
+    assert context.verify_mode == ssl.CERT_REQUIRED
 
-    assert isinstance(httpx2.create_ssl_context(trust_env=False), truststore.SSLContext)
+    if sys.platform in {"darwin", "win32"}:
+        import truststore
+
+        assert isinstance(context, truststore.SSLContext)
+    else:
+        # Linux loads system roots with OpenSSL instead of the truststore wrapper.
+        cafile = ssl.get_default_verify_paths().openssl_cafile
+        if Path(cafile).is_file():
+            system = ssl.create_default_context(cafile=cafile)
+            assert set(system.get_ca_certs(binary_form=True)) <= set(
+                context.get_ca_certs(binary_form=True)
+            )
