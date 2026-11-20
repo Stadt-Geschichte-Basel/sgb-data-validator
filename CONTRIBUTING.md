@@ -76,10 +76,10 @@ Run the test suite before submitting:
 uv run python -m pytest test/ -v
 
 # Run specific test file
-uv run python test/test_validation.py
+uv run --locked pytest test/test_validation.py
 
 # Run with coverage
-uv run python -m pytest test/ --cov=sgb_validator --cov-report=html
+uv run --locked --with pytest-cov pytest --cov=sgb_validator
 ```
 
 ### Running the Linter and Formatter
@@ -127,34 +127,13 @@ uv run ruff check . --fix
 
 6. **Versioning**: We use [SemVer](http://semver.org/) for versioning. Maintainers will handle version bumps during the release process.
 
-## Repository Structure
+## Repository structure
 
-Understanding the repository layout:
-
-```
-sgb-data-validator/
-├── sgb_validator/                    # Source code
-│   ├── models.py          # Pydantic data models
-│   ├── vocabularies.py    # Controlled vocabulary loader
-│   ├── iconclass.py       # Iconclass notation validator
-│   └── api.py             # API client
-├── test/                   # Test suite
-│   ├── test_validation.py # Validation tests
-│   ├── test_iconclass.py  # Iconclass tests
-│   └── ...                # Other test files
-├── data/                   # Data files
-│   └── raw/               # Raw input data
-│       └── vocabularies.json  # Controlled vocabularies
-├── examples/               # Usage examples
-│   ├── api_usage.py       # API examples
-│   └── iconclass_usage.py # Iconclass examples
-├── main.py                # Alternative entry point
-├── README.md              # Main documentation
-├── IMPLEMENTATION.md      # Implementation details
-├── CONTRIBUTING.md        # This file
-└── pyproject.toml         # Project dependencies
-
-```
+- [sgb_validator/](sgb_validator/) contains the CLI, models, rules, and Omeka client.
+- [scripts/](scripts/) contains the collection worklists and the Data Story tool.
+- [test/](test/) contains tests and the recovery drill.
+- [docs/](docs/) contains editor procedures and the transformation history.
+- [examples/](examples/) contains sample Omeka records and reports.
 
 ## Types of Contributions
 

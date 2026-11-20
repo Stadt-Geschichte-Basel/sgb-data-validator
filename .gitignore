@@ -5,10 +5,6 @@
 _site/
 _freeze/
 
-# API examples output
-examples/output/
-examples/backups/
-
 # Data Story archive work (downloads, manifests)
 data/data_stories/*.json
 data/data_stories/*/*
@@ -401,48 +397,6 @@ poetry.toml
 # LSP config files
 pyrightconfig.json
 
-### R ###
-# History files
-.Rhistory
-.Rapp.history
-
-# Session Data files
-.RData
-.RDataTmp
-
-# User-specific files
-.Ruserdata
-
-# Example code in package build process
-*-Ex.R
-
-# Output files from R CMD build
-/*.tar.gz
-
-# Output files from R CMD check
-/*.Rcheck/
-
-# RStudio files
-.Rproj.user/
-
-# produced vignettes
-vignettes/*.html
-vignettes/*.pdf
-
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
-.httr-oauth
-
-# knitr and R markdown default cache directories
-*_cache/
-/cache/
-
-# Temporary files created by R markdown
-*.utf8.md
-*.knit.md
-
-# R Environment Variables
-.Renviron
-
 # Local workbooks and snapshots
 /*.xlsx
 /data/raw_itemset_*/
@@ -453,13 +407,6 @@ vignettes/*.pdf
 
 # translation temp files
 po/*~
-
-# RStudio Connect folder
-rsconnect/
-
-### R.Bookdown Stack ###
-# R package: bookdown caching files
-/*_files/
 
 ### VisualStudioCode ###
 .vscode/*

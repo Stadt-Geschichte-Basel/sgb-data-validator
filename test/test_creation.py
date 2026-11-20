@@ -3,6 +3,7 @@
 from copy import deepcopy
 
 import pytest
+from test_issue16_validation import create_minimal_item
 
 from sgb_validator.api import OmekaError
 from sgb_validator.writes import create_payload, create_record, update_record
@@ -70,7 +71,7 @@ def test_upload_requires_a_parent_and_a_file(tmp_path):
 
 
 def test_concurrent_edit_detected_after_before_copy(tmp_path):
-    before = {"o:id": 3, "dcterms:identifier": literal("source")}
+    before = {**create_minimal_item(3), "dcterms:identifier": literal("source")}
     api = FakeAPI(deepcopy(before))
     api.before_last_read = lambda: api.record.update(
         {"dcterms:creator": literal("editor", 2)}
@@ -102,7 +103,7 @@ def test_recent_edit_is_skipped(tmp_path):
 
 def test_update_preserves_unrelated_fields(tmp_path):
     before = {
-        "o:id": 3,
+        **create_minimal_item(3),
         "o:is_public": False,
         "dcterms:identifier": literal("source"),
         "custom:field": literal("preserve", 123),
@@ -110,7 +111,38 @@ def test_update_preserves_unrelated_fields(tmp_path):
     api = FakeAPI(deepcopy(before), matches=[{"o:id": 3}])
     after = {**before, "dcterms:identifier": literal("changed")}
     result = update_record(api, "items", before, after, apply=True, backup_dir=tmp_path)
-    assert result["custom:field"] == before["custom:field"]
-    assert result["dcterms:identifier"] == after["dcterms:identifier"]
+    assert result.status == "updated"
+    assert result.record["custom:field"] == before["custom:field"]
+    assert result.record["dcterms:identifier"] == after["dcterms:identifier"]
     _, _, payload = api.writes[0]
-    assert set(payload) == {"custom:field", "dcterms:identifier"}
+    assert "o:is_public" not in payload
+    assert payload["custom:field"] == before["custom:field"]
+
+
+def test_already_applied_is_distinct_from_a_preview():
+    before = create_minimal_item(3)
+    after = {**before, "o:is_public": False}
+    api = FakeAPI(after)
+    assert update_record(api, "items", before, after).status == "already_applied"
+    assert not api.writes
+    api.record = before
+    assert update_record(api, "items", before, after).status == "preview"
+
+
+@pytest.mark.parametrize(
+    "value", ["not a list", [{"type": "literal", "property_id": 4, "@value": 42}]]
+)
+def test_malformed_property_cannot_be_written(tmp_path, value):
+    before = create_minimal_item(3)
+    api = FakeAPI(before)
+    with pytest.raises((ValueError, OmekaError), match="dcterms:description"):
+        update_record(
+            api,
+            "items",
+            before,
+            {**before, "dcterms:description": value},
+            apply=True,
+            backup_dir=tmp_path,
+        )
+    assert not api.writes
+    assert not list(tmp_path.iterdir())

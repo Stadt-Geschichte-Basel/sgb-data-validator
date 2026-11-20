@@ -221,12 +221,3 @@ def is_valid_iso639_1_code(code: str) -> bool:
         return False
 
     return code.lower() in ISO_639_1_CODES
-
-
-def get_all_codes() -> frozenset[str]:
-    """Get all valid ISO 639-1 language codes.
-
-    Returns:
-        Frozenset of all valid two-letter ISO 639-1 codes
-    """
-    return ISO_639_1_CODES

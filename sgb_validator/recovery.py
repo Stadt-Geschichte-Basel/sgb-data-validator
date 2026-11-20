@@ -4,11 +4,12 @@ import hashlib
 import json
 import os
 import re
+import sys
 from collections.abc import Callable, Iterator
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 import httpx2
 
@@ -22,6 +23,7 @@ from .snapshots import (
     write_json,
     write_snapshot,
 )
+from .transformations import has_placeholder_media
 from .writes import (
     create_payload,
     create_record,
@@ -32,7 +34,8 @@ from .writes import (
 )
 
 FILES = ("item_set.json", "items.json", "media.json")
-SUPPORTED_INGESTERS = {"upload", "html"}
+FILE_INGESTERS = {"upload", "url"}
+SUPPORTED_INGESTERS = FILE_INGESTERS | {"html"}
 DEPENDENCIES = {
     "o:item_set": "item_sets",
     "o:site": "sites",
@@ -113,8 +116,8 @@ def external_references(snapshot: Snapshot) -> list[Record]:
             for link in links:
                 rid = ref_id(link)
                 if rid is None:
-                    rid = (link.get("@id") or "").rstrip("/").rsplit("/", 1)[-1]
-                    rid = int(rid) if rid.isdigit() else None
+                    segment = (link.get("@id") or "").rstrip("/").rsplit("/", 1)[-1]
+                    rid = int(segment) if segment.isdigit() else None
                 if rid and rid not in known:
                     references.append(
                         {
@@ -185,7 +188,7 @@ def backup(api: OmekaAPI, item_set_id: int, directory: Path) -> Record:
         )
     snapshot = download_snapshot(api, item_set_id)
     write_snapshot(directory, snapshot, "")
-    manifest = {
+    manifest: Record = {
         "version": 1,
         "complete": False,
         "source": api.base_url,
@@ -213,7 +216,9 @@ def backup(api: OmekaAPI, item_set_id: int, directory: Path) -> Record:
                         f"media/{rid}: unsupported ingester {ingester!r}"
                     )
                 if not url and (
-                    ingester == "upload" or media.get("o:sha256") or media.get("o:size")
+                    ingester in FILE_INGESTERS
+                    or media.get("o:sha256")
+                    or media.get("o:size")
                 ):
                     raise ValueError("Missing original URL")
                 if url:
@@ -227,11 +232,22 @@ def backup(api: OmekaAPI, item_set_id: int, directory: Path) -> Record:
                         raise ValueError(
                             "Original differs from Omeka's file size or SHA-256"
                         )
+                    source = media.get("o:source") or ""
+                    original_name = (
+                        unquote(urlsplit(source).path).rsplit("/", 1)[-1]
+                        if ingester == "url"
+                        else Path(source).name
+                    )
+                    if (
+                        not original_name
+                        or Path(original_name).suffix.lower() != extension.lower()
+                    ):
+                        original_name = filename
                     manifest["originals"][str(rid)] = {
                         "path": str(destination.relative_to(directory)),
                         "size": size,
                         "sha256": digest,
-                        "filename": Path(media.get("o:source") or filename).name,
+                        "filename": original_name,
                     }
                 if ingester == "html" and not isinstance(
                     (media.get("data") or {}).get("html"), str
@@ -266,7 +282,7 @@ def backup(api: OmekaAPI, item_set_id: int, directory: Path) -> Record:
 
 
 def original_path(directory: Path, entry: Record) -> Path:
-    path = (directory / entry["path"]).resolve()
+    path = (directory / Path(entry["path"])).resolve()
     if not path.is_relative_to((directory / "originals").resolve()):
         raise ValueError("An original file path leaves the backup directory")
     return path
@@ -324,7 +340,7 @@ def load_backup(directory: Path) -> tuple[Snapshot, Record, bool]:
                     raise ValueError(
                         f"Original media/{rid} has a different size or SHA-256"
                     )
-            elif ingester == "upload":
+            elif ingester in FILE_INGESTERS:
                 raise ValueError(f"Missing original for media/{rid}")
         if any(parents.values()):
             raise ValueError("Missing media records in the backup")
@@ -394,8 +410,12 @@ def recovery_payload(
         ]
     if kind == "items":
         data.pop("o:media", None)
-    if kind == "media" and data["o:ingester"] == "html":
-        data["html"] = data["data"]["html"]
+    if kind == "media":
+        if data["o:ingester"] == "html":
+            data["html"] = data["data"]["html"]
+        elif data["o:ingester"] == "url":
+            # The original remote URL may now serve a different file.
+            data["o:ingester"] = "upload"
     return remap(kind, data, ids, source)
 
 
@@ -410,6 +430,11 @@ def matches_creation(
     if provided_terms != properties(actual).keys():
         return False
     if kind == "media":
+        if any(
+            key in payload and payload[key] != actual.get(key)
+            for key in ("o:ingester", "o:source")
+        ):
+            return False
         return (
             ref_id(payload["o:item"]) == ref_id(actual.get("o:item"))
             and original.get("o:sha256") == actual.get("o:sha256")
@@ -419,18 +444,22 @@ def matches_creation(
     return True
 
 
-def lock_restore(descriptor: int) -> None:
-    try:
-        if os.name == "nt":
-            import msvcrt
+@contextmanager
+def lock_restore(directory: Path) -> Iterator[None]:
+    lock_path = directory / ".restore.lock"
+    with os.fdopen(os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600), "r+b") as lock:
+        try:
+            if sys.platform == "win32":
+                import msvcrt
 
-            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
 
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError as exc:
-        raise OmekaError("Cannot lock the backup for restore") from exc
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise OmekaError("Cannot lock the backup for restore") from exc
+        yield
 
 
 def restore(
@@ -464,25 +493,7 @@ def restore(
     fingerprint = hashlib.sha256(
         json.dumps(list(records(snapshot)), sort_keys=True).encode()
     ).hexdigest()
-    if apply:
-        lock_path = directory / ".restore.lock"
-        with os.fdopen(
-            os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600), "r+b"
-        ) as lock:
-            lock_restore(lock.fileno())
-            restore_records(
-                api,
-                directory,
-                snapshot,
-                manifest,
-                full,
-                ledger_path,
-                fingerprint,
-                apply,
-                skip_recent_hours,
-                announce,
-            )
-    else:
+    with lock_restore(directory) if apply else nullcontext():
         restore_records(
             api,
             directory,
@@ -518,10 +529,10 @@ def restore_records(
         raise ValueError("Restore progress belongs to a different backup or instance")
     all_records = list(records(snapshot))
     internal_ids = {record["o:id"] for _, record in all_records}
-    ids = {int(old): new for old, new in ledger["ids"].items()}
-    current = {}
+    ids: dict[int, int] = {int(old): new for old, new in ledger["ids"].items()}
+    current: dict[int, Record] = {}
     for kind, record in all_records:
-        old_id = record["o:id"]
+        old_id: int = record["o:id"]
         found = optional_get(api, kind, ids.get(old_id, old_id))
         if found is None and old_id in ids:
             raise OmekaError(f"Mapped {kind}/{ids[old_id]} is missing")
@@ -529,20 +540,37 @@ def restore_records(
             current[old_id] = found
             ids[old_id] = found["o:id"]
         elif full:
-            announce(f"Recreate {kind}/{old_id}")
+            suffix = (
+                " from the archived original via upload"
+                if record.get("o:ingester") == "url"
+                else ""
+            )
+            announce(f"Recreate {kind}/{old_id}{suffix}")
         else:
             announce(f"Missing {kind}/{old_id}: metadata backup has no recreation data")
     missing = [
         (kind, record) for kind, record in all_records if record["o:id"] not in current
     ]
-    if not full and not apply and missing:
-        raise OmekaError(f"{len(missing)} deleted records require a complete backup")
+    placeholders = [
+        medium
+        for medium in snapshot.media
+        if full
+        and has_placeholder_media(medium)
+        and (medium["o:id"] not in current or str(medium["o:id"]) in ledger["ids"])
+    ]
+    private: set[int] = {medium["o:id"] for medium in placeholders}
+    private.update(medium["o:item"]["o:id"] for medium in placeholders)
     if not apply:
+        for kind, record in missing:
+            if record["o:id"] in private and record.get("o:is_public", True):
+                announce(f"Recreate {kind}/{record['o:id']} as private")
         for kind, record in all_records:
             if record["o:id"] not in current:
                 continue
             live = current[record["o:id"]]
             proposed = remap(kind, record, ids, snapshot.source)
+            if record["o:id"] in private:
+                proposed["o:is_public"] = False
             fields = record_changes(kind, live, proposed)
             if fields:
                 recent = modified_recently(live, skip_recent_hours)
@@ -550,26 +578,50 @@ def restore_records(
                 announce(f"{action} {kind}/{live['o:id']}: {', '.join(fields)}")
             else:
                 announce(f"Verify surviving {kind}/{live['o:id']}")
-        for kind, record in missing:
+        for kind, record in missing if full else []:
             for property_id, value in identifiers(record):
                 if str(record["o:id"]) not in ledger["pending"] and api.find(
                     kind, value, property_id
                 ):
                     raise OmekaError(f"Identifier collision in {kind}: {value!r}")
+    if not full and missing:
+        raise OmekaError(
+            f"{len(missing)} deleted records require a complete backup. "
+            "No records were written."
+        )
+    if not apply:
         return
 
-    created = set()
+    created: set[int] = set()
+    protected = ledger.setdefault("protected", {})
+    items = {item["o:id"]: item for item in snapshot.items}
+    for old, saved in protected.items():
+        current_parent = current.get(int(old))
+        if (
+            current_parent
+            and current_parent.get("o:modified") == saved.get("o:modified")
+            and (
+                writable("items", {**current_parent, "o:media": saved["o:media"]})
+                == writable("items", saved)
+            )
+        ):
+            created.add(current_parent["o:id"])
     initial = ledger.setdefault("initial", {})
     for kind, record in all_records:
         key = str(record["o:id"])
         original = initial.get(key)
-        live = current.get(record["o:id"])
+        recovered = current.get(record["o:id"])
         if (
             original is not None
-            and live is not None
-            and matches_creation(kind, original, live, record)
+            and recovered is not None
+            and matches_creation(
+                kind,
+                original,
+                recovered,
+                record,
+            )
         ):
-            created.add(live["o:id"])
+            created.add(recovered["o:id"])
 
     def persist(old_id: int, new_id: int) -> None:
         ids[old_id] = new_id
@@ -583,15 +635,43 @@ def restore_records(
             old_id = record["o:id"]
             key = str(old_id)
             data = recovery_payload(kind, record, ids, internal_ids, snapshot.source)
+            if old_id in private:
+                data["o:is_public"] = False
+            if kind == "media" and old_id in private:
+                parent_id = record["o:item"]["o:id"]
+                parent = current[parent_id]
+                if parent["o:is_public"]:
+                    result = update_record(
+                        api,
+                        "items",
+                        parent,
+                        {**parent, "o:is_public": False},
+                        apply=True,
+                        backup_dir=directory / "before-edit",
+                        skip_recent_hours=0
+                        if parent["o:id"] in created
+                        else skip_recent_hours,
+                        backup_record=items[parent_id],
+                    )
+                    assert result.record is not None
+                    current[parent_id] = protected[str(parent_id)] = result.record
+                    write_json(ledger_path, ledger)
+                    created.add(parent["o:id"])
+                    announce(
+                        f"Set items/{parent['o:id']} to private "
+                        "before restoring its placeholder"
+                    )
             file, filename = (
                 file_args(directory, manifest, record)
                 if kind == "media"
                 else (None, None)
             )
             payload = create_payload(kind, data, file=file, filename=filename)
-            scope = {}
+            scope: Record = {}
             if kind == "items":
-                scope["item_set_id"] = ids[snapshot.item_set_id]
+                set_id = snapshot.item_set_id
+                assert set_id is not None
+                scope["item_set_id"] = ids[set_id]
             if kind == "media":
                 scope["item_id"] = ref_id(data["o:item"])
             if identifiers(payload):
@@ -622,6 +702,10 @@ def restore_records(
                 "payload": payload,
             }
             write_json(ledger_path, ledger)
+
+            def record_creation(new_id: int, old: int = old_id) -> None:
+                persist(old, new_id)
+
             current[old_id] = create_record(
                 api,
                 kind,
@@ -629,7 +713,7 @@ def restore_records(
                 file=file,
                 filename=filename,
                 apply=True,
-                on_created=lambda new_id, old_id=old_id: persist(old_id, new_id),
+                on_created=record_creation,
             )
 
     with httpx2.Client(timeout=120, follow_redirects=True) as originals:
@@ -642,6 +726,7 @@ def restore_records(
             ids,
             current,
             created,
+            private,
             skip_recent_hours,
             announce,
             originals,
@@ -657,6 +742,7 @@ def verify_restored_records(
     ids: dict[int, int],
     current: dict[int, Record],
     created: set[int],
+    private: set[int],
     skip_recent_hours: float,
     announce: Callable[[str], None],
     originals: httpx2.Client,
@@ -669,11 +755,13 @@ def verify_restored_records(
             continue
         before = current[old_id]
         after = remap(kind, record, ids, snapshot.source)
+        if old_id in private:
+            after["o:is_public"] = False
         if kind == "items":
             desired = [
-                ids[ref_id(ref)]
+                ids[rid]
                 for ref in record.get("o:media", [])
-                if ref_id(ref) in ids
+                if (rid := ref_id(ref)) is not None and rid in ids
             ]
             live = api.get(kind, before["o:id"])
             before = {
@@ -694,11 +782,14 @@ def verify_restored_records(
                 apply=True,
                 backup_dir=directory / "before-edit",
                 skip_recent_hours=0 if before["o:id"] in created else skip_recent_hours,
+                backup_record=record,
             )
             actual = api.get(kind, before["o:id"])
             verify_fields(kind, after, actual)
             if kind == "media" and full:
-                verify_original(originals, record, actual, manifest)
+                verify_original(
+                    originals, record, actual, manifest, recreated=ids[old_id] != old_id
+                )
             announce(f"Verified {kind}/{actual['o:id']}")
         except (OmekaError, OSError, ValueError) as exc:
             failures += 1
@@ -712,14 +803,21 @@ def verify_original(
     record: Record,
     actual: Record,
     manifest: Record,
+    *,
+    recreated: bool,
 ) -> None:
-    if record.get("o:ingester") == "html":
+    expected_ingester = record.get("o:ingester")
+    if expected_ingester == "url" and recreated:
+        expected_ingester = "upload"
+    if expected_ingester == "html":
         if (record.get("data") or {}).get("html") != (actual.get("data") or {}).get(
             "html"
         ):
             raise OmekaError("HTML content differs")
-    if actual.get("o:ingester") != record.get("o:ingester"):
+    if actual.get("o:ingester") != expected_ingester:
         raise OmekaError("Media ingester differs")
+    if actual.get("o:source") != record.get("o:source"):
+        raise OmekaError("Media source differs")
     entry = manifest["originals"].get(str(record["o:id"]))
     if not entry:
         return

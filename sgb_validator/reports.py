@@ -47,6 +47,8 @@ def save_report(result: Findings, output_file: Path) -> None:
 
 def warning_column(warning: DataValidationWarning) -> tuple[str, str]:
     text = warning.message
+    if warning.field:
+        return warning.field, text
     if text.startswith("Missing "):
         return text.removeprefix("Missing ").strip(), "Missing field"
     if ":" in text:
@@ -62,7 +64,10 @@ def export_validation_csv(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     admin_url = base_url.rstrip("/").removesuffix("/api") + "/admin" if base_url else ""
-    issues = {"Item": defaultdict(dict), "Media": defaultdict(dict)}
+    issues: dict[str, dict[int | str, dict[str, str]]] = {
+        "Item": defaultdict(dict),
+        "Media": defaultdict(dict),
+    }
     for warning in result.warnings:
         field, message = warning_column(warning)
         issues[warning.resource_type][warning.resource_id][field] = (

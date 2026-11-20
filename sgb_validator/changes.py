@@ -1,6 +1,7 @@
 """Calculate record changes and writable Omeka payloads."""
 
 from copy import deepcopy
+from typing import Any
 
 from .api import Record
 
@@ -58,12 +59,13 @@ def trim_value(value: Record) -> Record:
     return result
 
 
-def ref_id(value):
-    return value.get("o:id") if isinstance(value, dict) else value
+def ref_id(value: Any) -> int | None:
+    rid = value.get("o:id") if isinstance(value, dict) else value
+    return rid if isinstance(rid, int) and not isinstance(rid, bool) else None
 
 
 def writable(kind: str, record: Record) -> Record:
-    result = {}
+    result: Record = {}
     for key in sorted(COMMON_FIELDS | TYPE_FIELDS[kind]):
         if key not in record:
             continue

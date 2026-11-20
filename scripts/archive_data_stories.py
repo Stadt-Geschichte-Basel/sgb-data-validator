@@ -1061,12 +1061,20 @@ def story_temporal(api: OmekaAPI, slug: str) -> list[str]:
     return [v["@value"] for v in parent.get("dcterms:temporal", []) if v.get("@value")]
 
 
-def upload(slug: str, apply: bool, limit: int | None) -> int:
+def upload(
+    slug: str, apply: bool, limit: int | None, skip_recent_hours: float = 2
+) -> int:
     with omeka() as api:
-        return upload_rows(api, slug, apply, limit)
+        return upload_rows(api, slug, apply, limit, skip_recent_hours)
 
 
-def upload_rows(api: OmekaAPI, slug: str, apply: bool, limit: int | None) -> int:
+def upload_rows(
+    api: OmekaAPI,
+    slug: str,
+    apply: bool,
+    limit: int | None,
+    skip_recent_hours: float = 2,
+) -> int:
     rows = read_manifest(slug)
     temporal = story_temporal(api, slug)
     vocabularies = VocabularyLoader()
@@ -1083,7 +1091,13 @@ def upload_rows(api: OmekaAPI, slug: str, apply: bool, limit: int | None) -> int
         try:
             if decision.startswith("reuse:"):
                 link_existing(
-                    api, slug, row, int(decision.split(":")[1]), apply, copies
+                    api,
+                    slug,
+                    row,
+                    int(decision.split(":")[1]),
+                    apply,
+                    copies,
+                    skip_recent_hours,
                 )
                 continue
             problems = rights_problems(row)
@@ -1175,6 +1189,7 @@ def link_existing(
     item_id: int,
     apply: bool,
     copies: Path,
+    skip_recent_hours: float,
 ) -> None:
     """Add the story DOI to an existing item."""
     doi = f"https://doi.org/{STORIES[slug]['doi']}"
@@ -1185,7 +1200,15 @@ def link_existing(
     proposed.setdefault("dcterms:isPartOf", []).append(
         uri(33, "Is Part Of", doi, STORIES[slug]["title"])
     )
-    update_record(api, "items", record, proposed, apply=apply, backup_dir=copies)
+    update_record(
+        api,
+        "items",
+        record,
+        proposed,
+        apply=apply,
+        backup_dir=copies,
+        skip_recent_hours=skip_recent_hours,
+    )
     print(f"{'OK' if apply else 'DRY'} link item {item_id} -> {doi}")
     if apply:
         row["omeka_item"] = str(item_id)
@@ -1197,13 +1220,15 @@ def with_note(text: str) -> str:
     return text if AI_NOTE in text else f"{text}\n\n{AI_NOTE}".strip()
 
 
-def ainote(slug: str, apply: bool) -> int:
+def ainote(slug: str, apply: bool, skip_recent_hours: float = 2) -> int:
     """Set the current AI note on the uploaded items and media of a story."""
     with omeka() as api:
-        return apply_ai_note(api, slug, apply)
+        return apply_ai_note(api, slug, apply, skip_recent_hours)
 
 
-def apply_ai_note(api: OmekaAPI, slug: str, apply: bool) -> int:
+def apply_ai_note(
+    api: OmekaAPI, slug: str, apply: bool, skip_recent_hours: float = 2
+) -> int:
     changed = failed = 0
     for row in read_manifest(slug):
         if row["decision"] != "ingest":
@@ -1223,7 +1248,13 @@ def apply_ai_note(api: OmekaAPI, slug: str, apply: bool) -> int:
                     continue
                 values[0]["@value"] = new
                 update_record(
-                    api, kind, record, proposed, apply=apply, backup_dir=before_edits()
+                    api,
+                    kind,
+                    record,
+                    proposed,
+                    apply=apply,
+                    backup_dir=before_edits(),
+                    skip_recent_hours=skip_recent_hours,
                 )
                 changed += 1
                 print(f"{'OK' if apply else 'DRY'} {kind} {rid} {row['identifier']}")
@@ -1259,16 +1290,33 @@ def zenodo_has_file(doi: str, path: Path) -> bool:
     return any(f.get("checksum") == md5 for f in response.json().get("files", []))
 
 
-def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
+def parent(
+    slug: str,
+    screenshot: Path,
+    apply: bool,
+    delete_old: bool,
+    skip_recent_hours: float = 2,
+) -> int:
     if not screenshot.is_file():
         print(f"{screenshot}: file not found")
         return 1
-    with omeka() as api:
-        return apply_parent(api, slug, screenshot, apply, delete_old)
+    try:
+        with omeka() as api:
+            return apply_parent(
+                api, slug, screenshot, apply, delete_old, skip_recent_hours
+            )
+    except (OmekaError, httpx2.HTTPError, OSError, ValueError) as exc:
+        print(f"{slug}: {exc}", file=sys.stderr)
+        return 1
 
 
 def apply_parent(
-    api: OmekaAPI, slug: str, screenshot: Path, apply: bool, delete_old: bool
+    api: OmekaAPI,
+    slug: str,
+    screenshot: Path,
+    apply: bool,
+    delete_old: bool,
+    skip_recent_hours: float = 2,
 ) -> int:
     story = STORIES[slug]
     item = api.get("items", story["item"])
@@ -1379,6 +1427,7 @@ def apply_parent(
     if problems:
         print("validation:", *problems, sep="\n  ")
         return 1
+    update_record(api, "items", item, new_item, skip_recent_hours=skip_recent_hours)
     if not apply:
         print("dry run: nothing written")
         return 0
@@ -1392,7 +1441,15 @@ def apply_parent(
                     path.parent / f"{m['o:id']}_{m.get('o:filename')}",
                 )
     print(f"backup: {path}")
-    update_record(api, "items", item, new_item, apply=True, backup_dir=path.parent)
+    update_record(
+        api,
+        "items",
+        item,
+        new_item,
+        apply=True,
+        backup_dir=path.parent,
+        skip_recent_hours=skip_recent_hours,
+    )
     created = create_record(api, "media", media, file=screenshot, apply=True)
     check = api.get("items", story["item"])
     print(
@@ -1433,14 +1490,23 @@ def main() -> int:
         action="store_true",
         help="delete the old story media after the upload",
     )
+    for name in ("upload", "ainote", "parent"):
+        sub.choices[name].add_argument(
+            "--skip-recent-hours",
+            type=float,
+            default=2,
+            help="Skip records edited within this many hours (default: 2)",
+        )
     args = parser.parse_args()
     if args.cmd == "collect":
         return collect(args.slug, args.force)
     if args.cmd == "upload":
-        return upload(args.slug, args.apply, args.limit)
+        return upload(args.slug, args.apply, args.limit, args.skip_recent_hours)
     if args.cmd == "ainote":
-        return ainote(args.slug, args.apply)
-    return parent(args.slug, args.screenshot, args.apply, args.delete_old)
+        return ainote(args.slug, args.apply, args.skip_recent_hours)
+    return parent(
+        args.slug, args.screenshot, args.apply, args.delete_old, args.skip_recent_hours
+    )
 
 
 if __name__ == "__main__":

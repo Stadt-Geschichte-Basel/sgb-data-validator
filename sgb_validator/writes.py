@@ -1,12 +1,19 @@
 """Preview and apply guarded writes to Omeka."""
 
 import hashlib
+from collections import Counter
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, ValidationError
+from pydantic_core import ErrorDetails
 
 from .api import OmekaAPI, OmekaError, Record
 from .changes import identifiers, properties, record_changes, ref_id, writable
+from .models import Item, Media
 from .snapshots import write_json
 from .transformations import has_placeholder_media
 
@@ -52,6 +59,63 @@ def file_digest(file: Path) -> tuple[int, str]:
         return file.stat().st_size, hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+@dataclass(frozen=True)
+class UpdateResult:
+    status: Literal["unchanged", "already_applied", "preview", "updated"]
+    fields: tuple[str, ...] = ()
+    record: Record | None = None
+
+
+def model_errors(kind: str, record: Record) -> list[ErrorDetails]:
+    models: dict[str, type[BaseModel]] = {"items": Item, "media": Media}
+    model = models.get(kind)
+    if model is None:
+        return []
+    # Omeka accepts ID-only references and derives labels on save.
+    data = dict(record)
+    for key, values in properties(data).items():
+        data[key] = [
+            {"property_label": key, "is_public": True, **value} for value in values
+        ]
+    for key in (
+        "o:owner",
+        "o:resource_class",
+        "o:resource_template",
+        "o:thumbnail",
+        "o:item",
+    ):
+        value = data.get(key)
+        if isinstance(value, dict) and "o:id" in value:
+            data[key] = {"@id": "", **value}
+    for key in ("o:item_set", "o:media"):
+        if isinstance(data.get(key), list):
+            data[key] = [
+                {"@id": "", **ref} if isinstance(ref, dict) else ref
+                for ref in data[key]
+            ]
+    try:
+        model.model_validate(data)
+    except ValidationError as exc:
+        return exc.errors(include_url=False, include_context=False)
+    return []
+
+
+def check_property_shapes(record: Record) -> None:
+    for field, values in record.items():
+        if ":" not in field or field.startswith(("o:", "o-cnt:")) or values is None:
+            continue
+        if not isinstance(values, list) or any(
+            not isinstance(value, dict)
+            or not isinstance(value.get("property_id"), int)
+            or not isinstance(value.get("type"), str)
+            or not value["type"]
+            for value in values
+        ):
+            raise ValueError(
+                f"{field}: supply a list of native values with type and property_id"
+            )
+
+
 def update_record(
     api: OmekaAPI,
     kind: str,
@@ -61,10 +125,15 @@ def update_record(
     apply: bool = False,
     backup_dir: Path | None = None,
     skip_recent_hours: float = 2,
-) -> Record | None:
+    backup_record: Record | None = None,
+) -> UpdateResult:
+    if before == after:
+        return UpdateResult("unchanged")
+    check_property_shapes(after)
     changes = record_changes(kind, before, after)
     if not changes:
-        return None
+        return UpdateResult("unchanged")
+    fields = tuple(changes)
     rid = before["o:id"]
     current = api.get(kind, rid)
     expected = {**writable(kind, before), **changes}
@@ -73,16 +142,36 @@ def update_record(
         for key, value in expected.items()
         if key not in properties(expected) or value
     }:
-        return current
+        return UpdateResult("already_applied", fields, current)
     if current.get("o:modified") != before.get("o:modified") or writable(
         kind, current
     ) != writable(kind, before):
         raise OmekaError(f"{kind}/{rid} changed since the source read")
     if modified_recently(current, skip_recent_hours):
         raise OmekaError(f"{kind}/{rid} was edited within {skip_recent_hours:g} hours")
+    proposed = {**current, **after}
+    for key in properties(current).keys() - after.keys():
+        proposed.pop(key)
+    errors = model_errors(kind, proposed)
+    if backup_record is not None:
+        # Preserve existing shape defects when replaying trusted backup metadata.
+        known = model_errors(kind, backup_record)
+        errors = [error for error in errors if error not in known]
+    if errors:
+        details = ", ".join(
+            f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in errors
+        )
+        raise OmekaError(f"{kind}/{rid} has invalid Omeka metadata: {details}")
     check_identifiers(api, kind, changes, rid)
+    if kind == "items" and "o:media" in changes:
+        if Counter(ref_id(ref) for ref in current.get("o:media", [])) != Counter(
+            ref_id(ref) for ref in changes["o:media"]
+        ):
+            raise OmekaError(
+                f"{kind}/{rid}: media order must contain all current media"
+            )
     if not apply:
-        return changes
+        return UpdateResult("preview", fields)
     if backup_dir is None:
         raise ValueError("Set a private directory for before-edit copies")
     payload = dict(changes)
@@ -99,13 +188,6 @@ def update_record(
         ]
         if omitted:
             payload["clear_property_values"] = sorted(set(omitted))
-    if kind == "items" and "o:media" in changes:
-        if sorted(ref_id(ref) for ref in current.get("o:media", [])) != sorted(
-            ref_id(ref) for ref in changes["o:media"]
-        ):
-            raise OmekaError(
-                f"{kind}/{rid}: media order must contain all current media"
-            )
     backup_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     name = f"{kind}_{rid}_{datetime.now(UTC):%Y%m%d_%H%M%S_%f}.json"
     write_json(backup_dir / name, current)
@@ -117,7 +199,7 @@ def update_record(
     api.patch(kind, rid, payload)
     verified = api.get(kind, rid)
     verify_fields(kind, {**writable(kind, current), **changes}, verified)
-    return verified
+    return UpdateResult("updated", fields, verified)
 
 
 def create_payload(
@@ -130,16 +212,7 @@ def create_payload(
 ) -> Record:
     if not isinstance(data, dict):
         raise ValueError("Supply one Omeka JSON object")
-    for field, values in properties(data).items():
-        for value in values:
-            if (
-                not isinstance(value, dict)
-                or not isinstance(value.get("property_id"), int)
-                or not value.get("type")
-            ):
-                raise ValueError(
-                    f"{field}: supply a native property with type and property_id"
-                )
+    check_property_shapes(data)
     payload = writable(kind, data)
     if payload.get("o:owner") is None:
         payload.pop("o:owner", None)
@@ -147,7 +220,9 @@ def create_payload(
         if data.get("o:media"):
             raise ValueError("Create media separately after creating its item")
         if target_id is not None:
-            members = {ref_id(ref) for ref in payload.get("o:item_set", [])}
+            members = {ref["o:id"] for ref in payload.get("o:item_set", [])}
+            if None in members:
+                raise ValueError("Item set references require an integer o:id")
             payload["o:item_set"] = [
                 {"o:id": rid} for rid in sorted(members | {target_id})
             ]
@@ -169,7 +244,7 @@ def create_payload(
             if payload.get("o:ingester", "upload") != "upload":
                 raise ValueError("A local file requires the upload ingester")
             payload.update({"o:ingester": "upload", "file_index": 0})
-            if has_placeholder_media({"o:filename": filename or file.name}):
+            if has_placeholder_media({**payload, "o:filename": filename or file.name}):
                 payload["o:is_public"] = False
         elif payload.get("o:ingester") in (None, "upload"):
             raise ValueError("Supply a file with --file or select an Omeka ingester")
@@ -202,8 +277,11 @@ def create_record(
     if target_id is not None and kind == "items":
         api.get("item_sets", target_id)
     if kind == "media":
-        parent = api.get("items", ref_id(payload["o:item"]))
-        if file and has_placeholder_media({"o:filename": filename or file.name}):
+        parent_id = payload["o:item"]["o:id"]
+        parent = api.get("items", parent_id)
+        if file and has_placeholder_media(
+            {**payload, "o:filename": filename or file.name}
+        ):
             if parent.get("o:is_public"):
                 raise OmekaError(
                     "Set the parent item to private before attaching a placeholder"
@@ -219,6 +297,9 @@ def create_record(
     verified = api.get(kind, rid)
     verify_fields(kind, payload, verified)
     if kind == "media":
+        for key in ("o:source", "o:ingester"):
+            if key in payload and verified.get(key) != payload[key]:
+                raise OmekaError(f"media/{rid} read-back differs in {key}")
         if ref_id(verified.get("o:item")) != ref_id(payload["o:item"]):
             raise OmekaError(f"media/{rid} has a different parent")
         if original and (verified.get("o:size"), verified.get("o:sha256")) != original:

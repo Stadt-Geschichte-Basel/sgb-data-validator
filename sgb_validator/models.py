@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
 class OmekaProperty(BaseModel):
@@ -124,7 +124,7 @@ class Media(BaseModel):
     o_renderer: str = Field(alias="o:renderer")
     o_item: ResourceRef = Field(alias="o:item")
     o_source: str | None = Field(None, alias="o:source")
-    o_media_type: str = Field(alias="o:media_type")
+    o_media_type: str | None = Field(alias="o:media_type")
     o_sha256: str | None = Field(None, alias="o:sha256")
     o_size: int | None = Field(None, alias="o:size")
     o_filename: str | None = Field(None, alias="o:filename")
@@ -134,7 +134,7 @@ class Media(BaseModel):
     o_thumbnail_urls: dict[str, str | None] | list[Any] | None = Field(
         None, alias="o:thumbnail_urls"
     )
-    data: list[Any] = Field(default_factory=list)
+    data: list[Any] | dict[str, Any] = Field(default_factory=list)
 
     # Dublin Core Terms
     dcterms_identifier: list[OmekaProperty] | None = Field(
@@ -172,9 +172,9 @@ class Media(BaseModel):
 
     @field_validator("o_media_type")
     @classmethod
-    def media_type_not_empty(cls, v: str) -> str:
-        """Ensure media type is not empty"""
-        if not v or v.strip() == "":
+    def media_type_not_empty(cls, v: str | None, info: ValidationInfo) -> str | None:
+        """File media need a media type."""
+        if info.data.get("o_renderer") == "file" and (not v or not v.strip()):
             raise ValueError("Media type cannot be empty")
         return v
 

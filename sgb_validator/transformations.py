@@ -349,7 +349,7 @@ def transform_item(
         return item_data
 
     # Create a copy to avoid modifying the original
-    result = {}
+    result: dict[str, Any] = {}
 
     for key, value in item_data.items():
         if key == "o:title" and isinstance(value, str):
@@ -527,24 +527,13 @@ def transform_item_set_data(
 
 
 def has_placeholder_media(media_data: dict[str, Any]) -> bool:
-    """Check if media contains sgb-fdp-platzhalter in o:filename.
-
-    This function identifies media that should be marked as private.
-
-    Args:
-        media_data: The media data dictionary
-
-    Returns:
-        True if the media contains a placeholder file, False otherwise
-    """
+    """Recognize the placeholder in Omeka's source name or stored filename."""
     if not isinstance(media_data, dict):
         return False
-
-    filename = media_data.get("o:filename", "")
-    if isinstance(filename, str):
-        return "sgb-fdp-platzhalter" in filename.lower()
-
-    return False
+    return any(
+        isinstance(name, str) and "sgb-fdp-platzhalter" in name.lower()
+        for name in (media_data.get("o:source"), media_data.get("o:filename"))
+    )
 
 
 def set_media_private_flag(media_data: dict[str, Any]) -> dict[str, Any]:
@@ -628,73 +617,3 @@ def propagate_private_flag_to_items(
         result.append(item_copy)
 
     return result
-
-
-def extract_wikidata_qids(text: str) -> list[str]:
-    """Extract all Wikidata QIDs from text.
-
-    Args:
-        text: The text to search for QIDs
-
-    Returns:
-        List of unique QIDs found in the text
-    """
-    if not text:
-        return []
-
-    # Match Q followed by digits (Wikidata item identifiers)
-    qids = re.findall(r"\bQ\d+\b", text)
-
-    # Return unique QIDs in order of appearance
-    seen = set()
-    unique_qids = []
-    for qid in qids:
-        if qid not in seen:
-            seen.add(qid)
-            unique_qids.append(qid)
-
-    return unique_qids
-
-
-def deduplicate_qids(qids: list[str]) -> list[str]:
-    """Remove duplicate QIDs while preserving order.
-
-    Args:
-        qids: List of QIDs (may contain duplicates)
-
-    Returns:
-        List of unique QIDs in order of first appearance
-    """
-    seen = set()
-    result = []
-    for qid in qids:
-        if qid not in seen:
-            seen.add(qid)
-            result.append(qid)
-    return result
-
-
-def normalize_name(name: str) -> str:
-    """Normalize a name for deduplication.
-
-    This function normalizes names by:
-    - Converting to lowercase
-    - Removing extra whitespace
-    - Applying Unicode NFC normalization
-
-    Args:
-        name: The name to normalize
-
-    Returns:
-        The normalized name
-    """
-    if not name:
-        return ""
-
-    # Apply text transformations
-    name = apply_text_transformations(name)
-
-    # Convert to lowercase for case-insensitive comparison
-    name = name.lower()
-
-    return name

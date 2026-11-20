@@ -54,7 +54,7 @@ def write_json(path: Path, data: Any) -> None:
 
 
 def read_snapshot(directory: Path) -> Snapshot:
-    def read(name: str, default=None):
+    def read(name: str, default: Any = None) -> Any:
         for suffix in ("_transformed", "", "_raw"):
             path = directory / f"{name}{suffix}.json"
             if path.is_file():

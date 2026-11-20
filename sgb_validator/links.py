@@ -146,7 +146,15 @@ async def check_links(
     severity: str = "warning",
 ) -> None:
     result.check_uris = True
-    async with httpx2.AsyncClient(timeout=10, follow_redirects=False) as client:
+    headers = {
+        "User-Agent": "SGB-Validator/1.0 (+https://github.com/Stadt-Geschichte-Basel/sgb-data-validator)",
+        "Accept": "text/html,application/xhtml+xml,application/json,*/*;q=0.8",
+    }
+    async with httpx2.AsyncClient(
+        timeout=10,
+        follow_redirects=False,
+        headers=headers,
+    ) as client:
         checker = LinkChecker(
             client, result, check_redirects=check_redirects, severity=severity
         )

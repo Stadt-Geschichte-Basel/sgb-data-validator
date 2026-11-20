@@ -1,6 +1,7 @@
 """The sgb command-line interface."""
 
 import asyncio
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from enum import Enum
@@ -10,7 +11,7 @@ from typing import Annotated
 import typer
 from dotenv import load_dotenv
 
-from .api import OmekaAPI, OmekaError
+from .api import OmekaAPI, OmekaError, Record
 from .links import check_links
 from .reports import export_validation_csv, print_report, save_report
 from .snapshots import Snapshot, download_snapshot, read_snapshot, write_snapshot
@@ -31,7 +32,7 @@ class Severity(str, Enum):
 
 
 @contextmanager
-def command_errors():
+def command_errors() -> Iterator[None]:
     try:
         yield
     except (OmekaError, OSError, ValueError) as exc:
@@ -76,14 +77,46 @@ def download(
 
 @app.command()
 def validate(
-    directory: Annotated[Path | None, typer.Argument()] = None,
-    item_set_id: ItemSetID = None,
-    base_url: BaseURL = None,
-    key_identity: Identity = None,
-    key_credential: Credential = None,
+    directory: Annotated[
+        Path | None,
+        typer.Argument(
+            help="Read this snapshot directory without Omeka authentication."
+        ),
+    ] = None,
+    item_set_id: Annotated[
+        int | None,
+        typer.Option(envvar="ITEM_SET_ID", help="Item set ID for live validation."),
+    ] = None,
+    base_url: Annotated[
+        str | None,
+        typer.Option(
+            envvar="OMEKA_URL",
+            help="Omeka URL for live validation or fallback CSV edit links.",
+        ),
+    ] = None,
+    key_identity: Annotated[
+        str | None,
+        typer.Option(
+            envvar="KEY_IDENTITY", help="Omeka key identity for live validation."
+        ),
+    ] = None,
+    key_credential: Annotated[
+        str | None,
+        typer.Option(
+            envvar="KEY_CREDENTIAL", help="Omeka credential for live validation."
+        ),
+    ] = None,
     check_uris: bool = False,
-    check_redirects: bool = False,
-    uri_check_severity: Severity = Severity.warning,
+    check_redirects: Annotated[
+        bool,
+        typer.Option(
+            help="Warn about redirects to another domain. Requires --check-uris."
+        ),
+    ] = False,
+    uri_check_severity: Annotated[
+        Severity,
+        typer.Option(help="Severity for failed URI checks. Requires --check-uris."),
+    ] = Severity.warning,
     output: Path | None = None,
     export_csv: bool = False,
     csv_output: Path = Path("validation_reports"),
@@ -155,7 +188,9 @@ def transform(
         typer.echo(destination)
 
 
-def plan_snapshot_update(source: Snapshot, edited: Snapshot):
+def plan_snapshot_update(
+    source: Snapshot, edited: Snapshot
+) -> Iterator[tuple[str, Record, Record]]:
     if source.item_set_id != edited.item_set_id or source.source != edited.source:
         raise ValueError("The edited snapshot must describe the same source item set")
     for kind, left, right in (
@@ -190,7 +225,6 @@ def update(
     skip_recent_hours: float = 2,
 ) -> None:
     """Compare two snapshots and apply changes when requested."""
-    from .changes import record_changes
     from .writes import update_record
 
     with command_errors():
@@ -207,12 +241,9 @@ def update(
             failures = 0
             copies = dated_dir(backup_dir, "before_edit", baseline.item_set_id)
             for kind, before, after in plan:
-                changes = record_changes(kind, before, after)
-                if not changes:
-                    continue
                 label = f"{kind}/{before['o:id']}"
                 try:
-                    update_record(
+                    result = update_record(
                         api,
                         kind,
                         before,
@@ -225,8 +256,14 @@ def update(
                     typer.echo(f"{label} skipped or failed: {exc}", err=True)
                     failures += 1
                 else:
-                    action = "Verified" if apply else "Would change"
-                    typer.echo(f"{action} {label}  {', '.join(changes)}")
+                    if result.status == "unchanged":
+                        continue
+                    action = {
+                        "preview": "Would change",
+                        "updated": "Verified",
+                        "already_applied": "Already applied",
+                    }[result.status]
+                    typer.echo(f"{action} {label}  {', '.join(result.fields)}")
             if failures:
                 typer.echo(f"{failures} record changes skipped or failed", err=True)
                 raise typer.Exit(1)
@@ -317,7 +354,6 @@ def backup_command(
 @app.command("restore")
 def restore_command(
     directory: Path,
-    base_url: BaseURL = None,
     key_identity: Identity = None,
     key_credential: Credential = None,
     apply: bool = False,
@@ -327,7 +363,7 @@ def restore_command(
     from .recovery import restore
 
     with command_errors():
-        source = base_url or read_snapshot(directory).source
+        source = read_snapshot(directory).source
         with connect(source, key_identity, key_credential) as api:
             restore(
                 api,

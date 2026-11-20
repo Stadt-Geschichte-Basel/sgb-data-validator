@@ -5,11 +5,12 @@ import logging
 import mimetypes
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx2
 
 Record = dict[str, Any]
+TOTAL_RESULTS = "omeka-s-total-results"
 
 
 class _RedactAPIQuery(logging.Filter):
@@ -101,7 +102,7 @@ class OmekaAPI:
         raise AssertionError("No request attempt")
 
     def get(self, kind: str, rid: int) -> Record:
-        return self.request("GET", f"{kind}/{rid}").json()
+        return cast(Record, self.request("GET", f"{kind}/{rid}").json())
 
     def listing(
         self,
@@ -128,7 +129,7 @@ class OmekaAPI:
                         "sort_order": "asc",
                     },
                 )
-                total = response.headers.get("omeka-s-total-results")
+                total = response.headers.get(TOTAL_RESULTS)
                 if total is not None:
                     try:
                         totals.add(int(total))
@@ -155,6 +156,10 @@ class OmekaAPI:
                 page += 1
             if attempt < 4:
                 time.sleep(2 * (attempt + 1))
+        if not totals and expected_ids is None:
+            raise OmekaError(
+                f"Incomplete {kind} listing: missing {TOTAL_RESULTS} header"
+            )
         raise OmekaError(
             f"Incomplete {kind} listing for {filters}: got {len(records)}, "
             f"server counts {sorted(totals)}, referenced count "
@@ -162,14 +167,12 @@ class OmekaAPI:
         )
 
     def find(self, kind: str, identifier: str, property_id: int = 10) -> list[Record]:
-        return self.listing(
-            kind,
-            **{
-                "property[0][property]": property_id,
-                "property[0][type]": "eq",
-                "property[0][text]": identifier,
-            },
-        )
+        filters: Record = {
+            "property[0][property]": property_id,
+            "property[0][type]": "eq",
+            "property[0][text]": identifier,
+        }
+        return self.listing(kind, **filters)
 
     def post(
         self,
@@ -180,16 +183,17 @@ class OmekaAPI:
         filename: str | None = None,
     ) -> Record:
         if file is None:
-            return self.request("POST", kind, json=payload).json()
+            return cast(Record, self.request("POST", kind, json=payload).json())
         filename = filename or file.name
         mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         with file.open("rb") as source:
-            return self.request(
+            response = self.request(
                 "POST",
                 kind,
                 data={"data": json.dumps(payload, ensure_ascii=False)},
                 files={"file[0]": (filename, source, mime)},
-            ).json()
+            )
+            return cast(Record, response.json())
 
     def patch(self, kind: str, rid: int, payload: Record) -> Record:
-        return self.request("PATCH", f"{kind}/{rid}", json=payload).json()
+        return cast(Record, self.request("PATCH", f"{kind}/{rid}", json=payload).json())

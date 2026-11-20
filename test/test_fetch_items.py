@@ -48,3 +48,16 @@ def test_fetch_items_fails_when_truncation_persists(monkeypatch) -> None:
 
     # No wait after the last attempt.
     assert sleeps == [2, 4, 6, 8]
+
+
+def test_unverified_listing_names_the_missing_count_header(monkeypatch):
+    monkeypatch.setattr(api.time, "sleep", lambda _: None)
+
+    def handler(request):
+        return httpx2.Response(200, json=[])
+
+    with OmekaAPI(
+        "https://omeka.example", transport=httpx2.MockTransport(handler)
+    ) as client:
+        with pytest.raises(RuntimeError, match="missing omeka-s-total-results header"):
+            client.listing("items")

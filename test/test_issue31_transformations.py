@@ -3,12 +3,9 @@
 from sgb_validator.transformations import (
     apply_text_transformations,
     convert_html_entities,
-    deduplicate_qids,
-    extract_wikidata_qids,
     has_placeholder_media,
     normalize_abbreviations,
     normalize_markdown_links,
-    normalize_name,
     normalize_unicode_nfc,
     normalize_urls,
     normalize_wikidata_url,
@@ -311,88 +308,3 @@ def test_has_placeholder_media() -> None:
             f"{description} failed: expected {expected}, got {result}"
         )
         print(f"  ✓ {description}")
-
-
-def test_extract_wikidata_qids() -> None:
-    """Test Wikidata QID extraction."""
-    print("\nTest 9: Wikidata QID extraction")
-    print("=" * 60)
-
-    test_cases = [
-        ("Q123", ["Q123"], "Single QID"),
-        ("Q123 and Q456", ["Q123", "Q456"], "Multiple QIDs"),
-        ("https://www.wikidata.org/wiki/Q789", ["Q789"], "QID in URL"),
-        ("Q1 Q2 Q1", ["Q1", "Q2"], "Duplicate QIDs (unique)"),
-        ("No QIDs here", [], "No QIDs"),
-        ("", [], "Empty string"),
-        ("Q123, Q456, Q789", ["Q123", "Q456", "Q789"], "QIDs with commas"),
-    ]
-
-    for input_text, expected, description in test_cases:
-        result = extract_wikidata_qids(input_text)
-        assert result == expected, (
-            f"{description} failed: expected {expected}, got {result}"
-        )
-        print(f"  ✓ {description}")
-
-
-def test_deduplicate_qids() -> None:
-    """Test QID deduplication."""
-    print("\nTest 10: QID deduplication")
-    print("=" * 60)
-
-    test_cases = [
-        (["Q123"], ["Q123"], "Single QID"),
-        (["Q123", "Q456"], ["Q123", "Q456"], "Unique QIDs"),
-        (["Q123", "Q123"], ["Q123"], "Duplicate QIDs"),
-        (["Q1", "Q2", "Q1", "Q3", "Q2"], ["Q1", "Q2", "Q3"], "Multiple duplicates"),
-        ([], [], "Empty list"),
-    ]
-
-    for qids, expected, description in test_cases:
-        result = deduplicate_qids(qids)
-        assert result == expected, (
-            f"{description} failed: expected {expected}, got {result}"
-        )
-        print(f"  ✓ {description}")
-
-
-def test_normalize_name() -> None:
-    """Test name normalization."""
-    print("\nTest 11: Name normalization")
-    print("=" * 60)
-
-    test_cases = [
-        ("John Doe", "john doe", "Basic name"),
-        ("JOHN DOE", "john doe", "Uppercase to lowercase"),
-        ("John  Doe", "john doe", "Extra spaces removed"),
-        ("M&uuml;ller", "müller", "HTML entity converted"),
-        ("  John Doe  ", "john doe", "Trimmed"),
-    ]
-
-    for input_text, expected, description in test_cases:
-        result = normalize_name(input_text)
-        assert result == expected, (
-            f"{description} failed: expected {repr(expected)}, got {repr(result)}"
-        )
-        print(f"  ✓ {description}")
-
-
-if __name__ == "__main__":
-    print("Testing Issue #31 transformations")
-    print("=" * 60)
-
-    test_normalize_unicode_nfc()
-    test_convert_html_entities()
-    test_normalize_markdown_links()
-    test_normalize_abbreviations()
-    test_normalize_wikidata_url()
-    test_normalize_urls()
-    test_apply_text_transformations()
-    test_has_placeholder_media()
-    test_extract_wikidata_qids()
-    test_deduplicate_qids()
-    test_normalize_name()
-
-    print("\n" + "=" * 60)
-    print("✓ All Issue #31 transformation tests passed!")

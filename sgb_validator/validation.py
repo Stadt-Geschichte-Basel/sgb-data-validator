@@ -51,9 +51,11 @@ class DataValidationWarning:
     resource_type: str
     resource_id: int | str
     message: str
+    field: str | None = None
 
     def __str__(self) -> str:
-        return f"[{self.resource_type} {self.resource_id}] {self.message}"
+        prefix = f"{self.field}: " if self.field else ""
+        return f"[{self.resource_type} {self.resource_id}] {prefix}{self.message}"
 
 
 @dataclass
@@ -182,7 +184,7 @@ def _contains_url(text: str) -> bool:
 
 
 def _check_literal_fields_for_urls(
-    result: Findings, data: dict[str, Any], resource_type: str, resource_id: int
+    result: Findings, data: dict[str, Any], resource_type: str, resource_id: int | str
 ) -> None:
     """Check if literal type fields contain URLs (issue #22)"""
     # Check all dcterms fields
@@ -336,26 +338,28 @@ def validate_records(
                 placeholder = has_placeholder_media(record)
                 parent = items_by_id.get((record.get("o:item") or {}).get("o:id"))
                 if placeholder and record.get("o:is_public", True):
-                    result.errors.append(
-                        DataValidationError(
+                    result.warnings.append(
+                        DataValidationWarning(
                             label,
                             rid,
-                            "o:is_public",
                             "Placeholder media must be private",
+                            "o:is_public",
                         )
                     )
                 if (
-                    placeholder or record.get("o:is_public") is False
-                ) and parent is not None:
-                    if parent.get("o:is_public", True):
-                        result.errors.append(
-                            DataValidationError(
-                                "Item",
-                                parent["o:id"],
-                                "o:is_public",
-                                f"Parent of private media {rid} must be private",
-                            )
+                    (placeholder or record.get("o:is_public") is False)
+                    and parent is not None
+                    and parent.get("o:is_public", True)
+                ):
+                    result.warnings.append(
+                        DataValidationWarning(
+                            "Item",
+                            parent["o:id"],
+                            f"Media {rid} is private or a placeholder. "
+                            "Set its parent to private.",
+                            "o:is_public",
                         )
+                    )
         for identifier, ids in identifiers.items():
             if len(ids) > 1:
                 for rid in ids:

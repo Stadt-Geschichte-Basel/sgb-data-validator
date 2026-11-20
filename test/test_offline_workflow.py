@@ -21,7 +21,8 @@ def source():
     item["o:media"] = [{"o:id": 3, "@id": "https://omeka.example/api/media/3"}]
     media = create_minimal_media(3)
     media["o:item"] = {"o:id": 2, "@id": "https://omeka.example/api/items/2"}
-    media["o:filename"] = "sgb-fdp-platzhalter.png"
+    media["o:filename"] = "0011aabb.png"
+    media["o:source"] = "sgb-fdp-platzhalter[1].png"
     media["o:is_public"] = True
     return {"item_sets/1": {"o:id": 1}, "items": [item], "media": [media]}
 
@@ -60,17 +61,17 @@ def test_offline_and_live_findings_match(tmp_path, source, suffix):
     ]
     assert any(
         e.field == "o:is_public" and e.resource_type == "Media"
-        for e in offline_findings.errors
+        for e in offline_findings.warnings
     )
     assert any(
         e.field == "o:is_public" and e.resource_type == "Item"
-        for e in offline_findings.errors
+        for e in offline_findings.warnings
     )
     report = tmp_path / "report"
     result = CliRunner().invoke(
         app, ["validate", str(path), "--export-csv", "--csv-output", str(report)]
     )
-    assert result.exit_code == 1
+    assert result.exit_code == int(bool(offline_findings.errors))
     assert (
         "https://omeka.example/admin/media/3/edit"
         in (report / "media_validation.csv").read_text()

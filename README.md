@@ -33,7 +33,7 @@ sgb create media media.json --item-id 12345 --file illustration.tif
 
 Use the paths that `download` and `transform` print. To edit a record by hand, change the Omeka JSON in a separate snapshot. Keep the record ID.
 
-The transform writes a new snapshot and lists the fields that changed. It normalizes text, fills selected empty media fields, and applies the SGB privacy rules. Supply each book or story DOI in `dcterms:isPartOf` in the Omeka JSON.
+The transform writes a new snapshot and lists the fields that changed. It normalizes text, fills selected empty media fields, and applies the SGB privacy rules. Validation reports privacy findings as warnings. Supply each book or story DOI in `dcterms:isPartOf` in the Omeka JSON.
 
 Review the output of `update` or `create`. Add `--apply` to write the changes. The update command saves private before-edit copies in `backups/`. It skips records that changed after the source snapshot and records edited within two hours. Set `--skip-recent-hours` to change this interval.
 
@@ -51,7 +51,7 @@ sgb restore backups/backup_itemset_10780_TIMESTAMP --apply
 
 Use credentials with access to all private records in the set. Keep the backup directory private. Restore to the source instance. Keep `restore-progress.json` with the backup to resume an interrupted restore.
 
-Full recovery supports local file uploads and HTML media. The backup records unsupported ingesters and missing dependencies in its manifest. Metadata-only backups can restore metadata on the surviving records.
+Full recovery supports uploads, URL media with stored originals, and HTML media. The backup manifest records unsupported ingesters and missing dependencies. Metadata-only recovery requires every saved record to exist.
 
 See the [recovery guide](docs/recovery.md) for the recovery steps and limits.
 

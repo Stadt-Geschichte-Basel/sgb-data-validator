@@ -1,6 +1,6 @@
 """Tests for ISO 639-1 language code validation"""
 
-from sgb_validator.iso639 import get_all_codes, is_valid_iso639_1_code
+from sgb_validator.iso639 import is_valid_iso639_1_code
 
 
 def test_valid_codes() -> None:
@@ -103,21 +103,6 @@ def test_edge_cases() -> None:
     print("✓ All edge cases handled correctly")
 
 
-def test_all_codes_count() -> None:
-    """Test that we have the correct number of ISO 639-1 codes"""
-    print("\nTesting ISO 639-1 code count...")
-
-    all_codes = get_all_codes()
-
-    # ISO 639-1 has 184 two-letter codes
-    # Our list should have approximately this many
-    assert len(all_codes) >= 180, f"Expected at least 180 codes, got {len(all_codes)}"
-    assert len(all_codes) <= 200, f"Expected at most 200 codes, got {len(all_codes)}"
-
-    print(f"  ✓ Found {len(all_codes)} ISO 639-1 codes")
-    print("✓ Code count is in expected range")
-
-
 def test_specific_codes() -> None:
     """Test specific codes mentioned in the project"""
     print("\nTesting specific codes used in the project...")
@@ -130,39 +115,3 @@ def test_specific_codes() -> None:
         print(f"  ✓ '{code}' is valid")
 
     print("✓ All project-specific codes are valid")
-
-
-def test_frozenset_immutability() -> None:
-    """Test that the code set is immutable"""
-    print("\nTesting immutability of code set...")
-
-    codes = get_all_codes()
-    assert isinstance(codes, frozenset), "Codes should be a frozenset"
-    print("  ✓ Codes are stored in immutable frozenset")
-
-    # Verify we can't modify it
-    try:
-        codes.add("test")
-        raise AssertionError("Should not be able to add to frozenset")
-    except AttributeError:
-        print("  ✓ Frozenset correctly prevents modification")
-
-    print("✓ Code set is properly immutable")
-
-
-if __name__ == "__main__":
-    print("=" * 70)
-    print("ISO 639-1 Language Code Validation Tests")
-    print("=" * 70)
-
-    test_valid_codes()
-    test_case_insensitive()
-    test_invalid_codes()
-    test_edge_cases()
-    test_all_codes_count()
-    test_specific_codes()
-    test_frozenset_immutability()
-
-    print("\n" + "=" * 70)
-    print("✓ All ISO 639-1 validation tests passed successfully!")
-    print("=" * 70)
