@@ -1,72 +1,52 @@
 # SGB Data Validator
 
-Use `sgb` to validate, edit, create, and recover Omeka S records. Use the same commands for volumes, Data Stories, and other collections.
+Use `sgb` to check metadata in an Omeka S item set. It creates reports with links to the records you can edit in Omeka.
 
-## Install
+## Get started
 
-Run `uv sync --locked` in this checkout. Or install the wheel with `uv tool install <wheel>`.
-
-Set `OMEKA_URL` to the Omeka instance URL. Set `ITEM_SET_ID` to the target item set ID. For authenticated work, set `KEY_IDENTITY` and `KEY_CREDENTIAL`. The CLI also reads these values from `.env` in the current directory.
-
-Use `uv run --locked sgb` from the checkout or `sgb` after a tool installation. Run `sgb --help` for command options.
-
-## Download and validate
+Install `uv`. [Installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```sh
-sgb download --item-set-id 10780
-sgb validate data/raw_itemset_10780_TIMESTAMP --export-csv --output validation_report.txt
-sgb validate --item-set-id 10780 --export-csv
+git clone https://github.com/Stadt-Geschichte-Basel/sgb-data-validator.git
+cd sgb-data-validator
+uv sync --locked
+cp example.env .env
 ```
 
-Use a snapshot directory for offline validation. Add `--check-uris` to check external links. Add `--check-redirects` to report redirects to another domain.
+Open `.env` in a text editor.
 
-The CLI reads `items_raw.json`, `items_transformed.json`, or `items.json` and the matching media files. Supply `--base-url` to add edit links to a snapshot that has no source URL.
+- Set `OMEKA_URL` to the address of your Omeka instance, such as `https://omeka.unibe.ch`.
+- Set `ITEM_SET_ID` to the number in your item set’s admin URL.
+- For private records or edits, enter your Omeka key in `KEY_IDENTITY` and `KEY_CREDENTIAL`. For public checks, leave both values empty. [Omeka API key guide](https://omeka.org/s/docs/user-manual/admin/users/#api-keys)
 
-## Edit and create
+## Check an item set
 
 ```sh
-sgb transform data/raw_itemset_10780_TIMESTAMP
-sgb update data/raw_itemset_10780_TIMESTAMP data/transformed_itemset_10780_TIMESTAMP
-sgb create item item.json --item-set-id 10780
-sgb create media media.json --item-id 12345 --file illustration.tif
+uv run --locked sgb validate --export-csv
 ```
 
-Use the paths that `download` and `transform` print. To edit a record by hand, change the Omeka JSON in a separate snapshot. Keep the record ID.
+The command prints a report and saves CSV files in `validation_reports/`. Open `items_validation.csv` or `media_validation.csv`. Use the `edit_link` column to find a record in Omeka.
 
-The transform writes a new snapshot and lists the fields that changed. It normalizes text, fills selected empty media fields, and applies the SGB privacy rules. Validation reports privacy findings as warnings. Supply each book or story DOI in `dcterms:isPartOf` in the Omeka JSON.
-
-Review the output of `update` or `create`. Add `--apply` to write the changes. The update command saves private before-edit copies in `backups/`. It skips records that changed after the source snapshot and records edited within two hours. Set `--skip-recent-hours` to change this interval.
-
-Omeka S has no conditional write for this workflow. Another edit can occur between the final read and the write. A failed read-back or a skipped record gives a failing exit status.
-
-See the [native JSON examples](examples/omeka-json.md) for items and media.
-
-## Backup and restore
+## Preview edits
 
 ```sh
-sgb backup --item-set-id 10780
-sgb restore backups/backup_itemset_10780_TIMESTAMP
-sgb restore backups/backup_itemset_10780_TIMESTAMP --apply
+uv run --locked sgb download
+uv run --locked sgb transform RAW_DIR
+uv run --locked sgb validate EDITED_DIR
+uv run --locked sgb update RAW_DIR EDITED_DIR
 ```
 
-Use credentials with access to all private records in the set. Keep the backup directory private. Restore to the source instance. Keep `restore-progress.json` with the backup to resume an interrupted restore.
+Replace `RAW_DIR` with the directory that `download` prints. Replace `EDITED_DIR` with the directory that `transform` prints. The transform keeps the original JSON and writes a cleaned copy. For manual edits, change the JSON in the copy. Keep each record’s `o:id`.
 
-Full recovery supports uploads, URL media with stored originals, and HTML media. The backup manifest records unsupported ingesters and missing dependencies. Metadata-only recovery requires every saved record to exist.
+Review the update preview. Add `--apply` to the update command when you are ready to write to Omeka. The command skips recent edits and saves private copies of records before it changes them.
 
-See the [recovery guide](docs/recovery.md) for the recovery steps and limits.
+## Add records or recover an item set
 
-## Project work
+- Use `uv run --locked sgb create item item.json` to preview a new item. See the [JSON examples](examples/omeka-json.md) to attach a media file.
+- Use `uv run --locked sgb backup` to save metadata and original files. Use `uv run --locked sgb restore BACKUP_DIR` to preview recovery. Replace `BACKUP_DIR` with the path that `backup` prints. Follow the [recovery guide](docs/recovery.md) before you restore.
 
-The [Data Story archive script](scripts/archive_data_stories.py) keeps the story rights checks and upload manifests. The [issue #44 worklist generator](scripts/generate_triage.py) reads the shared validator findings.
+Run `uv run --locked sgb --help` to see all commands.
 
-See the [transformation history](docs/transformations/README.md) for earlier collection edits. See the [published validation reports](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/validation-reports.html) for report formats and results.
+[Published reports](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/validation-reports.html) · [Transformation history](docs/transformations/README.md) · [Contributing](CONTRIBUTING.md) · [Citation](CITATION.cff)
 
-## Project information
-
-See the [contribution guide](CONTRIBUTING.md), [community standards](CODE_OF_CONDUCT.md), and [security policy](SECURITY.md). See the [change log](CHANGELOG.md) for version history.
-
-The code uses the [AGPL-3.0 license](LICENSE-AGPL.md). The project data uses the [CC BY 4.0 license](LICENSE-CCBY.md). See [CITATION.cff](CITATION.cff) for citation information.
-
-Use [GitHub Issues](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues) or [GitHub Discussions](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/discussions) for project questions.
-
-[@maehr](https://github.com/maehr) maintains this project for [Stadt.Geschichte.Basel](https://www.stadtgeschichtebasel.ch/).
+Code uses the [AGPL-3.0 license](LICENSE-AGPL.md). Project data uses the [CC BY 4.0 license](LICENSE-CCBY.md).
