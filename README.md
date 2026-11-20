@@ -1,6 +1,8 @@
 # SGB Data Validator
 
-Use `sgb` to check metadata in an Omeka S item set. It creates reports with links to the records you can edit in Omeka.
+Stadt.Geschichte.Basel (SGB) researches and documents Basel’s history. The team uses Omeka S to catalog book illustrations and reusable sources from the Data Stories. The public research data platform gives readers access to the sources behind the publications. [Project documentation](https://dokumentation.stadtgeschichtebasel.ch/) · [Research data platform](https://forschung.stadtgeschichtebasel.ch/)
+
+An Omeka item describes a source. Its media records describe the attached files, with fields for format, rights, and license. The validator checks required fields, duplicate identifiers, and allowed values such as historical periods. Its reports link to the records that need review. [SGB data model](https://dokumentation.stadtgeschichtebasel.ch/products/research-data/datamodel/)
 
 ## Get started
 
