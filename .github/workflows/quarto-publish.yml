@@ -21,10 +21,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
 
@@ -40,10 +40,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10.3.3
 
       - name: Run tests and type checks
         run: |
@@ -56,7 +56,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
@@ -70,12 +70,12 @@ jobs:
 
       # Setup Python for validation report generation
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           version: 'latest'
 
@@ -104,17 +104,17 @@ jobs:
 
       - name: JamPack Optimization
         run: |
-          npx @divriots/jampack ./_site
+          npx @divriots/jampack@0.35.0 ./_site
 
       - name: Upload Built Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: built-site
           path: _site
 
       - name: Upload static files as artifact
         id: deployment
-        uses: actions/upload-pages-artifact@v4 # or specific "vX.X.X" version tag for this action
+        uses: actions/upload-pages-artifact@v5 # or specific "vX.X.X" version tag for this action
         with:
           path: _site
 
@@ -125,7 +125,7 @@ jobs:
 
     steps:
       - name: Download Built Artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: built-site
           path: _site
@@ -152,4 +152,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
