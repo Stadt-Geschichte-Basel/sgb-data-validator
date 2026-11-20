@@ -280,7 +280,7 @@ def test_transform_preserves_collection_citations():
         "dcterms:isPartOf": [
             {"type": "literal", "@value": "Auf dem Weg ins Jetzt. Seit 1960."}
         ],
-        "dcterms:subject": [{"type": "literal", "@value": "Tier"}],
+        "dcterms:alternative": [{"type": "literal", "@value": "Tier"}],
     }
     _, items, _ = transform_item_set_data({}, [item], [], apply_all=True)
     assert items == [item]

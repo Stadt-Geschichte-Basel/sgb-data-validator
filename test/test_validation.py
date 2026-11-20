@@ -332,6 +332,24 @@ def test_media_validation() -> None:
         print(f"✗ Media validation failed: {e}")
 
 
+def test_legacy_subject_is_ignored() -> None:
+    """Legacy dcterms:subject values never cause a finding."""
+    from sgb_validator.validation import validate_records
+    from sgb_validator.vocabularies import VocabularyLoader
+
+    item = {
+        **sample_item,
+        "dcterms:subject": [
+            {"type": "literal", "property_id": 3, "@value": "XYZ123"},
+            {"type": "literal", "property_id": 3, "@value": "99ZZZ"},
+        ],
+    }
+    findings = validate_records([item], [], VocabularyLoader(), check_collection=False)
+    assert not [
+        f for f in findings.errors + findings.warnings if "subject" in str(f).lower()
+    ]
+
+
 def test_invalid_data() -> None:
     """Test validation with invalid data"""
     print("\nTesting validation with invalid data...")

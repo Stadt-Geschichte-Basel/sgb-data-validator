@@ -26,7 +26,7 @@ def test_complete_item_transformation() -> None:
                 "property_id": 4,
             }
         ],
-        "dcterms:subject": [
+        "dcterms:alternative": [
             {
                 "type": "literal",
                 "@value": "Basel d.ä. Stadt",  # Abbreviation
@@ -78,7 +78,7 @@ def test_complete_item_transformation() -> None:
         f"Got: {repr(desc_value)}"
     )
 
-    assert result["dcterms:subject"][0]["@value"] == "Basel d. Ä. Stadt"
+    assert result["dcterms:alternative"][0]["@value"] == "Basel d. Ä. Stadt"
 
     references_value = result["dcterms:references"][0]["@value"]
     assert references_value == "[Source](http://example.com)", (
@@ -98,7 +98,7 @@ def test_complete_item_transformation() -> None:
 
     print("  ✓ Title normalized (HTML entity + abbreviation)")
     print("  ✓ Description cleaned (soft hyphens, NBSP, HTML entities, newlines)")
-    print("  ✓ Subject abbreviation normalized")
+    print("  ✓ Alternative title abbreviation normalized")
     print("  ✓ References Markdown link formatted")
     print("  ✓ Relation Wikidata URL normalized")
     print("  ✓ URI property preserved")
