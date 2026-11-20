@@ -1,17 +1,17 @@
 """fetch_items must return the complete item set or fail (PR #46)."""
 
-import httpx
+import httpx2
 import pytest
 
-import validate
-from validate import OmekaValidator
+from sgb_validator import api
+from sgb_validator.api import OmekaAPI
 
 
-def make_validator(passes: list[list[int]], total: int) -> OmekaValidator:
+def make_validator(passes: list[list[int]], total: int) -> OmekaAPI:
     """Validator whose API returns the given item ids, one list per pass."""
     state = {"pass": 0}
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         page = int(request.url.params["page"])
         assert request.url.params["_"], "each request needs a cache-busting nonce"
         ids = passes[min(state["pass"], len(passes) - 1)]
@@ -20,21 +20,19 @@ def make_validator(passes: list[list[int]], total: int) -> OmekaValidator:
         else:
             body = []
             state["pass"] += 1
-        return httpx.Response(
+        return httpx2.Response(
             200, json=body, headers={"omeka-s-total-results": str(total)}
         )
 
-    validator = OmekaValidator("https://omeka.example")
-    validator.client = httpx.Client(transport=httpx.MockTransport(handler))
-    return validator
+    return OmekaAPI("https://omeka.example", transport=httpx2.MockTransport(handler))
 
 
 def test_fetch_items_retries_a_truncated_listing(monkeypatch) -> None:
     sleeps: list[float] = []
-    monkeypatch.setattr(validate.time, "sleep", sleeps.append)
+    monkeypatch.setattr(api.time, "sleep", sleeps.append)
     validator = make_validator([[1, 2], [1, 2, 3]], total=3)
 
-    items = validator.fetch_items(10780)
+    items = validator.listing("items", item_set_id=10780)
 
     assert sorted(i["o:id"] for i in items) == [1, 2, 3]
     assert sleeps == [2]
@@ -42,11 +40,44 @@ def test_fetch_items_retries_a_truncated_listing(monkeypatch) -> None:
 
 def test_fetch_items_fails_when_truncation_persists(monkeypatch) -> None:
     sleeps: list[float] = []
-    monkeypatch.setattr(validate.time, "sleep", sleeps.append)
+    monkeypatch.setattr(api.time, "sleep", sleeps.append)
     validator = make_validator([[1, 2]], total=3)
 
-    with pytest.raises(RuntimeError, match="fetched 2 of 3 items after 5 attempts"):
-        validator.fetch_items(10780)
+    with pytest.raises(RuntimeError, match="Incomplete items listing"):
+        validator.listing("items", item_set_id=10780)
 
     # No wait after the last attempt.
     assert sleeps == [2, 4, 6, 8]
+
+
+def test_unverified_listing_names_the_missing_count_header(monkeypatch):
+    monkeypatch.setattr(api.time, "sleep", lambda _: None)
+
+    def handler(request):
+        return httpx2.Response(200, json=[])
+
+    with OmekaAPI(
+        "https://omeka.example", transport=httpx2.MockTransport(handler)
+    ) as client:
+        with pytest.raises(RuntimeError, match="missing omeka-s-total-results header"):
+            client.listing("items")
+
+
+def test_snapshot_item_listing_rejects_a_different_membership_with_the_same_count(
+    monkeypatch,
+):
+    monkeypatch.setattr(api.time, "sleep", lambda _: None)
+
+    def handler(request):
+        descending = request.url.params["sort_order"] == "desc"
+        ids = [5, 4, 3, 2] if descending else [1, 2, 4, 5]
+        body = (
+            [{"o:id": rid} for rid in ids] if request.url.params["page"] == "1" else []
+        )
+        return httpx2.Response(200, json=body, headers={"omeka-s-total-results": "4"})
+
+    with OmekaAPI(
+        "https://omeka.example", transport=httpx2.MockTransport(handler)
+    ) as client:
+        with pytest.raises(RuntimeError, match="Incomplete items listing"):
+            client.listing("items", item_set_id=1)

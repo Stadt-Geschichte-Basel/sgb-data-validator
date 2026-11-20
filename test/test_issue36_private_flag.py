@@ -5,7 +5,7 @@ Tests that:
 2. Items inherit o:is_public=False if any of their media children are private
 """
 
-from src.transformations import (
+from sgb_validator.transformations import (
     has_placeholder_media,
     propagate_private_flag_to_items,
     set_media_private_flag,

@@ -2,7 +2,10 @@
 
 import sys
 
-from validate import OmekaValidator
+from sgb_validator.validation import validate_records
+from sgb_validator.vocabularies import VocabularyLoader
+
+VOCABULARIES = VocabularyLoader()
 
 
 def create_item_with_literal_field(
@@ -198,14 +201,9 @@ def test_url_detection_in_literal_fields():
         ("Contact us at info@example.com", False, "Email address"),
     ]
 
-    validator = OmekaValidator(base_url="https://test.example.com")
-
     for field_value, should_warn, description in test_cases:
-        validator.warnings = []  # Reset warnings
-        validator.errors = []
-
         item = create_item_with_literal_field(1, "dcterms:isPartOf", field_value)
-        validator.validate_item(item)
+        validator = validate_records([item], [], VOCABULARIES, check_collection=False)
 
         has_url_warning = any(
             "Literal field contains URL" in str(warning)
@@ -229,15 +227,13 @@ def test_url_in_item_fields():
     print("\nTest 2: URL detection in item fields")
     print("=" * 60)
 
-    validator = OmekaValidator(base_url="https://test.example.com")
-
     # Test dcterms:description with URL
     item = create_item_with_literal_field(
         2,
         "dcterms:description",
         "This is a description with a URL: https://example.com/resource",
     )
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
 
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)
@@ -247,12 +243,10 @@ def test_url_in_item_fields():
     print(f"    Warning: {url_warnings[0]}")
 
     # Test dcterms:isPartOf with URL
-    validator.warnings = []
-    validator.errors = []
     item = create_item_with_literal_field(
         3, "dcterms:isPartOf", "See www.stadtgeschichtebasel.ch for details"
     )
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
 
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)
@@ -266,13 +260,11 @@ def test_url_in_media_fields():
     print("\nTest 3: URL detection in media fields")
     print("=" * 60)
 
-    validator = OmekaValidator(base_url="https://test.example.com")
-
     # Test dcterms:creator with URL
     media = create_media_with_literal_field(
         10, "dcterms:creator", "Visit http://artist-website.com for portfolio"
     )
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
 
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)
@@ -286,8 +278,6 @@ def test_no_warning_for_uri_fields():
     """Test that URI type fields don't generate warnings"""
     print("\nTest 4: No warnings for URI type fields")
     print("=" * 60)
-
-    validator = OmekaValidator(base_url="https://test.example.com")
 
     # Create an item with URI field (not literal)
     item = {
@@ -362,7 +352,7 @@ def test_no_warning_for_uri_fields():
         ],
     }
 
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
 
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)
@@ -378,14 +368,12 @@ def test_multiple_urls_in_field():
     print("\nTest 5: Multiple URLs in a single field")
     print("=" * 60)
 
-    validator = OmekaValidator(base_url="https://test.example.com")
-
     item = create_item_with_literal_field(
         5,
         "dcterms:description",
         "Visit https://example.com and http://another.com for more information",
     )
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
 
     url_warnings = [
         w for w in validator.warnings if "Literal field contains URL" in str(w)

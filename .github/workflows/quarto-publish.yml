@@ -21,18 +21,34 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Check for linting errors
         run: npm run check
+
+  python:
+    name: Test Python and check types
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.3
+
+      - name: Run tests and type checks
+        run: |
+          uv run --locked --python 3.11 pytest
+          uv run --locked --python 3.11 mypy sgb_validator
 
   build-optimize:
     name: Build, Optimize, and Upload Artifacts
@@ -40,12 +56,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Overwrite _quarto.yml
-        if: github.repository == 'maehr/open-research-data-template'
-        run: |
-          cp .github/_quarto.yml _quarto.yml
+        uses: actions/checkout@v7
 
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
@@ -57,51 +68,32 @@ jobs:
         # uncomment below and fill to pin a version
         # version: SPECIFIC-QUARTO-VERSION-HERE
 
-      # add software dependencies here and any libraries
-
       # Setup Python for validation report generation
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           version: 'latest'
 
       - name: Install Python dependencies
         run: |
-          uv sync
+          uv sync --locked --group docs
 
       - name: Run validation and generate reports
         env:
           OMEKA_URL: ${{ secrets.OMEKA_URL }}
           ITEM_SET_ID: ${{ secrets.ITEM_SET_ID }}
-          KEY_IDENTITY: ${{ secrets.KEY_IDENTITY }}
-          KEY_CREDENTIAL: ${{ secrets.KEY_CREDENTIAL }}
         run: |
           mkdir -p analysis
-          uv run python validate.py \
+          uv run --locked sgb validate \
             --output analysis/validation_report.txt \
-            --profile \
             --export-csv \
             --csv-output analysis/
         continue-on-error: true
-
-      # From https://github.com/actions/setup-python
-      # - name: Setup Python
-      #   uses: actions/setup-python@v3
-
-      # From https://github.com/r-lib/actions/tree/v2-branch/setup-r
-      # - name: Setup R
-      #   uses: r-lib/actions/setup-r@v2
-
-      # From https://github.com/julia-actions/setup-julia
-      # - name: Setup Julia
-      #   uses: julia-actions/setup-julia@v1
-
-      # See more at https://github.com/quarto-dev/quarto-actions/blob/main/examples/example-03-dependencies.md
 
       - name: Render Quarto Project
         uses: quarto-dev/quarto-actions/render@v2
@@ -112,17 +104,17 @@ jobs:
 
       - name: JamPack Optimization
         run: |
-          npx @divriots/jampack ./_site
+          npx @divriots/jampack@0.35.0 ./_site
 
       - name: Upload Built Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: built-site
           path: _site
 
       - name: Upload static files as artifact
         id: deployment
-        uses: actions/upload-pages-artifact@v4 # or specific "vX.X.X" version tag for this action
+        uses: actions/upload-pages-artifact@v5 # or specific "vX.X.X" version tag for this action
         with:
           path: _site
 
@@ -133,7 +125,7 @@ jobs:
 
     steps:
       - name: Download Built Artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: built-site
           path: _site
@@ -160,4 +152,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

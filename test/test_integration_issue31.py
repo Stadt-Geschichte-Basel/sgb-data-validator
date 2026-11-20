@@ -1,6 +1,6 @@
 """Integration tests for Issue #31 - End-to-end transformation workflows."""
 
-from src.transformations import (
+from sgb_validator.transformations import (
     apply_text_transformations,
     transform_item,
     transform_media,
@@ -78,10 +78,10 @@ def test_complete_item_transformation() -> None:
         f"Got: {repr(desc_value)}"
     )
 
-    assert "dcterms:subject" not in result, "Subjects are stripped (issue #44)"
+    assert result["dcterms:subject"][0]["@value"] == "Basel d. Ä. Stadt"
 
     references_value = result["dcterms:references"][0]["@value"]
-    assert references_value == "[Source](https://example.com)", (
+    assert references_value == "[Source](http://example.com)", (
         f"References should have correct Markdown format, got: {references_value}"
     )
 
@@ -131,7 +131,7 @@ def test_complete_media_transformation() -> None:
     }
 
     # Check placeholder detection before transformation
-    from src.transformations import has_placeholder_media
+    from sgb_validator.transformations import has_placeholder_media
 
     assert has_placeholder_media(media_data), "Should detect placeholder media"
 

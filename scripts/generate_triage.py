@@ -17,7 +17,6 @@ Usage:
 """
 
 import argparse
-import contextlib
 import json
 import os
 import re
@@ -32,7 +31,11 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from validate import OmekaValidator  # noqa: E402
+from sgb_validator.api import OmekaAPI, OmekaError  # noqa: E402
+from sgb_validator.changes import identifiers  # noqa: E402
+from sgb_validator.snapshots import Snapshot, download_snapshot  # noqa: E402
+from sgb_validator.validation import Findings, validate_records  # noqa: E402
+from sgb_validator.vocabularies import VocabularyLoader  # noqa: E402
 
 REPO = "Stadt-Geschichte-Basel/sgb-data-validator"
 ISSUE = 44
@@ -237,10 +240,20 @@ def classify_error(
         entry.groups.add("Sonstiges")
 
 
-def build_entries(validator: OmekaValidator) -> list[Entry]:
-    items = {i["o:id"]: i for i in validator.items_data}
-    media = {m["o:id"]: m for m in validator.media_data}
+def build_entries(snapshot: Snapshot, findings: Findings) -> list[Entry]:
+    items = {i["o:id"]: i for i in snapshot.items}
+    media = {m["o:id"]: m for m in snapshot.media}
     records = {"Item": items, "Media": media}
+
+    def index(records: dict) -> dict[str, list[int]]:
+        result = {}
+        for rid, record in records.items():
+            for identifier in dict.fromkeys(value for _, value in identifiers(record)):
+                result.setdefault(identifier, []).append(rid)
+        return result
+
+    item_identifiers = index(items)
+    media_identifiers = index(media)
 
     def title_by_id(kind: str, rid: int) -> str:
         return title_of(records[kind].get(rid, {}))
@@ -261,7 +274,7 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
         if expected:
             suggestions[mid] = expected
 
-    for err in validator.errors:
+    for err in findings.errors:
         classify_error(
             entry(err.resource_type, err.resource_id),
             err.field,
@@ -288,23 +301,21 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
         numbers = numbers_by_parent.get(parent.get("o:id"), set())
         candidate = f"abb{next(iter(numbers))}" if len(numbers) == 1 else None
         own = re.match(r"m(\d+)", current)
-        if len(validator.item_identifiers.get(parent_ident, [])) > 1 and own:
+        if len(item_identifiers.get(parent_ident, [])) > 1 and own:
             # The item identifier is itself a duplicate: the item may be wrong.
             text = (
                 f"Identifier `{current}` passt nicht zum Objekt `{parent_ident}` "
                 f"(Item {parent['o:id']}), und `{parent_ident}` ist doppelt "
                 "vergeben."
             )
-            if candidate and candidate not in validator.item_identifiers:
+            if candidate and candidate not in item_identifiers:
                 text += (
                     f" **Vorschlag: Item {parent['o:id']} auf `{candidate}` ändern.**"
                 )
             else:
                 text += " Prüfen, ob das Item oder die Media falsch ist."
-        elif expected in validator.media_identifiers:
-            used_by = ", ".join(
-                f"Media {i}" for i in validator.media_identifiers[expected]
-            )
+        elif expected in media_identifiers:
+            used_by = ", ".join(f"Media {i}" for i in media_identifiers[expected])
             text = (
                 f"Identifier `{current}` passt nicht zum Objekt `{parent_ident}`. "
                 f"`{expected}` ist aber schon vergeben ({used_by}). Prüfen."
@@ -335,7 +346,7 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
     # Duplicate pairs: if one side has a clear fix, the other side is fine.
     for mid in clear_fixes:
         current = first_value(media[mid], "dcterms:identifier")
-        holders = validator.media_identifiers.get(current, [])
+        holders = media_identifiers.get(current, [])
         if len([i for i in holders if i not in clear_fixes]) > 1:
             continue  # several records still share it after the renames
         for other_id in holders:
@@ -394,22 +405,17 @@ def build_entries(validator: OmekaValidator) -> list[Entry]:
     return list(entries.values())
 
 
-def owner_names(validator: OmekaValidator, owner_ids: set[int]) -> dict[int, str]:
+def owner_names(api: OmekaAPI, owner_ids: set[int]) -> dict[int, str]:
     names = {}
     for uid in owner_ids:
         try:
-            r = validator.client.get(
-                f"{validator.base_url}/api/users/{uid}",
-                params=validator._add_auth_params({}),
-            )
-            r.raise_for_status()
-            names[uid] = r.json().get("o:name") or f"Benutzer {uid}"
-        except Exception:  # noqa: BLE001
+            names[uid] = api.get("users", uid).get("o:name") or f"Benutzer {uid}"
+        except OmekaError:
             names[uid] = f"Benutzer {uid}"
     return names
 
 
-def render(entries: list[Entry], validator: OmekaValidator, admin: str) -> str:
+def render(entries: list[Entry], api: OmekaAPI, admin: str, findings: Findings) -> str:
     def owner(e: Entry) -> int | None:
         return (e.record.get("o:owner") or {}).get("o:id")
 
@@ -420,7 +426,7 @@ def render(entries: list[Entry], validator: OmekaValidator, admin: str) -> str:
     cutoff = datetime.now(UTC) - timedelta(days=RECENT_DAYS)
     todo = [e for e in entries if not e.decision]
     decided = [e for e in entries if e.decision]
-    names = owner_names(validator, {owner(e) for e in todo if owner(e)})
+    names = owner_names(api, {owner(e) for e in todo if owner(e)})
 
     def line(e: Entry) -> str:
         seg = "item" if e.kind == "Item" else "media"
@@ -441,7 +447,7 @@ def render(entries: list[Entry], validator: OmekaValidator, admin: str) -> str:
         f"**{len(todo)} Datensätze** zu korrigieren · "
         f"{sum(1 for e in todo if (c := created(e)) and c >= cutoff)} davon neu "
         f"(🆕 = in den letzten {RECENT_DAYS} Tagen erstellt, bitte zuerst) · "
-        f"Fehler total: {len(validator.errors)}",
+        f"Fehler total: {len(findings.errors)}",
         "",
         "So geht's: Link öffnen → Feld korrigieren → speichern. "
         "Erledigte Punkte verschwinden beim nächsten Lauf (Häkchen sind optional).",
@@ -541,37 +547,24 @@ def main() -> int:
     load_dotenv(ROOT / ".env")
     base_url = os.environ["OMEKA_URL"].strip().strip('"').rstrip("/")
     item_set_id = args.item_set_id or int(os.environ.get("ITEM_SET_ID", "10780"))
-    # enable_profiling keeps the raw records (items_data / media_data) in memory.
-    validator = OmekaValidator(
-        base_url,
-        os.environ["KEY_IDENTITY"],
-        os.environ["KEY_CREDENTIAL"],
-        enable_profiling=True,
-    )
-    with contextlib.redirect_stdout(sys.stderr):  # progress output
-        validator.validate_item_set(item_set_id)
-    print(
-        f"Validated {validator.validated_items} items, "
-        f"{validator.validated_media} media, "
-        f"{len(validator.errors)} errors",
-        file=sys.stderr,
-    )
-
-    expected_ids = {
-        m["o:id"] for i in validator.items_data for m in i.get("o:media") or []
-    }
-    missing = expected_ids - {m["o:id"] for m in validator.media_data}
-    if missing:
+    with OmekaAPI(
+        base_url, os.environ["KEY_IDENTITY"], os.environ["KEY_CREDENTIAL"]
+    ) as api:
+        try:
+            snapshot = download_snapshot(api, item_set_id)
+        except (OmekaError, ValueError) as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        findings = validate_records(snapshot.items, snapshot.media, VocabularyLoader())
         print(
-            f"Error: {len(missing)} media not fetched (e.g. {sorted(missing)[:5]}). "
-            "The list is incomplete; not posting.",
+            f"Validated {findings.validated_items} items, "
+            f"{findings.validated_media} media, "
+            f"{len(findings.errors)} errors",
             file=sys.stderr,
         )
-        if args.post:
-            return 1
-
-    site = base_url[: -len("/api")] if base_url.endswith("/api") else base_url
-    body = render(build_entries(validator), validator, f"{site}/admin")
+        body = render(
+            build_entries(snapshot, findings), api, f"{api.base_url}/admin", findings
+        )
     if len(body) > 65536:
         print(
             f"Error: {len(body)} characters, GitHub limit is 65536. Not posting.",

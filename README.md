@@ -1,168 +1,54 @@
 # SGB Data Validator
 
-> **Data Validation and Management Suite for Omeka S**
+Stadt.Geschichte.Basel (SGB) researches and documents Basel’s history. The team uses Omeka S to catalog book illustrations and reusable sources from the Data Stories. The public research data platform gives readers access to the sources behind the publications. [Project documentation](https://dokumentation.stadtgeschichtebasel.ch/) · [Research data platform](https://forschung.stadtgeschichtebasel.ch/)
 
-The **sgb-data-validator** is a comprehensive Python toolkit for validating and managing metadata in [Omeka S](https://omeka.org/s/) digital collections. Built for the [Stadt.Geschichte.Basel](https://www.stadtgeschichtebasel.ch/) project, it ensures cultural heritage data quality through schema validation, controlled vocabularies, and automated data transformations.
+An Omeka item describes a source. Its media records describe the attached files, with fields for format, rights, and license. The validator checks required fields, duplicate identifiers, and allowed values such as historical periods. Its reports link to the records that need review. [SGB data model](https://dokumentation.stadtgeschichtebasel.ch/products/research-data/datamodel/)
 
-[![GitHub issues](https://img.shields.io/github/issues/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)
-[![GitHub stars](https://img.shields.io/github/stars/Stadt-Geschichte-Basel/sgb-data-validator.svg)](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/stargazers)
-[![Code license](https://img.shields.io/github/license/Stadt-Geschichte-Basel/sgb-data-validator.svg)](LICENSE-AGPL.md)
-[![Data license](https://img.shields.io/badge/Data%20License-CC%20BY%204.0-blue.svg)](LICENSE-CCBY.md)
+## Get started
 
-<!-- [![DOI](https://zenodo.org/badge/1067376900.svg)](https://zenodo.org/badge/latestdoi/ZENODO_RECORD) -->
+Install `uv`. [Installation guide](https://docs.astral.sh/uv/getting-started/installation/)
 
-## Features
-
-- ✅ **Schema validation** with Pydantic models and Dublin Core metadata
-- 📚 **Controlled vocabularies** (Era, MIME types, Licenses, ICONCLASS notation)
-- 🌍 **ISO 639-1 language validation** (all 184 two-letter codes)
-- 🔗 **URI validation** with reachability checks and redirect detection
-- 📊 **CSV reports** with direct edit links to Omeka S admin
-- 📈 **Data profiling** with interactive HTML reports
-- 🔄 **Data transformation** (Unicode NFC, HTML entities, whitespace normalization)
-- 💾 **Offline workflow** for batch editing
-- 🔒 **Privacy management** (automatic flag propagation for placeholder images)
-- 🚀 **Fast and efficient** with async processing
-
-## Documentation
-
-**📖 [Full Documentation](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/)**
-
-- [Quick Start Guide](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/#quick-start)
-- [Validation & CSV Reports](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/validation-reports.html)
-- [Data Transformation](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/#data-transformation)
-- [Offline Workflow](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/#offline-workflow)
-- [Python API Examples](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/#python-api)
-
-## Installation
-
-This project uses [uv](https://docs.astral.sh/uv/) for dependency management:
-
-```bash
-pip install uv
-uv sync
-```
-
-## Configuration
-
-Create a `.env` file:
-
-```bash
+```sh
+git clone https://github.com/Stadt-Geschichte-Basel/sgb-data-validator.git
+cd sgb-data-validator
+uv sync --locked
 cp example.env .env
 ```
 
-Edit with your Omeka S settings:
+Open `.env` in a text editor.
 
-```env
-OMEKA_URL=https://omeka.unibe.ch
-KEY_IDENTITY=YOUR_KEY_IDENTITY
-KEY_CREDENTIAL=YOUR_KEY_CREDENTIAL
-ITEM_SET_ID=10780
+- Set `OMEKA_URL` to the address of your Omeka instance, such as `https://omeka.unibe.ch`.
+- Set `ITEM_SET_ID` to the number in your item set’s admin URL.
+- For private records or edits, enter your Omeka key in `KEY_IDENTITY` and `KEY_CREDENTIAL`. For public checks, leave both values empty. [Omeka API key guide](https://omeka.org/s/docs/user-manual/admin/users/#api-keys)
+
+## Check an item set
+
+```sh
+uv run --locked sgb validate --export-csv
 ```
 
-> Command-line parameters override `.env` values.
+The command prints a report and saves CSV files in `validation_reports/`. Open `items_validation.csv` or `media_validation.csv`. Use the `edit_link` column to find a record in Omeka.
 
-## Usage
+## Preview edits
 
-### Basic Validation
-
-```bash
-# Validate using .env settings
-uv run python validate.py
-
-# With specific options
-uv run python validate.py --item-set-id 12345 --output report.txt
-
-# Enable URI checking and profiling
-uv run python validate.py --check-uris --profile
-
-# Export CSV reports
-uv run python validate.py --export-csv
-
-# Get help
-uv run python validate.py --help
+```sh
+uv run --locked sgb download
+uv run --locked sgb transform RAW_DIR
+uv run --locked sgb validate EDITED_DIR
+uv run --locked sgb update RAW_DIR EDITED_DIR
 ```
 
-### Offline Workflow
+Replace `RAW_DIR` with the directory that `download` prints. Replace `EDITED_DIR` with the directory that `transform` prints. The transform keeps the original JSON and writes a cleaned copy. For manual edits, change the JSON in the copy. Keep each record’s `o:id`.
 
-```bash
-# 1. Download
-uv run python workflow.py download --item-set-id 10780
+Review the update preview. Pause other Omeka writers during a maintenance window. Run the update again with `--apply --exclusive-write`. The command skips recent edits and saves private copies before it changes records.
 
-# 2. Transform
-uv run python workflow.py transform data/raw_itemset_10780_*/
+## Add records or recover an item set
 
-# 3. Edit JSON files offline with any text editor
+- Use `uv run --locked sgb create item item.json` to preview a new item. See the [JSON examples](examples/omeka-json.md) to attach a media file.
+- Use `uv run --locked sgb backup` to save metadata and original files. Use `uv run --locked sgb restore BACKUP_DIR` to preview recovery. Replace `BACKUP_DIR` with the path that `backup` prints. Follow the [recovery guide](docs/recovery.md) before you restore.
 
-# 4. Validate
-uv run python workflow.py validate data/transformed_itemset_10780_*/
+Run `uv run --locked sgb --help` to see all commands.
 
-# 5. Dry run
-uv run python workflow.py upload data/transformed_itemset_10780_*/
+[Published reports](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/validation-reports.html) · [Transformation history](docs/transformations/README.md) · [Contributing](CONTRIBUTING.md) · [Citation](CITATION.cff)
 
-# 6. Upload for real
-uv run python workflow.py upload data/transformed_itemset_10780_*/ --no-dry-run
-```
-
-## Development
-
-Run linter and formatter:
-
-```bash
-uv run ruff check .
-uv run ruff format .
-```
-
-Run tests (96 tests: 72 unit + 24 integration):
-
-```bash
-uv run pytest
-uv run pytest -m unit          # Unit tests only
-uv run pytest -m integration   # Integration tests only
-```
-
-## Repository Structure
-
-Following [The Turing Way](https://the-turing-way.netlify.app/project-design/project-repo/project-repo-advanced.html):
-
-```text
-sgb-data-validator/
-├── src/                    # Source modules
-│   ├── models.py          # Pydantic validation models
-│   ├── api.py             # Omeka S API client
-│   ├── transformations.py # Data transformation utilities
-│   ├── vocabularies.py    # Controlled vocabulary loader
-│   └── iconclass.py       # ICONCLASS notation parser
-├── test/                   # Test suite (96 tests)
-├── examples/               # Usage examples
-├── data/raw/              # Controlled vocabularies
-├── validate.py            # CLI validation script
-└── workflow.py            # CLI offline workflow script
-```
-
-## Contributing
-
-Contributions are welcome! See:
-
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) - Community standards
-- [SECURITY.md](SECURITY.md) - Security policy
-- [CHANGELOG.md](CHANGELOG.md) - Version history
-
-## License
-
-- **Code**: [AGPL-3.0](LICENSE-AGPL.md)
-- **Data**: [CC BY 4.0](LICENSE-CCBY.md)
-
-## Citation
-
-See [CITATION.cff](CITATION.cff) for citation metadata.
-
-## Support
-
-- [GitHub Issues](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues)
-- [GitHub Discussions](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/discussions)
-
----
-
-**Maintained by [@maehr](https://github.com/maehr)** | **[Stadt.Geschichte.Basel](https://www.stadtgeschichtebasel.ch/)**
+Code uses the [AGPL-3.0 license](LICENSE-AGPL.md). Project data uses the [CC BY 4.0 license](LICENSE-CCBY.md).

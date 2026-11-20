@@ -1,133 +1,80 @@
-"""Test URI checking functionality"""
+"""Exercise opt-in link checks with a separate HTTPX2 client."""
 
 import asyncio
-import sys
-from pathlib import Path
 
+import httpx2
 import pytest
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from validate import OmekaValidator
+from sgb_validator.links import LinkChecker, extract_uris_from_data
+from sgb_validator.validation import Findings
 
 
 def test_extract_uris():
-    """Test URI extraction from item/media data"""
-    validator = OmekaValidator("https://omeka.unibe.ch", check_uris=False)
-
-    # Sample item data with URIs
-    item_data = {
-        "o:id": 12345,
-        "dcterms:creator": [
-            {"@id": "https://www.wikidata.org/wiki/Q123", "o:label": "Test Creator"}
-        ],
-        "dcterms:source": [
-            {"@id": "https://example.com/source", "o:label": "Test Source"}
-        ],
-        "dcterms:title": [{"@value": "Test Title"}],
-    }
-
-    uris = validator.extract_uris_from_data(item_data)
-    assert len(uris) == 2
-    assert ("dcterms:creator[0].@id", "https://www.wikidata.org/wiki/Q123") in uris
-    assert ("dcterms:source[0].@id", "https://example.com/source") in uris
+    assert extract_uris_from_data(
+        {
+            "dcterms:source": [{"@id": "https://example.org/source"}],
+            "dcterms:title": [{"@value": "Title"}],
+            "o:original_url": "https://example.org/file.jpg",
+        }
+    ) == [
+        ("dcterms:source[0].@id", "https://example.org/source"),
+        ("o:original_url", "https://example.org/file.jpg"),
+    ]
 
 
-def test_extract_media_uri():
-    """Test URI extraction from media data"""
-    validator = OmekaValidator("https://omeka.unibe.ch", check_uris=False)
+@pytest.mark.parametrize(
+    "status,severity,errors",
+    [(404, "warning", 1), (503, "warning", 0), (503, "error", 1)],
+)
+def test_link_failure_severity_and_head_fallback(status, severity, errors):
+    requests = []
 
-    # Sample media data with original URL
-    media_data = {
-        "o:id": 67890,
-        "o:original_url": "https://example.com/media/image.jpg",
-        "dcterms:title": [{"@value": "Test Media"}],
-    }
+    def handler(request):
+        requests.append(request.method)
+        assert not request.url.params
+        assert "Authorization" not in request.headers
+        return httpx2.Response(405 if request.method == "HEAD" else status)
 
-    uris = validator.extract_uris_from_data(media_data)
-    assert len(uris) == 1
-    assert ("o:original_url", "https://example.com/media/image.jpg") in uris
+    findings = Findings()
 
+    async def check():
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(handler)
+        ) as client:
+            checker = LinkChecker(client, findings, severity=severity)
+            await checker.check_uri_async(
+                "https://example.org/file", "Item", 1, "source"
+            )
+            await checker.check_uri_async(
+                "https://example.org/file", "Item", 2, "source"
+            )
 
-@pytest.mark.asyncio
-async def test_check_valid_uri():
-    """Test checking a valid URI"""
-    validator = OmekaValidator(
-        "https://omeka.unibe.ch", check_uris=True, uri_check_severity="warning"
-    )
-
-    # Check a valid URI (example.com should always be reachable)
-    await validator.check_uri_async(
-        "https://example.com", "Item", 12345, "dcterms:source[0].@id"
-    )
-
-    # Should not have errors or warnings for a valid URI
-    assert len(validator.errors) == 0
-    # Note: might have warnings if there's a redirect, but that's expected
-
-
-@pytest.mark.asyncio
-async def test_check_invalid_uri():
-    """Test checking an invalid URI (404)"""
-    validator = OmekaValidator(
-        "https://omeka.unibe.ch", check_uris=True, uri_check_severity="warning"
-    )
-
-    # Check a URI that definitely doesn't exist (invalid domain)
-    await validator.check_uri_async(
-        "https://this-domain-definitely-does-not-exist-12345.com/test",
-        "Item",
-        12345,
-        "dcterms:source[0].@id",
-    )
-
-    # Should have a warning for the failed URI
-    assert validator.failed_uris == 1
-    assert len(validator.warnings) == 1
+    asyncio.run(check())
+    assert requests == ["HEAD", "GET"]
+    assert findings.failed_uris == 2
+    assert len(findings.errors) == 2 * errors
+    assert len(findings.warnings) == 2 * (1 - errors)
 
 
-@pytest.mark.asyncio
-async def test_check_invalid_uri_as_error():
-    """Test checking an invalid URI with error severity"""
-    validator = OmekaValidator(
-        "https://omeka.unibe.ch", check_uris=True, uri_check_severity="error"
-    )
+def test_external_redirect_warning_without_following():
+    def handler(request):
+        assert request.url.host == "example.org"
+        return httpx2.Response(302, headers={"Location": "https://redirect.example"})
 
-    # Check a URI that definitely doesn't exist (invalid domain)
-    await validator.check_uri_async(
-        "https://another-nonexistent-domain-67890.invalid/test",
-        "Media",
-        67890,
-        "o:original_url",
-    )
+    findings = Findings()
 
-    # Should have an error for the failed URI
-    assert validator.failed_uris == 1
-    assert len(validator.errors) == 1
+    async def check():
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(handler)
+        ) as client:
+            checker = LinkChecker(client, findings, check_redirects=True)
+            await checker.check_uri_async(
+                "https://example.org/file", "Item", 1, "source"
+            )
 
-
-def run_async_test(test_func):
-    """Helper to run async tests"""
-    asyncio.run(test_func())
+    asyncio.run(check())
+    assert "different domain" in findings.warnings[0].message
 
 
-if __name__ == "__main__":
-    print("Running URI checking tests...")
-
-    print("✓ Test: extract_uris")
-    test_extract_uris()
-
-    print("✓ Test: extract_media_uri")
-    test_extract_media_uri()
-
-    print("✓ Test: check_valid_uri")
-    run_async_test(test_check_valid_uri)
-
-    print("✓ Test: check_invalid_uri (warning)")
-    run_async_test(test_check_invalid_uri)
-
-    print("✓ Test: check_invalid_uri_as_error")
-    run_async_test(test_check_invalid_uri_as_error)
-
-    print("\n✅ All URI checking tests passed!")
+def test_skip_non_string_original_url():
+    assert extract_uris_from_data({"o:original_url": 42}) == []

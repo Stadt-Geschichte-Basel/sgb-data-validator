@@ -2,14 +2,14 @@
 
 from pathlib import Path
 
-from src.vocabularies import VocabularyLoader
+from sgb_validator.vocabularies import VocabularyLoader
 
 
 def test_iconclass_integration() -> None:
     """Test Iconclass validation integration with VocabularyLoader"""
     print("Testing Iconclass integration with VocabularyLoader...")
 
-    vocab_file = Path("data/raw/vocabularies.json")
+    vocab_file = Path("sgb_validator/vocabularies.json")
     loader = VocabularyLoader(vocab_file)
 
     # Test valid codes from the vocabulary
@@ -54,7 +54,7 @@ def test_iconclass_format_validation() -> None:
 
     from pydantic import ValidationError
 
-    from src.iconclass import IconclassNotation
+    from sgb_validator.iconclass import IconclassNotation
 
     # Valid formats
     valid_formats = [

@@ -8,7 +8,8 @@ Steps (dry run is the default for every step that writes to Omeka):
     uv run --with openpyxl python scripts/archive_data_stories.py collect schulden
     # review data/data_stories/schulden/manifest.csv
     uv run python scripts/archive_data_stories.py upload schulden            # dry run
-    uv run python scripts/archive_data_stories.py upload schulden --apply --limit 3
+    uv run python scripts/archive_data_stories.py upload schulden \
+        --apply --exclusive-write --limit 3
     uv run python scripts/archive_data_stories.py parent schulden --screenshot shot.png
 
 Rules:
@@ -33,16 +34,30 @@ import re
 import sys
 import time
 import unicodedata
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
-import httpx
+import httpx2
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from validate import OmekaValidator  # noqa: E402
+from sgb_validator.api import OmekaAPI, OmekaError  # noqa: E402
+from sgb_validator.snapshots import download_snapshot, write_json  # noqa: E402
+from sgb_validator.validation import validate_records  # noqa: E402
+from sgb_validator.vocabularies import VocabularyLoader  # noqa: E402
+from sgb_validator.writes import (  # noqa: E402
+    check_placeholder_parent,
+    create_payload,
+    create_record,
+    file_digest,
+    require_exclusive_write,
+    update_record,
+    verify_creation,
+)
 
 ITEM_SET_ID = 10780
 ITEM_TEMPLATE = 48
@@ -320,25 +335,25 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def get_json(client: httpx.Client, url: str, **params: Any) -> dict[str, Any]:
+def get_json(client: httpx2.Client, url: str, **params: Any) -> dict[str, Any]:
     for attempt in range(4):
         try:
             response = client.get(url, params={"f": "json", **params})
             response.raise_for_status()
             data = response.json()
-        except httpx.TransportError:
+        except httpx2.TransportError:
             if attempt == 3:
                 raise
             time.sleep(2 * (attempt + 1))
             continue
         if isinstance(data, dict) and "error" in data:
             # ArcGIS reports errors (e.g. a missing token) with HTTP 200.
-            raise httpx.HTTPError(f"{url}: {data['error']}")
+            raise httpx2.HTTPError(f"{url}: {data['error']}")
         return data
     raise RuntimeError("unreachable")
 
 
-def download(client: httpx.Client, url: str, path: Path) -> None:
+def download(client: httpx2.Client, url: str, path: Path) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -359,12 +374,17 @@ def read_manifest(slug: str) -> list[dict[str, str]]:
 def write_manifest(slug: str, rows: list[dict[str, Any]]) -> Path:
     path = WORK / slug / "manifest.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as f:
+    with NamedTemporaryFile(
+        mode="w", dir=path.parent, delete=False, encoding="utf-8", newline=""
+    ) as f:
         writer = csv.DictWriter(
             f, fieldnames=COLUMNS, extrasaction="ignore", lineterminator="\n"
         )
         writer.writeheader()
         writer.writerows(rows)
+        f.flush()
+        os.fsync(f.fileno())
+    Path(f.name).replace(path)
     return path
 
 
@@ -481,38 +501,28 @@ def walk(
     return result
 
 
-def omeka_index(client: httpx.Client, cache: Path) -> dict[str, Any]:
-    """Public media and items of the item set: sha256, titles, identifiers."""
+def omeka_index(cache: Path) -> dict[str, Any]:
+    """Index public resources in the target set."""
     if not cache.exists():
         base, _, _ = omeka_env()
-        out: dict[str, list[dict[str, Any]]] = {"media": [], "items": []}
-        for kind in ("media", "items"):
-            page = 1
-            while True:
-                response = client.get(
-                    f"{base}/api/{kind}",
-                    params={"item_set_id": ITEM_SET_ID, "per_page": 100, "page": page},
-                    timeout=120,
-                )
-                response.raise_for_status()
-                batch = response.json()
-                if not batch:
-                    break
-                for rec in batch:
-                    out[kind].append(
-                        {
-                            "id": rec["o:id"],
-                            "item": (rec.get("o:item") or {}).get("o:id"),
-                            "sha256": rec.get("o:sha256"),
-                            "title": rec.get("o:title"),
-                            "identifier": [
-                                v.get("@value")
-                                for v in rec.get("dcterms:identifier", [])
-                            ],
-                        }
-                    )
-                page += 1
-        cache.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+        with OmekaAPI(base, timeout=120) as api:
+            snapshot = download_snapshot(api, ITEM_SET_ID)
+        out = {
+            kind: [
+                {
+                    "id": rec["o:id"],
+                    "item": (rec.get("o:item") or {}).get("o:id"),
+                    "sha256": rec.get("o:sha256"),
+                    "title": rec.get("o:title"),
+                    "identifier": [
+                        v.get("@value") for v in rec.get("dcterms:identifier", [])
+                    ],
+                }
+                for rec in records
+            ]
+            for kind, records in snapshot.records().items()
+        }
+        write_json(cache, out)
     data = json.loads(cache.read_text(encoding="utf-8"))
     return {
         "sha": {m["sha256"]: m for m in data["media"] if m["sha256"]},
@@ -569,7 +579,7 @@ def guess_holder(text: str) -> tuple[str, str]:
 
 
 def layer_rows(
-    client: httpx.Client, portal: str, webmap_id: str, seen: set[str]
+    client: httpx2.Client, portal: str, webmap_id: str, seen: set[str]
 ) -> list[dict[str, Any]]:
     """One dataset row for each feature layer of a web map not seen before."""
     rows = []
@@ -578,7 +588,8 @@ def layer_rows(
         url = (layer.get("url") or "").rstrip("/")
         if not url and layer.get("featureCollection"):
             print(
-                f"  NOTE webmap {webmap_id}: inline layer {layer.get('title')!r} not exported"
+                f"  NOTE webmap {webmap_id}: inline layer "
+                f"{layer.get('title')!r} not exported"
             )
         if (
             not url
@@ -594,7 +605,7 @@ def layer_rows(
                 meta = get_json(
                     client, f"{portal}/sharing/rest/content/items/{layer['itemId']}"
                 )
-            except httpx.HTTPError:
+            except httpx2.HTTPError:
                 meta = {}
         rows.append(
             {
@@ -615,7 +626,7 @@ def layer_rows(
     return rows
 
 
-def export_layer(client: httpx.Client, url: str, path: Path) -> None:
+def export_layer(client: httpx2.Client, url: str, path: Path) -> None:
     """Save all features of a layer as GeoJSON (paged query)."""
     if path.exists():
         return
@@ -636,7 +647,7 @@ def export_layer(client: httpx.Client, url: str, path: Path) -> None:
         response.raise_for_status()
         body = response.json()
         if "error" in body:
-            raise httpx.HTTPError(f"{url}: {body['error']}")
+            raise httpx2.HTTPError(f"{url}: {body['error']}")
         batch = body.get("features", [])
         features.extend(batch)
         if len(batch) < 1000:
@@ -648,10 +659,10 @@ def export_layer(client: httpx.Client, url: str, path: Path) -> None:
         timeout=120,
     ).json()
     if "error" in count or count.get("count") is None:
-        raise httpx.HTTPError(f"{url}: no feature count ({count.get('error')})")
+        raise httpx2.HTTPError(f"{url}: no feature count ({count.get('error')})")
     count = count["count"]
     if count != len(features):
-        raise httpx.HTTPError(f"exported {len(features)} of {count} features")
+        raise httpx2.HTTPError(f"exported {len(features)} of {count} features")
     path.write_text(
         json.dumps(
             {"type": "FeatureCollection", "features": features}, ensure_ascii=False
@@ -663,15 +674,11 @@ def export_layer(client: httpx.Client, url: str, path: Path) -> None:
 def collect(slug: str, force: bool) -> int:
     story = STORIES[slug]
     if not story.get("arcgis"):
-        print(
-            f"{slug}: not an ArcGIS StoryMap. Collect it by hand (see README of the story repo)."
-        )
+        print(f"{slug}: collect by hand. See the README in the story repository.")
         return 1
     out = WORK / slug
     if (out / "manifest.csv").exists() and not force:
-        print(
-            f"{out / 'manifest.csv'} exists (it may hold review work). Use --force to replace it."
-        )
+        print(f"{out / 'manifest.csv'} exists. Use --force to replace it.")
         return 1
     # Rows of an earlier run keep their review work and identifiers.
     old = (
@@ -681,14 +688,14 @@ def collect(slug: str, force: bool) -> int:
     )
     portal = story.get("portal", "https://www.arcgis.com")
     sid = story["arcgis"]
-    client = httpx.Client(timeout=120, follow_redirects=True)
+    client = httpx2.Client(timeout=120, follow_redirects=True)
     data = get_json(client, f"{portal}/sharing/rest/content/items/{sid}/data")
     (out / "files").mkdir(parents=True, exist_ok=True)
     (out / "story.json").write_text(
         json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     nodes, resources = data["nodes"], data["resources"]
-    index = omeka_index(client, WORK / "omeka_index.json")
+    index = omeka_index(WORK / "omeka_index.json")
     book = bildredaktion()
     story_url = f"https://storymaps.arcgis.com/stories/{sid}"
 
@@ -810,7 +817,7 @@ def collect(slug: str, force: bool) -> int:
                     "decision",
                     "review" if "grundkarte" in row["title"].lower() else "ingest",
                 )
-            except httpx.HTTPError as exc:
+            except httpx2.HTTPError as exc:
                 row.update(
                     decision="review",
                     notes=f"{row.get('notes', '')} export failed: {exc}",
@@ -1004,7 +1011,9 @@ def media_payload(
     return payload
 
 
-def validation_errors(payload: dict[str, Any], kind: str) -> list[str]:
+def validation_errors(
+    payload: dict[str, Any], kind: str, vocabularies: VocabularyLoader | None = None
+) -> list[str]:
     """Run the repo validator on a payload (server fields filled with dummies)."""
     when = {"@value": "2000-01-01T00:00:00+00:00", "@type": "xsd:dateTime"}
     stub = json.loads(json.dumps(payload))
@@ -1029,213 +1038,201 @@ def validation_errors(payload: dict[str, Any], kind: str) -> list[str]:
         stub.update(
             {"o:renderer": "file", "o:media_type": stub["dcterms:format"][0]["@value"]}
         )
-    validator = OmekaValidator("https://example.invalid")
-    (validator.validate_item if kind == "item" else validator.validate_media)(stub)
-    return [str(e) for e in validator.errors]
+    findings = validate_records(
+        [stub] if kind == "item" else [],
+        [stub] if kind == "media" else [],
+        vocabularies or VocabularyLoader(),
+        check_collection=False,
+    )
+    return [str(error) for error in findings.errors]
 
 
 # --------------------------------------------------------------------------- upload
 
 
-def masked_url(url: httpx.URL | str) -> str:
-    """URL without the query string, so the API key never shows in a message."""
-    return str(httpx.URL(str(url)).copy_with(query=None))
+def omeka() -> OmekaAPI:
+    return OmekaAPI(*omeka_env(), timeout=180)
 
 
-class Omeka:
-    def __init__(self) -> None:
-        self.base, self.key_id, self.key_cred = omeka_env()
-        self.client = httpx.Client(timeout=180, headers={"Cache-Control": "no-cache"})
-
-    def auth(self, **extra: Any) -> dict[str, Any]:
-        if not self.key_id or not self.key_cred:
-            raise SystemExit("KEY_IDENTITY / KEY_CREDENTIAL missing in .env")
-        return {
-            "key_identity": self.key_id,
-            "key_credential": self.key_cred,
-            "_": time.time_ns(),
-            **extra,
-        }
-
-    def check(self, response: httpx.Response) -> None:
-        """Raise on an HTTP error. Keep the key and credential out of the message."""
-        if not response.is_error:
-            return
-        text = response.text[:500]
-        for secret in (self.key_id, self.key_cred):
-            if secret:
-                text = text.replace(secret, "***")
-        raise RuntimeError(
-            f"{response.request.method} {masked_url(response.request.url)}: "
-            f"HTTP {response.status_code}: {text}"
-        )
-
-    def get(self, kind: str, rid: int) -> dict[str, Any]:
-        response = self.client.get(f"{self.base}/api/{kind}/{rid}", params=self.auth())
-        self.check(response)
-        return response.json()
-
-    def find(self, kind: str, identifier: str) -> list[dict[str, Any]]:
-        response = self.client.get(
-            f"{self.base}/api/{kind}",
-            params=self.auth(
-                **{
-                    "property[0][property]": 10,
-                    "property[0][type]": "eq",
-                    "property[0][text]": identifier,
-                }
-            ),
-        )
-        self.check(response)
-        return response.json()
-
-    def post(
-        self, kind: str, payload: dict[str, Any], file: Path | None = None
-    ) -> dict[str, Any]:
-        if file is None:
-            response = self.client.post(
-                f"{self.base}/api/{kind}", params=self.auth(), json=payload
-            )
-        else:
-            mime = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
-            with file.open("rb") as f:
-                response = self.client.post(
-                    f"{self.base}/api/{kind}",
-                    params=self.auth(),
-                    files={
-                        "data": (
-                            None,
-                            json.dumps(payload, ensure_ascii=False),
-                            "application/json",
-                        ),
-                        "file[0]": (file.name, f, mime),
-                    },
-                )
-        self.check(response)
-        return response.json()
-
-    def put(self, kind: str, rid: int, payload: dict[str, Any]) -> dict[str, Any]:
-        response = self.client.put(
-            f"{self.base}/api/{kind}/{rid}", params=self.auth(), json=payload
-        )
-        self.check(response)
-        return response.json()
-
-    def delete(self, kind: str, rid: int) -> None:
-        response = self.client.delete(
-            f"{self.base}/api/{kind}/{rid}", params=self.auth()
-        )
-        self.check(response)
+def before_edits() -> Path:
+    return ROOT / "backups" / f"data_stories_{datetime.now(UTC):%Y%m%d_%H%M%S_%f}"
 
 
 def backup(records: list[dict[str, Any]], name: str) -> Path:
-    path = (
-        ROOT
-        / "backups"
-        / f"data_stories_{datetime.now(UTC):%Y%m%d_%H%M%S}"
-        / f"{name}.json"
-    )
+    path = before_edits() / f"{name}.json"
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
-    path.chmod(0o600)
+    write_json(path, records)
     return path
 
 
-def story_temporal(api: Omeka, slug: str) -> list[str]:
+def story_temporal(api: OmekaAPI, slug: str) -> list[str]:
     parent = api.get("items", STORIES[slug]["item"])
     return [v["@value"] for v in parent.get("dcterms:temporal", []) if v.get("@value")]
 
 
-def upload(slug: str, apply: bool, limit: int | None) -> int:
+def upload(
+    slug: str,
+    apply: bool,
+    limit: int | None,
+    skip_recent_hours: float = 2,
+    *,
+    exclusive_write: bool = False,
+) -> int:
+    with omeka() as api:
+        return upload_rows(
+            api, slug, apply, limit, skip_recent_hours, exclusive_write=exclusive_write
+        )
+
+
+def upload_rows(
+    api: OmekaAPI,
+    slug: str,
+    apply: bool,
+    limit: int | None,
+    skip_recent_hours: float = 2,
+    *,
+    exclusive_write: bool = False,
+) -> int:
     rows = read_manifest(slug)
-    api = Omeka()
     temporal = story_temporal(api, slug)
-    out = WORK / slug
+    vocabularies = VocabularyLoader()
+    copies = before_edits()
     done = failed = 0
     for row in rows:
         decision = row["decision"]
-        if decision.startswith("reuse:"):
-            failed += not link_existing(
-                api, slug, row, int(decision.split(":")[1]), apply
-            )
+        if decision != "ingest" and not decision.startswith("reuse:"):
             continue
-        # A row with omeka_item but no omeka_media goes on to the RESUME check.
-        if decision != "ingest" or row.get("omeka_media"):
+        if row.get("omeka_media"):
             continue
         if limit is not None and done >= limit:
             break
-        problems = rights_problems(row)
-        if not problems:
+        try:
+            if decision.startswith("reuse:"):
+                link_existing(
+                    api,
+                    slug,
+                    row,
+                    int(decision.split(":")[1]),
+                    apply,
+                    copies,
+                    skip_recent_hours,
+                    exclusive_write=exclusive_write,
+                )
+                continue
+            problems = rights_problems(row)
+            if problems:
+                raise ValueError(", ".join(problems))
             item = item_payload(slug, row, temporal)
             media = media_payload(slug, row, None, temporal)
-            problems = validation_errors(item, "item") + validation_errors(
-                media, "media"
+            problems = validation_errors(item, "item", vocabularies)
+            problems += validation_errors(media, "media", vocabularies)
+            if problems:
+                raise ValueError(", ".join(problems))
+            existing = api.find("items", row["identifier"])
+            if len(existing) > 1:
+                raise ValueError("Multiple items have this identifier")
+            item_id = existing[0]["o:id"] if existing else None
+            if row.get("omeka_item") and str(item_id) != row["omeka_item"]:
+                raise ValueError("Manifest item ID differs from the identifier match")
+            if item_id is not None and (
+                existing[0].get("o:is_public", item["o:is_public"])
+                != item["o:is_public"]
+                or ITEM_SET_ID
+                not in {ref["o:id"] for ref in existing[0].get("o:item_set", [])}
+            ):
+                raise ValueError(
+                    "Identifier matches an item with a different set or visibility"
+                )
+            file = WORK / slug / row["file"]
+            if not file.is_file():
+                raise ValueError(f"Missing original file {file}")
+            check_placeholder_parent(
+                media, existing[0] if existing else item, file.name
             )
-        if problems:
-            print(f"SKIP {row['identifier']}: {'; '.join(problems)}")
-            failed += 1
-            continue
-        existing = api.find("items", row["identifier"])
-        if existing:
-            item_id = existing[0]["o:id"]
-            if existing[0].get("o:media"):
-                print(f"EXISTS {row['identifier']} -> item {item_id}")
-                if apply:  # A dry run writes nothing, also not to the manifest.
-                    row["omeka_item"] = str(item_id)
-                    row["omeka_media"] = str(existing[0]["o:media"][0]["o:id"])
+            found = api.find("media", media["dcterms:identifier"][0]["@value"])
+            if found:
+                if (
+                    len(found) != 1
+                    or (found[0].get("o:item") or {}).get("o:id") != item_id
+                ):
+                    raise ValueError("Media identifier collision")
+                proposed = create_payload("media", media, target_id=item_id, file=file)
+                actual = api.get("media", found[0]["o:id"])
+                verify_creation("media", proposed, actual, file_digest(file))
+                if apply:
+                    row.update(
+                        omeka_item=str(item_id), omeka_media=str(found[0]["o:id"])
+                    )
+                    write_manifest(slug, rows)
                 continue
-            # The item exists without a file: an earlier run stopped after the item POST.
-            print(f"RESUME {row['identifier']}: item {item_id} has no media")
-        else:
-            item_id = None
-        public = "public" if item["o:is_public"] else "private"
-        if not apply:
-            print(f"DRY {row['identifier']} ({public}): {row['title'][:70]}")
+            if existing and existing[0].get("o:media"):
+                raise ValueError("Existing item has media with a different identifier")
+            if not apply:
+                print(f"DRY {row['identifier']}: {row['title'][:70]}")
+                done += 1
+                continue
+            if item_id is None:
+                item_id = create_record(
+                    api, "items", item, target_id=ITEM_SET_ID, apply=True
+                )["o:id"]
+            row["omeka_item"] = str(item_id)
+            write_manifest(slug, rows)
+            new_media = create_record(
+                api, "media", media, target_id=item_id, file=file, apply=True
+            )
+            check = api.get("items", item_id)
+            if [m["o:id"] for m in check.get("o:media", [])] != [new_media["o:id"]]:
+                raise ValueError("Parent read-back has different media")
+            row["omeka_media"] = str(new_media["o:id"])
+            write_manifest(slug, rows)
+            print(
+                f"OK {row['identifier']} -> item {item_id}, media {new_media['o:id']}"
+            )
             done += 1
-            continue
-        if item_id is None:
-            item_id = api.post("items", item)["o:id"]
-        row["omeka_item"] = str(item_id)
-        write_manifest(slug, rows)  # Record the item before the file upload.
-        media["o:item"] = {"o:id": item_id}
-        new_media = api.post("media", media, out / row["file"])
-        check = api.get("items", item_id)
-        ok = [m["o:id"] for m in check.get("o:media", [])] == [new_media["o:id"]]
-        row["omeka_media"] = str(new_media["o:id"])
-        print(
-            f"{'OK' if ok else 'CHECK'} {row['identifier']} -> item {item_id} "
-            f"media {new_media['o:id']} ({public})"
-        )
-        done += 1
-        write_manifest(slug, rows)  # Keep the ledger current after each write.
+        except (OmekaError, OSError, ValueError) as exc:
+            print(f"SKIP {row['identifier']}: {exc}")
+            failed += 1
     if apply:
         write_manifest(slug, rows)
     print(f"{'applied' if apply else 'dry run'}: {done} new, {failed} skipped")
-    return 1 if failed else 0
+    return int(bool(failed))
 
 
 def link_existing(
-    api: Omeka, slug: str, row: dict[str, str], item_id: int, apply: bool
-) -> bool:
-    """Add the story DOI to an existing item. Other fields stay as they are."""
+    api: OmekaAPI,
+    slug: str,
+    row: dict[str, str],
+    item_id: int,
+    apply: bool,
+    copies: Path,
+    skip_recent_hours: float,
+    *,
+    exclusive_write: bool = False,
+) -> None:
+    """Add the story DOI to an existing item."""
     doi = f"https://doi.org/{STORIES[slug]['doi']}"
     record = api.get("items", item_id)
     if any(v.get("@id") == doi for v in record.get("dcterms:isPartOf", [])):
-        return True
-    if not apply:
-        print(f"DRY link item {item_id} -> {doi}")
-        return True
-    backup([record], f"item_{item_id}")
-    if api.get("items", item_id).get("o:modified") != record.get("o:modified"):
-        print(f"SKIP link {item_id}: changed during the run")
-        return False
-    record.setdefault("dcterms:isPartOf", []).append(
+        if apply:
+            row["omeka_item"] = str(item_id)
+        return
+    proposed = deepcopy(record)
+    proposed.setdefault("dcterms:isPartOf", []).append(
         uri(33, "Is Part Of", doi, STORIES[slug]["title"])
     )
-    api.put("items", item_id, record)
-    print(f"OK link item {item_id} -> {doi}")
-    row["omeka_item"] = str(item_id)
-    return True
+    update_record(
+        api,
+        "items",
+        record,
+        proposed,
+        apply=apply,
+        backup_dir=copies,
+        skip_recent_hours=skip_recent_hours,
+        exclusive_write=exclusive_write,
+    )
+    print(f"{'OK' if apply else 'DRY'} link item {item_id} -> {doi}")
+    if apply:
+        row["omeka_item"] = str(item_id)
 
 
 def with_note(text: str) -> str:
@@ -1244,9 +1241,28 @@ def with_note(text: str) -> str:
     return text if AI_NOTE in text else f"{text}\n\n{AI_NOTE}".strip()
 
 
-def ainote(slug: str, apply: bool) -> int:
+def ainote(
+    slug: str,
+    apply: bool,
+    skip_recent_hours: float = 2,
+    *,
+    exclusive_write: bool = False,
+) -> int:
     """Set the current AI note on the uploaded items and media of a story."""
-    api = Omeka()
+    with omeka() as api:
+        return apply_ai_note(
+            api, slug, apply, skip_recent_hours, exclusive_write=exclusive_write
+        )
+
+
+def apply_ai_note(
+    api: OmekaAPI,
+    slug: str,
+    apply: bool,
+    skip_recent_hours: float = 2,
+    *,
+    exclusive_write: bool = False,
+) -> int:
     changed = failed = 0
     for row in read_manifest(slug):
         if row["decision"] != "ingest":
@@ -1254,30 +1270,32 @@ def ainote(slug: str, apply: bool) -> int:
         for kind, rid in (("items", row["omeka_item"]), ("media", row["omeka_media"])):
             if not rid:
                 continue
-            record = api.get(kind, int(rid))
-            values = record.setdefault("dcterms:description", [])
-            if not values:
-                values.append(literal(4, "Description", ""))
-            old = values[0].get("@value", "")
-            new = with_note(old)
-            if new == old:
-                continue
-            changed += 1
-            if not apply:
-                print(f"DRY {kind} {rid} {row['identifier']}")
-                continue
-            backup([record], f"{kind}_{rid}")
-            # The PUT sends the whole record. Do not overwrite a concurrent edit.
-            if api.get(kind, int(rid)).get("o:modified") != record.get("o:modified"):
-                print(f"SKIP {kind} {rid}: changed during the run")
+            try:
+                record = api.get(kind, int(rid))
+                proposed = deepcopy(record)
+                values = proposed.setdefault("dcterms:description", [])
+                if not values:
+                    values.append(literal(4, "Description", ""))
+                old = values[0].get("@value", "")
+                new = with_note(old)
+                if new == old:
+                    continue
+                values[0]["@value"] = new
+                update_record(
+                    api,
+                    kind,
+                    record,
+                    proposed,
+                    apply=apply,
+                    backup_dir=before_edits(),
+                    skip_recent_hours=skip_recent_hours,
+                    exclusive_write=exclusive_write,
+                )
+                changed += 1
+                print(f"{'OK' if apply else 'DRY'} {kind} {rid} {row['identifier']}")
+            except (OmekaError, OSError, ValueError) as exc:
                 failed += 1
-                continue
-            values[0]["@value"] = new
-            api.put(kind, int(rid), record)
-            check = api.get(kind, int(rid))["dcterms:description"][0]["@value"]
-            ok = check == new
-            failed += not ok
-            print(f"{'OK' if ok else 'CHECK'} {kind} {rid} {row['identifier']}")
+                print(f"{kind}/{rid}: {exc}")
     print(f"{'applied' if apply else 'dry run'}: {changed} changes, {failed} failed")
     return 1 if failed else 0
 
@@ -1297,7 +1315,7 @@ def story_rights(story: dict[str, Any]) -> str:
 def zenodo_has_file(doi: str, path: Path) -> bool:
     """True if the Zenodo record of the DOI holds a file with the same MD5."""
     record_id = doi.rsplit("zenodo.", 1)[-1]
-    response = httpx.get(
+    response = httpx2.get(
         f"https://zenodo.org/api/records/{record_id}",
         timeout=60,
         follow_redirects=True,
@@ -1307,16 +1325,83 @@ def zenodo_has_file(doi: str, path: Path) -> bool:
     return any(f.get("checksum") == md5 for f in response.json().get("files", []))
 
 
-def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
-    story = STORIES[slug]
-    if not screenshot.is_file():
-        print(f"{screenshot}: file not found")
+def parent(
+    slug: str,
+    screenshot: Path,
+    apply: bool,
+    delete_old: bool,
+    skip_recent_hours: float = 2,
+    *,
+    exclusive_write: bool = False,
+) -> int:
+    try:
+        with omeka() as api:
+            return apply_parent(
+                api,
+                slug,
+                screenshot,
+                apply,
+                delete_old,
+                skip_recent_hours,
+                exclusive_write=exclusive_write,
+            )
+    except (OmekaError, httpx2.HTTPError, OSError, ValueError) as exc:
+        print(f"{slug}: {exc}", file=sys.stderr)
         return 1
-    api = Omeka()
+
+
+def finish_parent_cleanup(api: OmekaAPI, path: Path, plan: dict[str, Any]) -> None:
+    for saved in plan["old_media"]:
+        rid = saved["o:id"]
+        if rid in plan["completed"]:
+            continue
+        try:
+            current = api.get("media", rid)
+        except OmekaError as exc:
+            if exc.status != 404:
+                raise
+        else:
+            if current != saved:
+                raise OmekaError(f"media/{rid} changed before removal")
+            api.request("DELETE", f"media/{rid}")
+            try:
+                api.get("media", rid)
+            except OmekaError as exc:
+                if exc.status != 404:
+                    raise
+            else:
+                raise OmekaError(f"media/{rid} still exists after removal")
+            print(f"deleted media {rid}")
+        plan["completed"].append(rid)
+        write_json(path, plan)
+
+
+def apply_parent(
+    api: OmekaAPI,
+    slug: str,
+    screenshot: Path,
+    apply: bool,
+    delete_old: bool,
+    skip_recent_hours: float = 2,
+    *,
+    exclusive_write: bool = False,
+) -> int:
+    require_exclusive_write(apply, exclusive_write)
+    story = STORIES[slug]
     item = api.get("items", story["item"])
+    cleanup = ROOT / "backups" / f"story_{slug}_parent_cleanup.json"
+    plan = (
+        json.loads(cleanup.read_text(encoding="utf-8"))
+        if delete_old and cleanup.exists()
+        else None
+    )
+    if plan and (plan["source"], plan["parent"]) != (api.base_url, story["item"]):
+        raise OmekaError(
+            "The old-media cleanup plan belongs to a different parent or instance"
+        )
     old_media = [api.get("media", m["o:id"]) for m in item.get("o:media", [])]
     done = [
-        m["o:id"]
+        m
         for m in old_media
         if any(
             v.get("@value") == f"m-story-{slug}"
@@ -1324,8 +1409,26 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
         )
     ]
     if done:
-        print(f"item {story['item']} already has the story media {done}: nothing to do")
+        if len(done) != 1:
+            raise OmekaError("Multiple media have the story identifier")
+        print(f"item {story['item']} already has story media {done[0]['o:id']}")
+        if delete_old:
+            if plan is None:
+                raise OmekaError("No saved old-media cleanup plan for this story media")
+            verify_creation(
+                "media", plan["replacement"], done[0], tuple(plan["original"])
+            )
+            remaining = [
+                m["o:id"]
+                for m in plan["old_media"]
+                if m["o:id"] not in plan["completed"]
+            ]
+            print(f"Old media still to check: {remaining}")
+            if apply:
+                finish_parent_cleanup(api, cleanup, plan)
         return 0
+    if not screenshot.is_file():
+        raise ValueError(f"{screenshot}: file not found")
     doi = f"https://doi.org/{story['doi']}"
     url = story.get("url") or f"https://storymaps.arcgis.com/stories/{story['arcgis']}"
     temporal = [v["@value"] for v in item.get("dcterms:temporal", [])]
@@ -1341,7 +1444,8 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
     note = (
         f"PDF-Fassung der Data Story, archiviert auf Zenodo ({doi})."
         if is_pdf
-        else f"Bildschirmfoto der interaktiven Data Story, aufgenommen am {datetime.now(UTC):%Y-%m-%d}."
+        else "Bildschirmfoto der interaktiven Data Story, aufgenommen am "
+        f"{datetime.now(UTC):%Y-%m-%d}."
     )
     media = {
         "o:is_public": public,
@@ -1414,16 +1518,20 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
     problems = validation_errors(media, "media")
     print(f"item {story['item']}: title -> {new_item['o:title']!r}, isPartOf -> {doi}")
     print(
-        f"new media: {screenshot} ({'public' if public else 'private'}), old media {[m['o:id'] for m in old_media]}"
+        f"new media: {screenshot} ({'public' if public else 'private'}), "
+        f"old media {[m['o:id'] for m in old_media]}"
     )
     if problems:
         print("validation:", *problems, sep="\n  ")
         return 1
+    update_record(api, "items", item, new_item, skip_recent_hours=skip_recent_hours)
+    if plan and file_digest(screenshot) != tuple(plan["original"]):
+        raise OmekaError("The replacement file differs from the saved cleanup plan")
     if not apply:
         print("dry run: nothing written")
         return 0
     path = backup([item, *old_media], f"story_{slug}")
-    with httpx.Client(timeout=120) as client:
+    with httpx2.Client(timeout=120) as client:
         for m in old_media:
             if m.get("o:original_url"):
                 download(
@@ -1432,17 +1540,40 @@ def parent(slug: str, screenshot: Path, apply: bool, delete_old: bool) -> int:
                     path.parent / f"{m['o:id']}_{m.get('o:filename')}",
                 )
     print(f"backup: {path}")
-    # PUT first: if the POST fails, a rerun finds no story media and recovers.
-    api.put("items", story["item"], new_item)
-    created = api.post("media", media, screenshot)
+    update_record(
+        api,
+        "items",
+        item,
+        new_item,
+        apply=True,
+        backup_dir=path.parent,
+        skip_recent_hours=skip_recent_hours,
+        exclusive_write=exclusive_write,
+    )
+    if delete_old and not plan:
+        plan = {
+            "source": api.base_url,
+            "parent": story["item"],
+            "replacement": create_payload("media", media, file=screenshot),
+            "original": list(file_digest(screenshot)),
+            "old_media": old_media,
+            "completed": [],
+        }
+        write_json(cleanup, plan)
+    created = create_record(
+        api,
+        "media",
+        plan["replacement"] if plan else media,
+        file=screenshot,
+        apply=True,
+    )
     check = api.get("items", story["item"])
     print(
-        f"OK media {created['o:id']} on item {story['item']}: {[m['o:id'] for m in check['o:media']]}"
+        f"OK media {created['o:id']} on item {story['item']}: "
+        f"{[m['o:id'] for m in check['o:media']]}"
     )
-    if delete_old:
-        for m in old_media:
-            api.delete("media", m["o:id"])
-            print(f"deleted media {m['o:id']}")
+    if plan:
+        finish_parent_cleanup(api, cleanup, plan)
     return 0
 
 
@@ -1470,14 +1601,48 @@ def main() -> int:
         action="store_true",
         help="delete the old story media after the upload",
     )
+    for name in ("upload", "ainote", "parent"):
+        sub.choices[name].add_argument(
+            "--exclusive-write",
+            action="store_true",
+            help="Confirm that other Omeka writers are paused",
+        )
+        sub.choices[name].add_argument(
+            "--skip-recent-hours",
+            type=float,
+            default=2,
+            help="Skip records edited within this many hours (default: 2)",
+        )
     args = parser.parse_args()
     if args.cmd == "collect":
         return collect(args.slug, args.force)
+    try:
+        require_exclusive_write(args.apply, args.exclusive_write)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.cmd == "upload":
-        return upload(args.slug, args.apply, args.limit)
+        return upload(
+            args.slug,
+            args.apply,
+            args.limit,
+            args.skip_recent_hours,
+            exclusive_write=args.exclusive_write,
+        )
     if args.cmd == "ainote":
-        return ainote(args.slug, args.apply)
-    return parent(args.slug, args.screenshot, args.apply, args.delete_old)
+        return ainote(
+            args.slug,
+            args.apply,
+            args.skip_recent_hours,
+            exclusive_write=args.exclusive_write,
+        )
+    return parent(
+        args.slug,
+        args.screenshot,
+        args.apply,
+        args.delete_old,
+        args.skip_recent_hours,
+        exclusive_write=args.exclusive_write,
+    )
 
 
 if __name__ == "__main__":

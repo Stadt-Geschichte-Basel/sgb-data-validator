@@ -1,256 +1,103 @@
-"""Test offline workflow functionality."""
+"""Check live and offline validation against the same records."""
 
-import json
-import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
-from src.api import OmekaAPI
+import httpx2
+import pytest
+from test_issue16_validation import create_minimal_item, create_minimal_media
+from typer.testing import CliRunner
+
+from sgb_validator import api as client_module
+from sgb_validator.api import OmekaAPI, OmekaError
+from sgb_validator.cli import app
+from sgb_validator.snapshots import download_snapshot, read_snapshot, write_snapshot
+from sgb_validator.validation import validate_records
+from sgb_validator.vocabularies import VocabularyLoader
 
 
-def test_validate_offline_files() -> bool:
-    """Test validating offline files."""
-    print("\nTest 1: Validate offline files")
-    print("=" * 60)
+@pytest.fixture
+def source():
+    item = create_minimal_item(2)
+    item["o:media"] = [{"o:id": 3, "@id": "https://omeka.example/api/media/3"}]
+    media = create_minimal_media(3)
+    media["o:item"] = {"o:id": 2, "@id": "https://omeka.example/api/items/2"}
+    media["o:filename"] = "0011aabb.png"
+    media["o:source"] = "sgb-fdp-platzhalter[1].png"
+    media["o:is_public"] = True
+    return {"item_sets/1": {"o:id": 1}, "items": [item], "media": [media]}
 
-    with TemporaryDirectory() as tmpdir:
-        tmppath = Path(tmpdir)
 
-        # Create sample valid items
-        items = [
-            {
-                "@context": "http://omeka.org/s/vocabs/o#",
-                "@id": "https://omeka.unibe.ch/api/items/1",
-                "@type": ["o:Item"],
-                "o:id": 1,
-                "o:is_public": True,
-                "o:title": "Test Item",
-                "o:created": {
-                    "@value": "2025-01-15T10:00:00+00:00",
-                    "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
-                },
-                "o:modified": {
-                    "@value": "2025-01-15T10:00:00+00:00",
-                    "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
-                },
-                "o:media": [],
-                "o:item_set": [],
-                "o:site": [],
-                "dcterms:identifier": [
-                    {
-                        "type": "literal",
-                        "property_id": 10,
-                        "property_label": "Identifier",
-                        "is_public": True,
-                        "@value": "test001",
-                    }
-                ],
-                "dcterms:title": [
-                    {
-                        "type": "literal",
-                        "property_id": 1,
-                        "property_label": "Title",
-                        "is_public": True,
-                        "@value": "Test Item",
-                    }
-                ],
-            }
-        ]
-
-        # Create sample valid media
-        media = [
-            {
-                "@context": "http://omeka.org/s/vocabs/o#",
-                "@id": "https://omeka.unibe.ch/api/media/1",
-                "@type": ["o:Media"],
-                "o:id": 1,
-                "o:is_public": True,
-                "o:title": "Test Media",
-                "o:created": {
-                    "@value": "2025-01-15T10:00:00+00:00",
-                    "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
-                },
-                "o:modified": {
-                    "@value": "2025-01-15T10:00:00+00:00",
-                    "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
-                },
-                "o:ingester": "upload",
-                "o:renderer": "file",
-                "o:item": {"@id": "https://omeka.unibe.ch/api/items/1", "o:id": 1},
-                "o:media_type": "image/jpeg",
-                "dcterms:identifier": [
-                    {
-                        "type": "literal",
-                        "property_id": 10,
-                        "property_label": "Identifier",
-                        "is_public": True,
-                        "@value": "media001",
-                    }
-                ],
-                "dcterms:title": [
-                    {
-                        "type": "literal",
-                        "property_id": 1,
-                        "property_label": "Title",
-                        "is_public": True,
-                        "@value": "Test Media",
-                    }
-                ],
-            }
-        ]
-
-        # Save to files
-        items_file = tmppath / "items.json"
-        media_file = tmppath / "media.json"
-
-        with open(items_file, "w") as f:
-            json.dump(items, f, indent=2)
-
-        with open(media_file, "w") as f:
-            json.dump(media, f, indent=2)
-
-        # Validate
-        api = OmekaAPI("https://omeka.unibe.ch")
-        result = api.validate_offline_files(tmppath)
-
-        # Assert validation passed
-        assert result["overall_valid"], (
-            f"Validation should pass. Errors: items={result['items_errors']}, media={result['media_errors']}"
+def api_for(source, *, truncate_media=False):
+    def handler(request):
+        field = request.url.path.removeprefix("/api/")
+        body = source[field]
+        if isinstance(body, dict):
+            return httpx2.Response(200, json=body)
+        results = body if request.url.params["page"] == "1" else []
+        if truncate_media and field == "media":
+            return httpx2.Response(200, json=[])
+        return httpx2.Response(
+            200, json=results, headers={"omeka-s-total-results": str(len(body))}
         )
-        print(f"  ✓ Validated {result['items_validated']} items")
-        print(f"  ✓ Validated {result['media_validated']} media")
-        print("  ✓ All files are valid")
+
+    return OmekaAPI("https://omeka.example", transport=httpx2.MockTransport(handler))
 
 
-def test_validate_invalid_files() -> bool:
-    """Test validating invalid offline files."""
-    print("\nTest 2: Validate invalid offline files")
-    print("=" * 60)
-
-    with TemporaryDirectory() as tmpdir:
-        tmppath = Path(tmpdir)
-
-        # Create sample invalid items (missing required fields)
-        items = [
-            {
-                "@context": "http://omeka.org/s/vocabs/o#",
-                "@id": "https://omeka.unibe.ch/api/items/1",
-                "@type": ["o:Item"],
-                "o:id": 1,
-                "o:is_public": True,
-                "o:title": "",  # Empty title - should fail
-                "o:created": {
-                    "@value": "2025-01-15T10:00:00+00:00",
-                    "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
-                },
-                "o:modified": {
-                    "@value": "2025-01-15T10:00:00+00:00",
-                    "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
-                },
-                "o:media": [],
-                "o:item_set": [],
-                "o:site": [],
-                # Missing dcterms:identifier
-                "dcterms:title": [
-                    {
-                        "type": "literal",
-                        "property_id": 1,
-                        "property_label": "Title",
-                        "is_public": True,
-                        "@value": "Test",
-                    }
-                ],
-            }
-        ]
-
-        # Save to files
-        items_file = tmppath / "items.json"
-
-        with open(items_file, "w") as f:
-            json.dump(items, f, indent=2)
-
-        # Validate
-        api = OmekaAPI("https://omeka.unibe.ch")
-        result = api.validate_offline_files(tmppath)
-
-        # Assert validation detected errors
-        assert not result["overall_valid"], (
-            "Validation should have failed for invalid items"
-        )
-        assert len(result["items_errors"]) > 0 or len(result["media_errors"]) > 0, (
-            "Should have detected validation errors"
-        )
-        print(f"  ✓ Correctly detected {len(result['items_errors'])} invalid item(s)")
+@pytest.mark.parametrize("suffix", ["raw", "transformed", ""])
+def test_offline_and_live_findings_match(tmp_path, source, suffix):
+    with api_for(source) as api:
+        live = download_snapshot(api, 1)
+    path = tmp_path / "snapshot"
+    write_snapshot(path, live, suffix)
+    offline = read_snapshot(path)
+    vocabulary = VocabularyLoader()
+    live_findings = validate_records(live.items, live.media, vocabulary)
+    offline_findings = validate_records(offline.items, offline.media, vocabulary)
+    assert [str(e) for e in live_findings.errors] == [
+        str(e) for e in offline_findings.errors
+    ]
+    assert [str(w) for w in live_findings.warnings] == [
+        str(w) for w in offline_findings.warnings
+    ]
+    assert any(
+        e.field == "o:is_public" and e.resource_type == "Media"
+        for e in offline_findings.warnings
+    )
+    assert any(
+        e.field == "o:is_public" and e.resource_type == "Item"
+        for e in offline_findings.warnings
+    )
+    report = tmp_path / "report"
+    result = CliRunner().invoke(
+        app, ["validate", str(path), "--export-csv", "--csv-output", str(report)]
+    )
+    assert result.exit_code == int(bool(offline_findings.errors))
+    assert (
+        "https://omeka.example/admin/media/3/edit"
+        in (report / "media_validation.csv").read_text()
+    )
+    assert (report / "validation_summary.csv").is_file()
 
 
-def test_update_methods_dry_run() -> bool:
-    """Test update methods in dry-run mode."""
-    print("\nTest 3: Update methods (dry run)")
-    print("=" * 60)
-
-    # Create sample valid item
-    item_data = {
-        "@context": "http://omeka.org/s/vocabs/o#",
-        "@id": "https://omeka.unibe.ch/api/items/1",
-        "@type": ["o:Item"],
-        "o:id": 1,
-        "o:is_public": True,
-        "o:title": "Test Item",
-        "o:created": {
-            "@value": "2025-01-15T10:00:00+00:00",
-            "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
-        },
-        "o:modified": {
-            "@value": "2025-01-15T10:00:00+00:00",
-            "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
-        },
-        "o:media": [],
-        "o:item_set": [],
-        "o:site": [],
-        "dcterms:identifier": [
-            {
-                "type": "literal",
-                "property_id": 10,
-                "property_label": "Identifier",
-                "is_public": True,
-                "@value": "test001",
-            }
-        ],
-        "dcterms:title": [
-            {
-                "type": "literal",
-                "property_id": 1,
-                "property_label": "Title",
-                "is_public": True,
-                "@value": "Test Item",
-            }
-        ],
-    }
-
-    api = OmekaAPI("https://omeka.unibe.ch")
-    result = api.update_item(1, item_data, dry_run=True)
-
-    assert result["validation_passed"], "Dry run validation should pass"
-    assert result["dry_run"], "Should be marked as dry run"
-    assert not result["updated"], "No changes should be made in dry run"
-    print("  ✓ Dry run validation passed")
-    print("  ✓ No changes were made")
+def test_media_truncation_detected_without_count_header(monkeypatch, source):
+    monkeypatch.setattr(client_module.time, "sleep", lambda _: None)
+    with api_for(source, truncate_media=True) as api:
+        with pytest.raises(OmekaError, match="Incomplete media listing"):
+            download_snapshot(api, 1)
 
 
-if __name__ == "__main__":
-    print("Testing offline workflow functionality")
-    print("=" * 60)
-
-    all_passed = True
-
-    all_passed &= test_validate_offline_files()
-    all_passed &= test_validate_invalid_files()
-    all_passed &= test_update_methods_dry_run()
-
-    print("\n" + "=" * 60)
-    if all_passed:
-        print("✓ All offline workflow tests passed!")
-        sys.exit(0)
-    else:
-        print("✗ Some offline workflow tests failed")
-        sys.exit(1)
+def test_transform_leaves_source_intact_and_reports_visibility_change(tmp_path, source):
+    with api_for(source) as api:
+        snapshot = download_snapshot(api, 1)
+    raw = tmp_path / "raw"
+    write_snapshot(raw, snapshot, "raw")
+    before = (raw / "media_raw.json").read_bytes()
+    result = CliRunner().invoke(
+        app, ["transform", str(raw), "--output-dir", str(tmp_path)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "media/3  o:is_public" in result.output
+    transformed = read_snapshot(Path(result.output.splitlines()[-1]))
+    assert transformed.media[0]["o:is_public"] is False
+    assert transformed.items[0]["o:is_public"] is False
+    assert (raw / "media_raw.json").read_bytes() == before

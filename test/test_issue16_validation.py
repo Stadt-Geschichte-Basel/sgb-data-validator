@@ -6,7 +6,10 @@ import sys
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from validate import OmekaValidator
+from sgb_validator.validation import validate_records
+from sgb_validator.vocabularies import VocabularyLoader
+
+VOCABULARIES = VocabularyLoader()
 
 
 def create_minimal_item(item_id: int) -> dict:
@@ -272,10 +275,9 @@ def test_item_errors() -> None:
     print("Testing Item errors (issue #16)...")
 
     # Test missing o:title
-    validator = OmekaValidator("https://example.com")
     item = create_minimal_item(1)
     item["o:title"] = ""
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
 
     # Should have error for empty title (from pydantic) but not from our custom check
     # because pydantic validation fails first
@@ -283,10 +285,9 @@ def test_item_errors() -> None:
     print("  ✓ Empty o:title generates error")
 
     # Test missing dcterms:identifier
-    validator = OmekaValidator("https://example.com")
     item = create_minimal_item(2)
     del item["dcterms:identifier"]
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
     assert any(
         "dcterms:identifier" in str(e) and "required" in str(e).lower()
         for e in validator.errors
@@ -294,10 +295,9 @@ def test_item_errors() -> None:
     print("  ✓ Missing dcterms:identifier generates error")
 
     # Test missing dcterms:description
-    validator = OmekaValidator("https://example.com")
     item = create_minimal_item(3)
     del item["dcterms:description"]
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
     assert any(
         "dcterms:description" in str(e) and "required" in str(e).lower()
         for e in validator.errors
@@ -305,10 +305,9 @@ def test_item_errors() -> None:
     print("  ✓ Missing dcterms:description generates error")
 
     # Test missing dcterms:temporal
-    validator = OmekaValidator("https://example.com")
     item = create_minimal_item(4)
     del item["dcterms:temporal"]
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
     assert any(
         "dcterms:temporal" in str(e) and "required" in str(e).lower()
         for e in validator.errors
@@ -321,11 +320,10 @@ def test_item_warnings() -> None:
     print("\nTesting Item warnings (issue #16)...")
 
     # Test missing thumbnails and media
-    validator = OmekaValidator("https://example.com")
     item = create_minimal_item(5)
     item["thumbnail_display_urls"] = None
     item["o:media"] = []
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
     assert any(
         "thumbnail" in str(w).lower() and "media" in str(w).lower()
         for w in validator.warnings
@@ -333,18 +331,16 @@ def test_item_warnings() -> None:
     print("  ✓ Missing thumbnails and media generates warning")
 
     # Test missing dcterms:language
-    validator = OmekaValidator("https://example.com")
     item = create_minimal_item(6)
     del item["dcterms:language"]
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
     assert any("dcterms:language" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:language generates warning")
 
     # Test missing dcterms:isPartOf
-    validator = OmekaValidator("https://example.com")
     item = create_minimal_item(7)
     del item["dcterms:isPartOf"]
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
     assert any("dcterms:isPartOf" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:isPartOf generates warning")
 
@@ -354,10 +350,9 @@ def test_media_errors() -> None:
     print("\nTesting Media errors (issue #16)...")
 
     # Test missing dcterms:identifier
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(1)
     del media["dcterms:identifier"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any(
         "dcterms:identifier" in str(e) and "required" in str(e).lower()
         for e in validator.errors
@@ -365,10 +360,9 @@ def test_media_errors() -> None:
     print("  ✓ Missing dcterms:identifier generates error")
 
     # Test missing dcterms:description
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(2)
     del media["dcterms:description"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any(
         "dcterms:description" in str(e) and "required" in str(e).lower()
         for e in validator.errors
@@ -376,10 +370,9 @@ def test_media_errors() -> None:
     print("  ✓ Missing dcterms:description generates error")
 
     # Test missing dcterms:rights
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(3)
     del media["dcterms:rights"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any(
         "dcterms:rights" in str(e) and "required" in str(e).lower()
         for e in validator.errors
@@ -387,10 +380,9 @@ def test_media_errors() -> None:
     print("  ✓ Missing dcterms:rights generates error")
 
     # Test missing dcterms:license
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(4)
     del media["dcterms:license"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any(
         "dcterms:license" in str(e) and "required" in str(e).lower()
         for e in validator.errors
@@ -403,82 +395,72 @@ def test_media_warnings() -> None:
     print("\nTesting Media warnings (issue #16)...")
 
     # Test missing o:resource_template
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(5)
     media["o:resource_template"] = None
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any("resource_template" in str(w).lower() for w in validator.warnings)
     print("  ✓ Missing o:resource_template generates warning")
 
     # Test missing thumbnails
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(6)
     media["thumbnail_display_urls"] = None
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any("thumbnail" in str(w).lower() for w in validator.warnings)
     print("  ✓ Missing thumbnails generates warning")
 
     # Test missing dcterms:creator
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(7)
     del media["dcterms:creator"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any("dcterms:creator" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:creator generates warning")
 
     # Test missing dcterms:publisher
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(8)
     del media["dcterms:publisher"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any("dcterms:publisher" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:publisher generates warning")
 
     # Test missing dcterms:temporal
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(9)
     del media["dcterms:temporal"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any("dcterms:temporal" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:temporal generates warning")
 
     # Test missing dcterms:type
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(10)
     del media["dcterms:type"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any("dcterms:type" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:type generates warning")
 
     # Test missing dcterms:format
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(11)
     del media["dcterms:format"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any("dcterms:format" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:format generates warning")
 
     # Test missing dcterms:extent
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(12)
     del media["dcterms:extent"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any("dcterms:extent" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:extent generates warning")
 
     # Test missing dcterms:source
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(13)
     del media["dcterms:source"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any("dcterms:source" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:source generates warning")
 
     # Test missing dcterms:language
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(14)
     del media["dcterms:language"]
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any("dcterms:language" in str(w) for w in validator.warnings)
     print("  ✓ Missing dcterms:language generates warning")
 
@@ -486,9 +468,8 @@ def test_media_warnings() -> None:
 def test_valid_complete_item() -> None:
     """Test that complete valid item has no errors or warnings"""
     print("\nTesting complete valid Item...")
-    validator = OmekaValidator("https://example.com")
     item = create_minimal_item(100)
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
     # Should have no errors or warnings
     assert len(validator.errors) == 0, f"Unexpected errors: {validator.errors}"
     assert len(validator.warnings) == 0, f"Unexpected warnings: {validator.warnings}"
@@ -498,9 +479,8 @@ def test_valid_complete_item() -> None:
 def test_valid_complete_media() -> None:
     """Test that complete valid media has no errors or warnings"""
     print("\nTesting complete valid Media...")
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(100)
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     # Should have no errors or warnings
     assert len(validator.errors) == 0, f"Unexpected errors: {validator.errors}"
     assert len(validator.warnings) == 0, f"Unexpected warnings: {validator.warnings}"
@@ -512,16 +492,15 @@ def test_duplicate_identifiers() -> None:
     print("\nTesting duplicate identifiers...")
 
     # Test duplicate item identifiers
-    validator = OmekaValidator("https://example.com")
     item1 = create_minimal_item(201)
     item2 = create_minimal_item(202)
     # Give both items the same identifier
     item1["dcterms:identifier"][0]["@value"] = "duplicate_id_123"
     item2["dcterms:identifier"][0]["@value"] = "duplicate_id_123"
 
-    validator.validate_item(item1)
-    validator.validate_item(item2)
-    validator._check_duplicate_identifiers()
+    validator = validate_records(
+        [item1, item2], [], VOCABULARIES, check_collection=False
+    )
 
     # Should have errors for both items
     duplicate_errors = [e for e in validator.errors if "Duplicate identifier" in str(e)]
@@ -533,7 +512,6 @@ def test_duplicate_identifiers() -> None:
     print("  ✓ Duplicate item identifiers generate errors for all affected items")
 
     # Test duplicate media identifiers
-    validator = OmekaValidator("https://example.com")
     media1 = create_minimal_media(301)
     media2 = create_minimal_media(302)
     media3 = create_minimal_media(303)
@@ -542,10 +520,9 @@ def test_duplicate_identifiers() -> None:
     media2["dcterms:identifier"][0]["@value"] = "duplicate_media_456"
     media3["dcterms:identifier"][0]["@value"] = "duplicate_media_456"
 
-    validator.validate_media(media1)
-    validator.validate_media(media2)
-    validator.validate_media(media3)
-    validator._check_duplicate_identifiers()
+    validator = validate_records(
+        [], [media1, media2, media3], VOCABULARIES, check_collection=False
+    )
 
     # Should have errors for all three media
     duplicate_errors = [e for e in validator.errors if "Duplicate identifier" in str(e)]
@@ -564,15 +541,14 @@ def test_duplicate_identifiers() -> None:
     print("  ✓ Duplicate media identifiers generate errors for all affected media")
 
     # Test that unique identifiers don't generate errors
-    validator = OmekaValidator("https://example.com")
     item1 = create_minimal_item(401)
     item2 = create_minimal_item(402)
     item1["dcterms:identifier"][0]["@value"] = "unique_id_1"
     item2["dcterms:identifier"][0]["@value"] = "unique_id_2"
 
-    validator.validate_item(item1)
-    validator.validate_item(item2)
-    validator._check_duplicate_identifiers()
+    validator = validate_records(
+        [item1, item2], [], VOCABULARIES, check_collection=False
+    )
 
     duplicate_errors = [e for e in validator.errors if "Duplicate identifier" in str(e)]
     assert len(duplicate_errors) == 0, (
@@ -604,22 +580,22 @@ if __name__ == "__main__":
 
 def test_single_value_fields() -> None:
     """Fields without brackets in the datamodel take exactly one value."""
-    validator = OmekaValidator("https://example.com")
-    validator.validate_item(create_minimal_item(20))
+    validator = validate_records(
+        [create_minimal_item(20)], [], VOCABULARIES, check_collection=False
+    )
     assert not any("Only one value" in str(e) for e in validator.errors)
 
     item = create_minimal_item(21)
     item["dcterms:temporal"] = item["dcterms:temporal"] * 2
-    validator.validate_item(item)
+    validator = validate_records([item], [], VOCABULARIES, check_collection=False)
     assert any(
         e.field == "dcterms:temporal" and "Only one value" in e.error
         for e in validator.errors
     )
 
-    validator = OmekaValidator("https://example.com")
     media = create_minimal_media(22)
     media["dcterms:language"] = media["dcterms:language"] * 2
-    validator.validate_media(media)
+    validator = validate_records([], [media], VOCABULARIES, check_collection=False)
     assert any(
         e.field == "dcterms:language" and "Only one value" in e.error
         for e in validator.errors
