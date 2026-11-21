@@ -183,7 +183,7 @@ def _check_literal_fields_for_urls(
     """Check if literal type fields contain URLs (issue #22)"""
     # Check all dcterms fields
     for key, value in data.items():
-        if not key.startswith("dcterms:"):
+        if not key.startswith("dcterms:") or key == "dcterms:subject":
             continue
 
         if isinstance(value, list):
