@@ -112,9 +112,9 @@ def record_changes(kind: str, before: Record, after: Record) -> Record:
     }
 
 
-def identifiers(record: Record) -> list[tuple[int, str]]:
+def identifiers(record: Record) -> list[str]:
     return [
-        (value.get("property_id", 10), value["@value"])
+        value["@value"]
         for value in record.get("dcterms:identifier") or []
         if isinstance(value.get("@value"), str) and value["@value"]
     ]
