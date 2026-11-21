@@ -62,12 +62,29 @@ def test_transport_error_does_not_disclose_credentials():
 
 
 @pytest.mark.parametrize(
-    ("identity", "credential", "authenticated"),
+    ("identity", "credential", "has_keys"),
     [(None, None, False), ("", "", False), ("identity", "secret", True)],
 )
-def test_unset_keys_open_a_public_client(identity, credential, authenticated):
+def test_unset_keys_open_a_public_client(identity, credential, has_keys):
     with Omeka("https://omeka.example", identity, credential) as api:
-        assert api.authenticated is authenticated
+        assert api.has_api_keys is has_keys
+
+
+def test_requests_carry_a_cache_nonce_and_pragma():
+    requests = []
+
+    def transport(request):
+        requests.append(request)
+        return TransportResponse(200, content=b'{"o:id": 1}')
+
+    with Omeka("https://omeka.example", transport=transport) as api:
+        api.get("items", 1)
+        api.get("items", 1)
+    nonces = {
+        parse_qs(urlsplit(r.url).query)["omeka_s_client_nonce"][0] for r in requests
+    }
+    assert len(nonces) == 2
+    assert all(r.headers.get("pragma") == "no-cache" for r in requests)
 
 
 def test_partial_keys_are_rejected():

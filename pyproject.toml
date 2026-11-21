@@ -16,7 +16,7 @@ dependencies = [
 sgb = "sgb_validator.cli:main"
 
 [tool.uv.sources]
-omeka-s-client = { git = "https://github.com/maehr/omeka-s-client", rev = "864d4b478463fea7dac2beceb2f416f6a92452b4" }
+omeka-s-client = { git = "https://github.com/maehr/omeka-s-client", rev = "f1b5d66e5d48f2a98eb854fffad52defc778ee5f" }
 
 [build-system]
 requires = ["hatchling"]

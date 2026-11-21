@@ -1702,7 +1702,7 @@ wheels = [
 [[package]]
 name = "omeka-s-client"
 version = "0.1.0.dev0"
-source = { git = "https://github.com/maehr/omeka-s-client?rev=864d4b478463fea7dac2beceb2f416f6a92452b4#864d4b478463fea7dac2beceb2f416f6a92452b4" }
+source = { git = "https://github.com/maehr/omeka-s-client?rev=f1b5d66e5d48f2a98eb854fffad52defc778ee5f#f1b5d66e5d48f2a98eb854fffad52defc778ee5f" }
 dependencies = [
     { name = "httpx2" },
     { name = "pydantic" },
@@ -2557,7 +2557,7 @@ docs = ">=3.11.5"
 [package.metadata]
 requires-dist = [
     { name = "httpx2", specifier = ">=2.0" },
-    { name = "omeka-s-client", git = "https://github.com/maehr/omeka-s-client?rev=864d4b478463fea7dac2beceb2f416f6a92452b4" },
+    { name = "omeka-s-client", git = "https://github.com/maehr/omeka-s-client?rev=f1b5d66e5d48f2a98eb854fffad52defc778ee5f" },
     { name = "pydantic", specifier = ">=2.11.9" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "typer", specifier = ">=0.15.0" },

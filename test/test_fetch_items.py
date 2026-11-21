@@ -40,6 +40,23 @@ def test_listing_retries_a_truncated_listing() -> None:
     assert sorted(i["o:id"] for i in items) == [1, 2, 3]
 
 
+def test_listing_waits_between_attempts() -> None:
+    waits: list[float] = []
+    state = {"pass": 0}
+    passes = [[1, 2], [1, 2, 3]]
+
+    def transport(request):
+        query = parse_qs(urlsplit(request.url).query)
+        if query["page"] == ["1"]:
+            return page(passes[min(state["pass"], 1)], 3)
+        state["pass"] += 1
+        return page([], 3)
+
+    with Omeka("https://omeka.example", transport=transport, sleep=waits.append) as c:
+        c.list("items", verify=True)
+    assert waits == [2]
+
+
 def test_listing_fails_when_truncation_persists() -> None:
     with make_client([[1, 2]], total=3) as client:
         with pytest.raises(IncompleteListingError, match="three attempts"):
@@ -50,7 +67,9 @@ def test_verified_listing_requires_a_count_header():
     def transport(request):
         return TransportResponse(200, content=b"[]")
 
-    with Omeka("https://omeka.example", transport=transport) as client:
+    with Omeka(
+        "https://omeka.example", transport=transport, sleep=lambda _: None
+    ) as client:
         with pytest.raises(IncompleteListingError, match="No count"):
             client.list("items", verify=True)
 
@@ -65,6 +84,8 @@ def test_snapshot_item_listing_rejects_a_different_membership_with_the_same_coun
         ids = [5, 4, 3, 2] if descending else [1, 2, 4, 5]
         return page(ids if query["page"] == ["1"] else [], 4)
 
-    with Omeka("https://omeka.example", transport=transport) as client:
+    with Omeka(
+        "https://omeka.example", transport=transport, sleep=lambda _: None
+    ) as client:
         with pytest.raises(SnapshotConsistencyError, match=r"Missing examples: \[1\]"):
             capture_snapshot(client, 1)

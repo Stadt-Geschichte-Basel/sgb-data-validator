@@ -27,7 +27,7 @@ IDENTIFIER = "dcterms:identifier"
 
 
 class Omeka(OmekaClient):
-    """Open an Omeka client from optional settings and record key presence."""
+    """Open an Omeka client from optional settings with cache busting on."""
 
     def __init__(
         self,
@@ -36,6 +36,7 @@ class Omeka(OmekaClient):
         key_credential: str | None = None,
         *,
         timeout: float = 60,
+        cache_busting: bool = True,
         **options: Any,
     ) -> None:
         # Unset environment variables can arrive as empty strings.
@@ -44,9 +45,9 @@ class Omeka(OmekaClient):
             key_identity=key_identity or None,
             key_credential=key_credential or None,
             timeout=timeout,
+            cache_busting=cache_busting,
             **options,
         )
-        self.authenticated = bool(key_identity and key_credential)
 
 
 def find(

@@ -164,7 +164,7 @@ def check_dependencies(api: OmekaClient, references: list[Record]) -> list[str]:
 
 
 def backup(api: Omeka, item_set_id: int, directory: Path) -> Record:
-    if not api.authenticated:
+    if not api.has_api_keys:
         raise OmekaError(
             "Authenticate with access to private records to make a complete backup"
         )
@@ -548,7 +548,7 @@ def restore(
     exclusive_write: bool = False,
 ) -> None:
     require_exclusive_write(apply, exclusive_write)
-    if not api.authenticated:
+    if not api.has_api_keys:
         raise OmekaError(
             "Authenticate with access to private records to preview or restore"
         )
