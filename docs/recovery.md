@@ -46,4 +46,6 @@ Omeka S 3.2.3 returned HTTP 500 for the fixture deletes after it removed the rec
 
 Set `SGB_DRILL_URLS` to a comma-separated list of disposable loopback Omeka URLs. Use the same test API key on each instance. If Omeka runs in containers, set `SGB_DRILL_INGEST_BASE` to the URL each server uses to reach itself. Set `SGB_DRILL_KEY_IDENTITY` and `SGB_DRILL_KEY_CREDENTIAL`.
 
+To start the instances, use the Compose files in the [omeka-s-client integration tests](https://github.com/maehr/omeka-s-client/tree/main/tests/integration). Bind each instance to the loopback interface.
+
 Run `uv run --locked pytest test/test_recovery.py`. The drill creates and deletes its own fixture records.

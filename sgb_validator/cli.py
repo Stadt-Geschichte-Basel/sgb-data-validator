@@ -11,10 +11,16 @@ from typing import Annotated
 import typer
 from dotenv import load_dotenv
 
-from .api import OmekaAPI, OmekaError, Record
+from .api import Omeka, OmekaError, Record
 from .links import check_links
 from .reports import export_validation_csv, print_report, save_report
-from .snapshots import Snapshot, download_snapshot, read_snapshot, write_snapshot
+from .snapshots import (
+    Snapshot,
+    capture_snapshot,
+    read_snapshot,
+    records,
+    write_snapshot,
+)
 from .transformations import transform_item_set_data
 from .validation import validate_records
 from .vocabularies import VocabularyLoader
@@ -45,10 +51,10 @@ def command_errors() -> Iterator[None]:
 
 def connect(
     base_url: str | None, identity: str | None, credential: str | None
-) -> OmekaAPI:
+) -> Omeka:
     if not base_url:
         raise ValueError("Set OMEKA_URL or pass --base-url")
-    return OmekaAPI(base_url, identity, credential)
+    return Omeka(base_url, identity, credential)
 
 
 def target(item_set_id: int | None) -> int:
@@ -72,7 +78,7 @@ def download(
 ) -> None:
     """Download the metadata for an Omeka item set."""
     with command_errors(), connect(base_url, key_identity, key_credential) as api:
-        snapshot = download_snapshot(api, target(item_set_id))
+        snapshot = capture_snapshot(api, target(item_set_id))
         directory = dated_dir(output_dir, "raw", snapshot.item_set_id)
         write_snapshot(directory, snapshot, "raw")
         typer.echo(directory)
@@ -129,7 +135,7 @@ def validate(
     with command_errors():
         if directory is None:
             with connect(base_url, key_identity, key_credential) as api:
-                snapshot = download_snapshot(api, target(item_set_id))
+                snapshot = capture_snapshot(api, target(item_set_id))
         else:
             snapshot = read_snapshot(directory)
         vocabulary = (
@@ -139,7 +145,7 @@ def validate(
         if check_uris:
             asyncio.run(
                 check_links(
-                    snapshot.records(),
+                    records(snapshot),
                     result,
                     check_redirects=check_redirects,
                     severity=uri_check_severity.value,
@@ -170,15 +176,15 @@ def transform(
             VocabularyLoader(vocabularies) if vocabularies else VocabularyLoader()
         )
         item_set, items, media = transform_item_set_data(
-            source.item_set,
+            source.item_set or {},
             source.items,
             source.media,
             apply_all=not whitespace_only,
             allowed_mime_types=vocabulary.mime_types,
         )
-        edited = Snapshot(item_set, items, media, source.source)
+        edited = Snapshot(source.source, item_set, items, media)
         for kind, pairs in (
-            ("item_sets", [(source.item_set, edited.item_set)]),
+            ("item_sets", [(source.item_set or {}, edited.item_set or {})]),
             ("items", zip(source.items, edited.items, strict=True)),
             ("media", zip(source.media, edited.media, strict=True)),
         ):
@@ -197,7 +203,7 @@ def plan_snapshot_update(
     if source.item_set_id != edited.item_set_id or source.source != edited.source:
         raise ValueError("The edited snapshot must describe the same source item set")
     for kind, left, right in (
-        ("item_sets", [source.item_set], [edited.item_set]),
+        ("item_sets", [source.item_set or {}], [edited.item_set or {}]),
         ("items", source.items, edited.items),
         ("media", source.media, edited.media),
     ):
@@ -239,7 +245,7 @@ def update(
             raise ValueError("The selected item set differs from the source snapshot")
         plan = list(plan_snapshot_update(baseline, proposed))
         with connect(base_url or baseline.source, key_identity, key_credential) as api:
-            if not baseline.source or api.base_url != baseline.source:
+            if not baseline.source or api.installation_url != baseline.source:
                 raise ValueError(
                     "The update target must match the source snapshot instance"
                 )

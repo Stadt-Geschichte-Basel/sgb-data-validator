@@ -45,8 +45,12 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from sgb_validator.api import OmekaAPI, OmekaError  # noqa: E402
-from sgb_validator.snapshots import download_snapshot, write_json  # noqa: E402
+from sgb_validator.api import Omeka, OmekaError, find  # noqa: E402
+from sgb_validator.snapshots import (  # noqa: E402
+    capture_snapshot,
+    records,
+    write_json,
+)
 from sgb_validator.validation import validate_records  # noqa: E402
 from sgb_validator.vocabularies import VocabularyLoader  # noqa: E402
 from sgb_validator.writes import (  # noqa: E402
@@ -505,8 +509,8 @@ def omeka_index(cache: Path) -> dict[str, Any]:
     """Index public resources in the target set."""
     if not cache.exists():
         base, _, _ = omeka_env()
-        with OmekaAPI(base, timeout=120) as api:
-            snapshot = download_snapshot(api, ITEM_SET_ID)
+        with Omeka(base, timeout=120) as api:
+            snapshot = capture_snapshot(api, ITEM_SET_ID)
         out = {
             kind: [
                 {
@@ -518,9 +522,9 @@ def omeka_index(cache: Path) -> dict[str, Any]:
                         v.get("@value") for v in rec.get("dcterms:identifier", [])
                     ],
                 }
-                for rec in records
+                for rec in group
             ]
-            for kind, records in snapshot.records().items()
+            for kind, group in records(snapshot).items()
         }
         write_json(cache, out)
     data = json.loads(cache.read_text(encoding="utf-8"))
@@ -1050,8 +1054,8 @@ def validation_errors(
 # --------------------------------------------------------------------------- upload
 
 
-def omeka() -> OmekaAPI:
-    return OmekaAPI(*omeka_env(), timeout=180)
+def omeka() -> Omeka:
+    return Omeka(*omeka_env(), timeout=180)
 
 
 def before_edits() -> Path:
@@ -1065,7 +1069,7 @@ def backup(records: list[dict[str, Any]], name: str) -> Path:
     return path
 
 
-def story_temporal(api: OmekaAPI, slug: str) -> list[str]:
+def story_temporal(api: Omeka, slug: str) -> list[str]:
     parent = api.get("items", STORIES[slug]["item"])
     return [v["@value"] for v in parent.get("dcterms:temporal", []) if v.get("@value")]
 
@@ -1085,7 +1089,7 @@ def upload(
 
 
 def upload_rows(
-    api: OmekaAPI,
+    api: Omeka,
     slug: str,
     apply: bool,
     limit: int | None,
@@ -1128,7 +1132,7 @@ def upload_rows(
             problems += validation_errors(media, "media", vocabularies)
             if problems:
                 raise ValueError(", ".join(problems))
-            existing = api.find("items", row["identifier"])
+            existing = find(api, "items", row["identifier"])
             if len(existing) > 1:
                 raise ValueError("Multiple items have this identifier")
             item_id = existing[0]["o:id"] if existing else None
@@ -1149,7 +1153,7 @@ def upload_rows(
             check_placeholder_parent(
                 media, existing[0] if existing else item, file.name
             )
-            found = api.find("media", media["dcterms:identifier"][0]["@value"])
+            found = find(api, "media", media["dcterms:identifier"][0]["@value"])
             if found:
                 if (
                     len(found) != 1
@@ -1199,7 +1203,7 @@ def upload_rows(
 
 
 def link_existing(
-    api: OmekaAPI,
+    api: Omeka,
     slug: str,
     row: dict[str, str],
     item_id: int,
@@ -1256,7 +1260,7 @@ def ainote(
 
 
 def apply_ai_note(
-    api: OmekaAPI,
+    api: Omeka,
     slug: str,
     apply: bool,
     skip_recent_hours: float = 2,
@@ -1350,7 +1354,7 @@ def parent(
         return 1
 
 
-def finish_parent_cleanup(api: OmekaAPI, path: Path, plan: dict[str, Any]) -> None:
+def finish_parent_cleanup(api: Omeka, path: Path, plan: dict[str, Any]) -> None:
     for saved in plan["old_media"]:
         rid = saved["o:id"]
         if rid in plan["completed"]:
@@ -1363,7 +1367,7 @@ def finish_parent_cleanup(api: OmekaAPI, path: Path, plan: dict[str, Any]) -> No
         else:
             if current != saved:
                 raise OmekaError(f"media/{rid} changed before removal")
-            api.request("DELETE", f"media/{rid}")
+            api.delete("media", rid)
             try:
                 api.get("media", rid)
             except OmekaError as exc:
@@ -1377,7 +1381,7 @@ def finish_parent_cleanup(api: OmekaAPI, path: Path, plan: dict[str, Any]) -> No
 
 
 def apply_parent(
-    api: OmekaAPI,
+    api: Omeka,
     slug: str,
     screenshot: Path,
     apply: bool,
@@ -1395,7 +1399,10 @@ def apply_parent(
         if delete_old and cleanup.exists()
         else None
     )
-    if plan and (plan["source"], plan["parent"]) != (api.base_url, story["item"]):
+    if plan and (plan["source"], plan["parent"]) != (
+        api.installation_url,
+        story["item"],
+    ):
         raise OmekaError(
             "The old-media cleanup plan belongs to a different parent or instance"
         )
@@ -1552,7 +1559,7 @@ def apply_parent(
     )
     if delete_old and not plan:
         plan = {
-            "source": api.base_url,
+            "source": api.installation_url,
             "parent": story["item"],
             "replacement": create_payload("media", media, file=screenshot),
             "original": list(file_digest(screenshot)),

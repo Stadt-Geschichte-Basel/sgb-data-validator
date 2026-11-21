@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, ValidationError
 from pydantic_core import ErrorDetails
 
-from .api import OmekaAPI, OmekaError, Record
+from .api import OmekaClient, OmekaError, Record, Upload, find
 from .changes import identifiers, properties, record_changes, ref_id, writable
 from .models import Item, Media
 from .snapshots import write_json
@@ -19,15 +19,13 @@ from .transformations import has_placeholder_media
 
 
 def check_identifiers(
-    api: OmekaAPI,
+    api: OmekaClient,
     kind: str,
     payload: Record,
     own_id: int | None = None,
 ) -> None:
-    for property_id, value in identifiers(payload):
-        if any(
-            record["o:id"] != own_id for record in api.find(kind, value, property_id)
-        ):
+    for value in identifiers(payload):
+        if any(record["o:id"] != own_id for record in find(api, kind, value)):
             raise OmekaError(f"Identifier collision in {kind}: {value!r}")
 
 
@@ -125,7 +123,7 @@ def require_exclusive_write(apply: bool, exclusive_write: bool) -> None:
 
 
 def update_record(
-    api: OmekaAPI,
+    api: OmekaClient,
     kind: str,
     before: Record,
     after: Record,
@@ -207,7 +205,8 @@ def update_record(
         kind, latest
     ) != writable(kind, current):
         raise OmekaError(f"{kind}/{rid} changed immediately before the write")
-    api.patch(kind, rid, payload)
+    # The payload holds every RDF value to keep; see the PATCH note above.
+    api.patch(kind, rid, payload, replace_rdf_values=True)
     verified = api.get(kind, rid)
     verify_fields(kind, {**writable(kind, current), **changes}, verified)
     return UpdateResult("updated", fields, verified)
@@ -304,7 +303,7 @@ def verify_creation(
 
 
 def create_record(
-    api: OmekaAPI,
+    api: OmekaClient,
     kind: str,
     data: Record,
     *,
@@ -328,7 +327,9 @@ def create_record(
     if not apply:
         return payload
     original = file_digest(file) if file else None
-    record = api.post(kind, payload, file, filename=filename)
+    # A list sends the file as file[0], which matches file_index 0.
+    uploads = [Upload(path=file, filename=filename)] if file else None
+    record = api.create(kind, payload, files=uploads)
     rid = record["o:id"]
     if on_created is not None:
         on_created(rid)

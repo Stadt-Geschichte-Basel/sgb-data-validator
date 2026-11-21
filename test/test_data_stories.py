@@ -8,6 +8,16 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import archive_data_stories as ads  # noqa: E402
+import pytest  # noqa: E402
+
+from sgb_validator.api import OmekaHTTPError  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def fake_find(monkeypatch):
+    """Let the duck-typed fakes answer identifier searches."""
+    monkeypatch.setattr(ads, "find", lambda api, kind, value: api.find(kind, value))
+
 
 STORY = {
     "root": "n-root",
@@ -337,7 +347,7 @@ def test_parent_resumes_cleanup_with_replacement_already_saved(tmp_path, monkeyp
     ads.write_json(path, plan)
 
     class FakeOmeka:
-        base_url = plan["source"]
+        installation_url = plan["source"]
 
         def __init__(self):
             self.records = {3: old, 4: existing}
@@ -350,11 +360,11 @@ def test_parent_resumes_cleanup_with_replacement_already_saved(tmp_path, monkeyp
                     "o:media": [{"o:id": media} for media in self.records],
                 }
             if rid not in self.records:
-                raise ads.OmekaError("Not found", 404)
+                raise OmekaHTTPError("Not found", status=404)
             return self.records[rid]
 
-        def request(self, method, endpoint):
-            assert method == "DELETE" and endpoint == "media/3"
+        def delete(self, kind, rid):
+            assert (kind, rid) == ("media", 3)
             self.deleted.append(self.records.pop(3)["o:id"])
 
     api = FakeOmeka()

@@ -1,24 +1,27 @@
 """Recovery checks and opt-in drills against disposable loopback instances."""
 
+import hashlib
 import os
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx2
 import pytest
+from omeka_s_client import TransportResponse, Upload
+from omeka_s_client.testing import FakeOmeka
 from typer.testing import CliRunner
 
-from sgb_validator.api import OmekaAPI, OmekaError
+from sgb_validator.api import Omeka, OmekaError, find, optional_get
 from sgb_validator.cli import app
-from sgb_validator.recovery import backup, load_backup, optional_get, restore
+from sgb_validator.recovery import backup, file_checksum, load_backup, restore
 from sgb_validator.snapshots import Snapshot, read_json, read_snapshot, write_snapshot
 from sgb_validator.writes import create_record, update_record
 
 
 def test_metadata_only_backup_uses_existing_names(tmp_path):
-    snapshot = Snapshot({"o:id": 1}, [], [], "https://omeka.example")
+    snapshot = Snapshot("https://omeka.example", {"o:id": 1}, [], [])
     path = tmp_path / "legacy"
-    write_snapshot(path, snapshot, "")
+    write_snapshot(path, snapshot)
     loaded, _, full = load_backup(path)
     assert loaded == snapshot
     assert full is False
@@ -30,21 +33,17 @@ def test_metadata_only_restore_refuses_deleted_resources(tmp_path, apply):
     item_set = {"o:id": 1, "o:is_public": False}
     item = {"o:id": 2, "o:item_set": [{"o:id": 1}]}
     path = tmp_path / "legacy"
-    write_snapshot(path, Snapshot(item_set, [item], [], source), "")
+    write_snapshot(path, Snapshot(source, item_set, [item], []))
     messages = []
+    fake = FakeOmeka({"item_sets": [{**item_set, "o:is_public": True}]})
+    api = Omeka(source, "identity", "secret", transport=fake)
 
-    class FakeAPI:
-        base_url = source
-        auth = True
-
-        def get(self, kind, rid):
-            if kind == "items":
-                raise OmekaError("Not found", status=404)
-            return {**item_set, "o:is_public": True}
-
-    with pytest.raises(OmekaError, match="deleted records require a complete backup"):
+    with (
+        api,
+        pytest.raises(OmekaError, match="deleted records require a complete backup"),
+    ):
         restore(
-            FakeAPI(),
+            api,
             path,
             apply=apply,
             exclusive_write=apply,
@@ -55,6 +54,15 @@ def test_metadata_only_restore_refuses_deleted_resources(tmp_path, apply):
         assert any("Restore item_sets/1: o:is_public" in line for line in messages)
     assert not (path / "before-edit").exists()
     assert not (path / "restore-progress.json").exists()
+    assert all(request.method == "GET" for request in fake.requests)
+
+
+def test_restore_requires_keys(tmp_path):
+    path = tmp_path / "legacy"
+    write_snapshot(path, Snapshot("https://omeka.example", {"o:id": 1}, [], []))
+    with Omeka("https://omeka.example", transport=FakeOmeka()) as api:
+        with pytest.raises(OmekaError, match="Authenticate"):
+            restore(api, path)
 
 
 def literal(name, pid):
@@ -69,9 +77,9 @@ def record(name, public=True):
     }
 
 
-class InterruptedUpload(OmekaAPI):
-    def post(self, kind, payload, file=None, *, filename=None):
-        written = super().post(kind, payload, file, filename=filename)
+class InterruptedUpload(Omeka):
+    def create(self, kind, payload, *, files=None):
+        written = super().create(kind, payload, files=files)
         if kind == "media":
             raise KeyboardInterrupt
         return written
@@ -79,7 +87,7 @@ class InterruptedUpload(OmekaAPI):
 
 def remove_fixture(api, kind, rid):
     try:
-        api.request("DELETE", f"{kind}/{rid}")
+        api.delete(kind, rid)
     except OmekaError as exc:
         # Omeka S 3 can fail to render a successfully deleted resource.
         if exc.status != 500:
@@ -111,8 +119,8 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
     other_file = tmp_path / "other.txt"
     other_file.write_bytes(b"surviving original")
 
-    with OmekaAPI(*auth) as api:
-        set_id = api.post("item_sets", record(f"{tag}-set"))["o:id"]
+    with Omeka(*auth) as api:
+        set_id = api.create("item_sets", record(f"{tag}-set"))["o:id"]
         a = create_record(
             api, "items", record(f"{tag}-a"), target_id=set_id, apply=True
         )["o:id"]
@@ -120,7 +128,7 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
             api, "items", record(f"{tag}-b"), target_id=set_id, apply=True
         )["o:id"]
         # Simulate a placeholder from an older collection whose parent is public.
-        medium = api.post(
+        medium = api.create(
             "media",
             {
                 **record(f"{tag}-private", False),
@@ -129,7 +137,7 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
                 "o:item": {"o:id": a},
                 "file_index": 0,
             },
-            private_file,
+            files=[Upload(path=private_file)],
         )
         survivor = create_record(
             api,
@@ -177,7 +185,7 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
                     {
                         "type": "uri",
                         "property_id": 34,
-                        "@id": f"{api.base_url}/api/items/{b}",
+                        "@id": f"{api.installation_url}/api/items/{b}",
                     }
                 ]
             update_record(
@@ -225,7 +233,7 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
         mapping[str(rid)] != rid for rid in (set_id, b, medium["o:id"], html["o:id"])
     )
 
-    with OmekaAPI(*auth) as api:
+    with Omeka(*auth) as api:
         aa = api.get("items", a)
         bb = api.get("items", mapping[str(b)])
         media = api.get("media", mapping[str(medium["o:id"])])
@@ -252,7 +260,7 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
         assert media["o:sha256"] == medium["o:sha256"]
         assert httpx2.get(media["o:original_url"]).content == private_file.read_bytes()
         assert markup["data"]["html"] == "<p>Drill</p>"
-        assert len(api.find("media", f"{tag}-private")) == 1
+        assert len(find(api, "media", f"{tag}-private")) == 1
         assert [ref["o:id"] for ref in aa["o:item_set"]] == [mapping[str(set_id)]]
 
 
@@ -262,9 +270,9 @@ def test_full_restore_reads_only_metadata_verified_by_the_manifest(tmp_path):
     from sgb_validator.writes import file_digest
 
     source = "https://omeka.example"
-    snapshot = Snapshot({"o:id": 1}, [record("verified") | {"o:id": 2}], [], source)
+    snapshot = Snapshot(source, {"o:id": 1}, [record("verified") | {"o:id": 2}], [])
     directory = tmp_path / "full"
-    write_snapshot(directory, snapshot, "")
+    write_snapshot(directory, snapshot)
     write_json(
         directory / "manifest.json",
         {
@@ -284,14 +292,13 @@ def test_full_restore_reads_only_metadata_verified_by_the_manifest(tmp_path):
 def test_order_required_links_and_report_cycles():
     from sgb_validator.recovery import creation_order
 
-    class TemplateAPI:
-        def get(self, kind, rid):
-            assert kind == "resource_templates" and rid == 4
-            return {
-                "o:resource_template_property": [
-                    {"o:property": {"o:id": 13}, "o:is_required": True},
-                ]
-            }
+    template = {
+        "o:id": 4,
+        "o:resource_template_property": [
+            {"o:property": {"o:id": 13}, "o:is_required": True},
+        ],
+    }
+    fake = FakeOmeka({"resource_templates": [template]})
 
     def depends_on(rid, target):
         return {
@@ -308,36 +315,32 @@ def test_order_required_links_and_report_cycles():
 
     a = ("items", depends_on(1, 2))
     b = ("items", {"o:id": 2})
-    assert creation_order(TemplateAPI(), [a, b], "https://omeka.example") == [b, a]
-    with pytest.raises(OmekaError, match=r"Required-link cycle.*items/1.*items/2"):
-        creation_order(
-            TemplateAPI(), [a, ("items", depends_on(2, 1))], "https://omeka.example"
-        )
+    with Omeka("https://omeka.example", transport=fake) as api:
+        assert creation_order(api, [a, b], "https://omeka.example") == [b, a]
+        with pytest.raises(OmekaError, match=r"Required-link cycle.*items/1.*items/2"):
+            creation_order(
+                api, [a, ("items", depends_on(2, 1))], "https://omeka.example"
+            )
 
 
 def test_pending_creation_does_not_adopt_a_preexisting_record_after_retries(tmp_path):
     from sgb_validator.recovery import restore_records
 
-    class UnavailableAPI:
-        base_url = "https://omeka.example"
+    source = "https://omeka.example"
+    fake = FakeOmeka({"item_sets": [{"o:id": 2, "o:is_public": True}]})
 
-        def get(self, kind, rid):
-            raise OmekaError("Not found", 404)
+    def transport(request):
+        if request.method == "POST":
+            return TransportResponse(500, content=b"{}")
+        return fake(request)
 
-        def listing(self, kind, **scope):
-            return [{"o:id": 2, "o:is_public": True}]
-
-        def post(self, *args, **kwargs):
-            raise OmekaError("POST failed")
-
-    snapshot = Snapshot(
-        {"o:id": 1, "o:is_public": True}, [], [], UnavailableAPI.base_url
-    )
+    snapshot = Snapshot(source, {"o:id": 1, "o:is_public": True}, [], [])
     progress = tmp_path / "restore-progress.json"
+    api = Omeka(source, "identity", "secret", transport=transport)
     for _ in range(3):
-        with pytest.raises(OmekaError, match="POST failed"):
+        with pytest.raises(OmekaError, match="HTTP 500"):
             restore_records(
-                UnavailableAPI(),
+                api,
                 tmp_path,
                 snapshot,
                 {},
@@ -351,3 +354,77 @@ def test_pending_creation_does_not_adopt_a_preexisting_record_after_retries(tmp_
         state = read_json(progress)
         assert state["pending"]["1"]["before"] == [2]
         assert state["ids"] == {}
+
+
+ORIGINAL = b"archived original"
+
+
+def backup_source(original=ORIGINAL):
+    source = "https://omeka.example"
+    media = {
+        "o:id": 3,
+        "o:item": {"o:id": 2},
+        "o:ingester": "upload",
+        "o:source": "scan.txt",
+        "o:filename": "abc.txt",
+        "o:original_url": f"{source}/files/original/abc.txt",
+        "o:size": len(ORIGINAL),
+        "o:sha256": hashlib.sha256(ORIGINAL).hexdigest(),
+        **record("scan"),
+    }
+    item = {
+        "o:id": 2,
+        "o:item_set": [{"o:id": 1}],
+        "o:media": [{"o:id": 3}],
+        **record("item"),
+    }
+    return FakeOmeka(
+        {
+            "item_sets": [{"o:id": 1, **record("set")}],
+            "items": [item],
+            "media": [media],
+            "properties": [{"o:id": 1}, {"o:id": 10}],
+        },
+        files={"/files/original/abc.txt": original},
+    )
+
+
+def test_backup_downloads_and_verifies_originals(tmp_path):
+    fake = backup_source()
+    with Omeka("https://omeka.example", "identity", "secret", transport=fake) as api:
+        manifest = backup(api, 1, tmp_path / "backup")
+    assert manifest["complete"], manifest["errors"]
+    entry = manifest["originals"]["3"]
+    assert entry["sha256"] == hashlib.sha256(ORIGINAL).hexdigest()
+    assert (tmp_path / "backup" / entry["path"]).read_bytes() == ORIGINAL
+    snapshot, _, full = load_backup(tmp_path / "backup")
+    assert full and [medium["o:id"] for medium in snapshot.media] == [3]
+    assert all(request.method == "GET" for request in fake.requests)
+    downloads = [r for r in fake.requests if "/files/" in r.url]
+    assert all("key_" not in urlsplit(r.url).query for r in downloads)
+
+
+def test_backup_reports_an_original_with_different_bytes(tmp_path):
+    fake = backup_source(b"changed original")
+    with Omeka("https://omeka.example", "identity", "secret", transport=fake) as api:
+        manifest = backup(api, 1, tmp_path / "backup")
+    assert not manifest["complete"]
+    assert manifest["errors"] == [
+        "media/3: Original differs from Omeka's file size or SHA-256"
+    ]
+    with pytest.raises(ValueError, match="incomplete"):
+        load_backup(tmp_path / "backup")
+
+
+def test_backup_requires_keys(tmp_path):
+    with Omeka("https://omeka.example", transport=backup_source()) as api:
+        with pytest.raises(OmekaError, match="Authenticate"):
+            backup(api, 1, tmp_path / "backup")
+
+
+def test_file_checksum_leaves_no_file():
+    with Omeka("https://omeka.example", transport=backup_source()) as api:
+        size, digest = file_checksum(
+            api, "https://omeka.example/files/original/abc.txt"
+        )
+    assert (size, digest) == (len(ORIGINAL), hashlib.sha256(ORIGINAL).hexdigest())

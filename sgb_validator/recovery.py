@@ -9,15 +9,14 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import unquote, urlsplit, urlunsplit
 
-import httpx2
-
-from .api import OmekaAPI, OmekaError, Record
+from .api import Omeka, OmekaClient, OmekaError, Record, find, optional_get
 from .changes import identifiers, properties, record_changes, ref_id, writable
 from .snapshots import (
     Snapshot,
-    download_snapshot,
+    capture_snapshot,
     read_json,
     read_snapshot,
     write_json,
@@ -48,7 +47,7 @@ DEPENDENCIES = {
 
 
 def records(snapshot: Snapshot) -> Iterator[tuple[str, Record]]:
-    yield "item_sets", snapshot.item_set
+    yield "item_sets", snapshot.item_set or {}
     yield from (("items", item) for item in snapshot.items)
     yield from (("media", medium) for medium in snapshot.media)
 
@@ -135,39 +134,21 @@ def external_references(snapshot: Snapshot) -> list[Record]:
     ]
 
 
-def download_file(
-    client: httpx2.Client, url: str, destination: Path | None = None
-) -> tuple[int, str]:
-    digest = hashlib.sha256()
-    size = 0
+def download_file(api: OmekaClient, url: str, destination: Path) -> tuple[int, str]:
     try:
-        with client.stream("GET", url) as response:
-            response.raise_for_status()
-            stream_context = (
-                os.fdopen(
-                    os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600),
-                    "wb",
-                )
-                if destination is not None
-                else nullcontext()
-            )
-            with stream_context as stream:
-                for chunk in response.iter_bytes():
-                    size += len(chunk)
-                    digest.update(chunk)
-                    if stream is not None:
-                        stream.write(chunk)
-                if stream is not None:
-                    stream.flush()
-                    os.fsync(stream.fileno())
-    except httpx2.HTTPError as exc:
-        raise OmekaError(
-            f"Original file download failed: {type(exc).__name__}"
-        ) from None
-    return size, digest.hexdigest()
+        result = api.download(url, destination)
+    except OmekaError as exc:
+        raise OmekaError(f"Original file download failed: {exc}") from None
+    return result.size, result.sha256
 
 
-def check_dependencies(api: OmekaAPI, references: list[Record]) -> list[str]:
+def file_checksum(api: OmekaClient, url: str) -> tuple[int, str]:
+    """Download a file to a private temporary directory and return its digest."""
+    with TemporaryDirectory() as directory:
+        return download_file(api, url, Path(directory) / "original")
+
+
+def check_dependencies(api: OmekaClient, references: list[Record]) -> list[str]:
     errors = []
     checked = {
         (entry["kind"], entry["to"])
@@ -182,17 +163,17 @@ def check_dependencies(api: OmekaAPI, references: list[Record]) -> list[str]:
     return errors
 
 
-def backup(api: OmekaAPI, item_set_id: int, directory: Path) -> Record:
-    if not api.auth:
+def backup(api: Omeka, item_set_id: int, directory: Path) -> Record:
+    if not api.authenticated:
         raise OmekaError(
             "Authenticate with access to private records to make a complete backup"
         )
-    snapshot = download_snapshot(api, item_set_id)
-    write_snapshot(directory, snapshot, "")
+    snapshot = capture_snapshot(api, item_set_id)
+    write_snapshot(directory, snapshot)
     manifest: Record = {
         "version": 1,
         "complete": False,
-        "source": api.base_url,
+        "source": api.installation_url,
         "item_set_id": item_set_id,
         "items_count": len(snapshot.items),
         "media_count": len(snapshot.media),
@@ -206,58 +187,57 @@ def backup(api: OmekaAPI, item_set_id: int, directory: Path) -> Record:
     files = directory / "originals"
     files.mkdir(mode=0o700)
     manifest["errors"].extend(check_dependencies(api, manifest["external_references"]))
-    with httpx2.Client(timeout=120, follow_redirects=True) as client:
-        for media in snapshot.media:
-            rid = media["o:id"]
-            ingester = media.get("o:ingester")
-            url = media.get("o:original_url")
-            try:
-                if ingester not in SUPPORTED_INGESTERS:
-                    manifest["errors"].append(
-                        f"media/{rid}: unsupported ingester {ingester!r}"
+    for media in snapshot.media:
+        rid = media["o:id"]
+        ingester = media.get("o:ingester")
+        url = media.get("o:original_url")
+        try:
+            if ingester not in SUPPORTED_INGESTERS:
+                manifest["errors"].append(
+                    f"media/{rid}: unsupported ingester {ingester!r}"
+                )
+            if not url and (
+                ingester in FILE_INGESTERS
+                or media.get("o:sha256")
+                or media.get("o:size")
+            ):
+                raise ValueError("Missing original URL")
+            if url:
+                if ingester == "html":
+                    raise ValueError("HTML media has an unsupported original file")
+                filename = Path(media.get("o:filename") or "").name
+                extension = Path(filename).suffix
+                destination = files / f"{rid}{extension}"
+                size, digest = download_file(api, url, destination)
+                if (size, digest) != (media.get("o:size"), media.get("o:sha256")):
+                    raise ValueError(
+                        "Original differs from Omeka's file size or SHA-256"
                     )
-                if not url and (
-                    ingester in FILE_INGESTERS
-                    or media.get("o:sha256")
-                    or media.get("o:size")
+                source = media.get("o:source") or ""
+                original_name = (
+                    unquote(urlsplit(source).path).rsplit("/", 1)[-1]
+                    if ingester == "url"
+                    else Path(source).name
+                )
+                if (
+                    not original_name
+                    or Path(original_name).suffix.lower() != extension.lower()
                 ):
-                    raise ValueError("Missing original URL")
-                if url:
-                    if ingester == "html":
-                        raise ValueError("HTML media has an unsupported original file")
-                    filename = Path(media.get("o:filename") or "").name
-                    extension = Path(filename).suffix
-                    destination = files / f"{rid}{extension}"
-                    size, digest = download_file(client, url, destination)
-                    if (size, digest) != (media.get("o:size"), media.get("o:sha256")):
-                        raise ValueError(
-                            "Original differs from Omeka's file size or SHA-256"
-                        )
-                    source = media.get("o:source") or ""
-                    original_name = (
-                        unquote(urlsplit(source).path).rsplit("/", 1)[-1]
-                        if ingester == "url"
-                        else Path(source).name
-                    )
-                    if (
-                        not original_name
-                        or Path(original_name).suffix.lower() != extension.lower()
-                    ):
-                        original_name = filename
-                    manifest["originals"][str(rid)] = {
-                        "path": str(destination.relative_to(directory)),
-                        "size": size,
-                        "sha256": digest,
-                        "filename": original_name,
-                    }
-                if ingester == "html" and not isinstance(
-                    (media.get("data") or {}).get("html"), str
-                ):
-                    raise ValueError("Missing HTML ingester data")
-            except (OmekaError, OSError, ValueError) as exc:
-                manifest["errors"].append(f"media/{rid}: {exc}")
+                    original_name = filename
+                manifest["originals"][str(rid)] = {
+                    "path": str(destination.relative_to(directory)),
+                    "size": size,
+                    "sha256": digest,
+                    "filename": original_name,
+                }
+            if ingester == "html" and not isinstance(
+                (media.get("data") or {}).get("html"), str
+            ):
+                raise ValueError("Missing HTML ingester data")
+        except (OmekaError, OSError, ValueError) as exc:
+            manifest["errors"].append(f"media/{rid}: {exc}")
     # Catch changes to membership, ordering, or records during the backup.
-    check = download_snapshot(api, item_set_id)
+    check = capture_snapshot(api, item_set_id)
     for (kind, before), (other_kind, after) in zip(
         records(snapshot), records(check), strict=False
     ):
@@ -326,7 +306,7 @@ def load_backup(directory: Path) -> tuple[Snapshot, Record, bool]:
             for group in (items, media)
         ):
             raise ValueError("Expected Omeka JSON objects in verified backup metadata")
-        snapshot = Snapshot(item_set, items, media, manifest["source"])
+        snapshot = Snapshot(manifest["source"], item_set, items, media)
         snapshot_metadata = directory / "snapshot.json"
         if snapshot_metadata.exists() and (
             read_json(snapshot_metadata).get("source") != snapshot.source
@@ -375,15 +355,6 @@ def load_backup(directory: Path) -> tuple[Snapshot, Record, bool]:
         if any(parents.values()):
             raise ValueError("Missing media records in the backup")
     return snapshot, manifest, full
-
-
-def optional_get(api: OmekaAPI, kind: str, rid: int) -> Record | None:
-    try:
-        return api.get(kind, rid)
-    except OmekaError as exc:
-        if exc.status != 404:
-            raise
-        return None
 
 
 def remap(kind: str, record: Record, ids: dict[int, int], source: str) -> Record:
@@ -450,7 +421,7 @@ def recovery_payload(
 
 
 def creation_order(
-    api: OmekaAPI,
+    api: OmekaClient,
     missing: list[tuple[str, Record]],
     source: str,
 ) -> list[tuple[str, Record]]:
@@ -568,7 +539,7 @@ def lock_restore(directory: Path) -> Iterator[None]:
 
 
 def restore(
-    api: OmekaAPI,
+    api: Omeka,
     directory: Path,
     *,
     apply: bool = False,
@@ -577,14 +548,14 @@ def restore(
     exclusive_write: bool = False,
 ) -> None:
     require_exclusive_write(apply, exclusive_write)
-    if not api.auth:
+    if not api.authenticated:
         raise OmekaError(
             "Authenticate with access to private records to preview or restore"
         )
     snapshot, manifest, full = load_backup(directory)
-    if not snapshot.source or api.base_url != snapshot.source.rstrip("/").removesuffix(
-        "/api"
-    ):
+    if not snapshot.source or api.installation_url != snapshot.source.rstrip(
+        "/"
+    ).removesuffix("/api"):
         raise ValueError("Restore target must match the backup's source instance")
     if not full:
         announce("Metadata recovery for surviving records")
@@ -616,7 +587,7 @@ def restore(
 
 
 def restore_records(
-    api: OmekaAPI,
+    api: OmekaClient,
     directory: Path,
     snapshot: Snapshot,
     manifest: Record,
@@ -630,9 +601,14 @@ def restore_records(
     ledger: Record = (
         read_json(ledger_path)
         if ledger_path.exists()
-        else {"source": api.base_url, "backup": fingerprint, "ids": {}, "pending": {}}
+        else {
+            "source": api.installation_url,
+            "backup": fingerprint,
+            "ids": {},
+            "pending": {},
+        }
     )
-    if ledger["source"] != api.base_url or ledger["backup"] != fingerprint:
+    if ledger["source"] != api.installation_url or ledger["backup"] != fingerprint:
         raise ValueError("Restore progress belongs to a different backup or instance")
     all_records = list(records(snapshot))
     internal_ids = {record["o:id"] for _, record in all_records}
@@ -688,9 +664,9 @@ def restore_records(
             else:
                 announce(f"Verify surviving {kind}/{live['o:id']}")
         for kind, record in missing if full else []:
-            for property_id, value in identifiers(record):
-                if str(record["o:id"]) not in ledger["pending"] and api.find(
-                    kind, value, property_id
+            for value in identifiers(record):
+                if str(record["o:id"]) not in ledger["pending"] and find(
+                    api, kind, value
                 ):
                     raise OmekaError(f"Identifier collision in {kind}: {value!r}")
     if not full and missing:
@@ -785,10 +761,9 @@ def restore_records(
             if kind == "media":
                 scope["item_id"] = ref_id(data["o:item"])
             if identifiers(payload):
-                property_id, identifier = identifiers(payload)[0]
-                candidates = api.find(kind, identifier, property_id)
+                candidates = find(api, kind, identifiers(payload)[0])
             else:
-                candidates = api.listing(kind, **scope)
+                candidates = api.list(kind, filters=scope, verify=True)
             earlier = ledger["pending"].get(key)
             if earlier is not None:
                 candidates = [
@@ -828,25 +803,23 @@ def restore_records(
                 on_created=record_creation,
             )
 
-    with httpx2.Client(timeout=120, follow_redirects=True) as originals:
-        verify_restored_records(
-            api,
-            directory,
-            snapshot,
-            manifest,
-            full,
-            ids,
-            current,
-            created,
-            private,
-            skip_recent_hours,
-            announce,
-            originals,
-        )
+    verify_restored_records(
+        api,
+        directory,
+        snapshot,
+        manifest,
+        full,
+        ids,
+        current,
+        created,
+        private,
+        skip_recent_hours,
+        announce,
+    )
 
 
 def verify_restored_records(
-    api: OmekaAPI,
+    api: OmekaClient,
     directory: Path,
     snapshot: Snapshot,
     manifest: Record,
@@ -857,7 +830,6 @@ def verify_restored_records(
     private: set[int],
     skip_recent_hours: float,
     announce: Callable[[str], None],
-    originals: httpx2.Client,
 ) -> None:
     failures = 0
     for kind, record in records(snapshot):
@@ -901,7 +873,7 @@ def verify_restored_records(
             verify_fields(kind, after, actual)
             if kind == "media" and full:
                 verify_original(
-                    originals, record, actual, manifest, recreated=ids[old_id] != old_id
+                    api, record, actual, manifest, recreated=ids[old_id] != old_id
                 )
             announce(f"Verified {kind}/{actual['o:id']}")
         except (OmekaError, OSError, ValueError) as exc:
@@ -912,7 +884,7 @@ def verify_restored_records(
 
 
 def verify_original(
-    client: httpx2.Client,
+    api: OmekaClient,
     record: Record,
     actual: Record,
     manifest: Record,
@@ -940,5 +912,5 @@ def verify_original(
     url = actual.get("o:original_url")
     if not url:
         raise OmekaError("Missing live original URL")
-    if download_file(client, url) != expected:
+    if file_checksum(api, url) != expected:
         raise OmekaError("Live original file bytes differ")

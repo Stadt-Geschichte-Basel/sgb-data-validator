@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "httpx2>=2.0",
+    "omeka-s-client",
     "pydantic>=2.11.9",
     "python-dotenv>=1.0.0",
     "typer>=0.15.0",
@@ -13,6 +14,9 @@ dependencies = [
 
 [project.scripts]
 sgb = "sgb_validator.cli:main"
+
+[tool.uv.sources]
+omeka-s-client = { git = "https://github.com/maehr/omeka-s-client", rev = "864d4b478463fea7dac2beceb2f416f6a92452b4" }
 
 [build-system]
 requires = ["hatchling"]
