@@ -35,6 +35,14 @@ ExclusiveWrite = Annotated[
 ]
 
 
+PublicOnly = Annotated[
+    bool,
+    typer.Option(
+        help="Allow a run without API keys. The run sees public records only."
+    ),
+]
+
+
 class Severity(StrEnum):
     warning = "warning"
     error = "error"
@@ -57,6 +65,16 @@ def connect(
     return Omeka(base_url, identity, credential)
 
 
+def require_keys(
+    identity: str | None, credential: str | None, public_only: bool
+) -> None:
+    if not (identity and credential) and not public_only:
+        raise ValueError(
+            "Set KEY_IDENTITY and KEY_CREDENTIAL to include private items, "
+            "or pass --public-only"
+        )
+
+
 def target(item_set_id: int | None) -> int:
     if item_set_id is None:
         raise ValueError("Set ITEM_SET_ID or pass --item-set-id")
@@ -75,10 +93,13 @@ def download(
     key_identity: Identity = None,
     key_credential: Credential = None,
     output_dir: Path = Path("data"),
+    public_only: PublicOnly = False,
 ) -> None:
     """Download the metadata for an Omeka item set."""
-    with command_errors(), connect(base_url, key_identity, key_credential) as api:
-        snapshot = capture_snapshot(api, target(item_set_id))
+    with command_errors():
+        require_keys(key_identity, key_credential, public_only)
+        with connect(base_url, key_identity, key_credential) as api:
+            snapshot = capture_snapshot(api, target(item_set_id))
         directory = dated_dir(output_dir, "raw", snapshot.item_set_id)
         write_snapshot(directory, snapshot, "raw")
         typer.echo(directory)
@@ -130,10 +151,18 @@ def validate(
     export_csv: bool = False,
     csv_output: Path = Path("validation_reports"),
     vocabularies: Path | None = None,
+    max_file_size: Annotated[
+        int,
+        typer.Option(
+            help="Warn about files larger than this many MB. 0 turns the check off."
+        ),
+    ] = 500,
+    public_only: PublicOnly = False,
 ) -> None:
     """Validate a snapshot or a live item set."""
     with command_errors():
         if directory is None:
+            require_keys(key_identity, key_credential, public_only)
             with connect(base_url, key_identity, key_credential) as api:
                 snapshot = capture_snapshot(api, target(item_set_id))
         else:
@@ -141,7 +170,12 @@ def validate(
         vocabulary = (
             VocabularyLoader(vocabularies) if vocabularies else VocabularyLoader()
         )
-        result = validate_records(snapshot.items, snapshot.media, vocabulary)
+        result = validate_records(
+            snapshot.items,
+            snapshot.media,
+            vocabulary,
+            max_file_size=max_file_size * 1_000_000 or None,
+        )
         if check_uris:
             asyncio.run(
                 check_links(

@@ -4,8 +4,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sgb_validator.iso639 import is_valid_iso639_1_code
-
 DEFAULT_VOCABULARIES = Path(__file__).with_name("vocabularies.json")
 
 
@@ -35,7 +33,7 @@ class VocabularyLoader:
             elif "Dublin Core Types" in label:
                 self.types.update(terms)
             elif "Languages" in label:
-                self.languages.update(terms)
+                self.languages.update(t.casefold() for t in terms)
 
     def is_valid_era(self, value: str) -> bool:
         """Check if value is a valid era"""
@@ -54,25 +52,5 @@ class VocabularyLoader:
         return value in self.types
 
     def is_valid_language(self, value: str) -> bool:
-        """Check if value is a valid ISO 639-1 language code
-
-        This method validates language codes against the complete ISO 639-1
-        standard (all 184 two-letter codes). This replaces the previous
-        limited validation that only checked against a small subset.
-
-        Args:
-            value: The language code to validate (case-insensitive)
-
-        Returns:
-            True if the code is a valid ISO 639-1 code, False otherwise
-
-        Examples:
-            >>> loader = VocabularyLoader(vocab_file)
-            >>> loader.is_valid_language("en")
-            True
-            >>> loader.is_valid_language("de")
-            True
-            >>> loader.is_valid_language("xyz")
-            False
-        """
-        return is_valid_iso639_1_code(value)
+        """Check if value is in the DSP language list (case-insensitive)"""
+        return value.casefold() in self.languages

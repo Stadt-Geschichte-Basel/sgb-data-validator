@@ -55,6 +55,6 @@
 	{
 		"label": "Languages",
 		"language": "en",
-		"terms": ["de", "fr", "nl", "la"]
+		"terms": ["de", "en", "fr", "it", "la", "nl", "ar", "he", "gsw", "gmh"]
 	}
 ]
