@@ -73,7 +73,9 @@ class Item(BaseModel):
         None, alias="dcterms:identifier"
     )
     dcterms_title: list[OmekaProperty] = Field(alias="dcterms:title")
-    dcterms_subject: list[OmekaProperty] | None = Field(None, alias="dcterms:subject")
+    # Legacy field: SGB does not assign subjects. Older Omeka data may still
+    # contain it. The validator accepts any value and never checks it.
+    dcterms_subject: list[Any] | None = Field(None, alias="dcterms:subject")
     dcterms_description: list[OmekaProperty] | None = Field(
         None, alias="dcterms:description"
     )
@@ -141,7 +143,9 @@ class Media(BaseModel):
         None, alias="dcterms:identifier"
     )
     dcterms_title: list[OmekaProperty] = Field(alias="dcterms:title")
-    dcterms_subject: list[OmekaProperty] | None = Field(None, alias="dcterms:subject")
+    # Legacy field: SGB does not assign subjects. Older Omeka data may still
+    # contain it. The validator accepts any value and never checks it.
+    dcterms_subject: list[Any] | None = Field(None, alias="dcterms:subject")
     dcterms_description: list[OmekaProperty] | None = Field(
         None, alias="dcterms:description"
     )

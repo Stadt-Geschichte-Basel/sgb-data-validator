@@ -115,12 +115,6 @@ def _validate_vocabularies(
             vocabularies.is_valid_language,
             "Invalid language code (must be valid ISO 639-1 two-letter code)",
         ),
-        (
-            "subject",
-            "@value",
-            lambda text: not text[0].isdigit() or vocabularies.is_valid_iconclass(text),
-            "Invalid Iconclass code",
-        ),
     )
     for term, key, valid, message in rules:
         field_name = f"dcterms:{term}"
@@ -189,7 +183,7 @@ def _check_literal_fields_for_urls(
     """Check if literal type fields contain URLs (issue #22)"""
     # Check all dcterms fields
     for key, value in data.items():
-        if not key.startswith("dcterms:"):
+        if not key.startswith("dcterms:") or key == "dcterms:subject":
             continue
 
         if isinstance(value, list):

@@ -23,7 +23,7 @@ This report contains validation results for all items with issues. Each row repr
 
 -   `resource_id`: The Omeka item ID
 -   `edit_link`: Direct link to edit the item in Omeka admin interface
--   **Field columns**: One column per validated field (e.g., `dcterms:identifier`, `dcterms:title`, `dcterms:subject`)
+-   **Field columns**: One column per validated field (e.g., `dcterms:identifier`, `dcterms:title`, `dcterms:temporal`)
 
 **Cell content interpretation:**
 
@@ -111,7 +111,6 @@ Click these links to quickly navigate to the resource and make corrections.
 | Message | Meaning | Action Required |
 |-------------------|-------------------|----------------------------------|
 | `error: Field is required` | A required field is missing | Add the field to the resource |
-| `error: Invalid Iconclass code: <code>` | The Iconclass notation is invalid | Verify and correct the code against the Iconclass vocabulary |
 | `error: Invalid license URI` | The license URI doesn't match the controlled vocabulary | Use a valid license URI from the vocabulary |
 | `error: Invalid MIME type` | The media type is not in the controlled vocabulary | Correct the MIME type |
 | `error: Duplicate identifier '<id>' found` | Multiple resources have the same identifier | Make identifiers unique |
@@ -270,7 +269,7 @@ else:
     print()
     print("ERRORS:")
     print("  [Item 10780] dcterms:identifier: Field is required")
-    print("  [Item 10782] dcterms:subject[0]: Invalid Iconclass code: XYZ123")
+    print("  [Item 10782] dcterms:temporal[0]: Value must be from Era vocabulary: Neuzeit")
     print("  [Media 10779] dcterms:identifier: Field is required")
     print()
     print("WARNINGS (informational):")
