@@ -22,7 +22,6 @@ from .snapshots import (
     write_json,
     write_snapshot,
 )
-from .transformations import has_placeholder_media
 from .writes import (
     create_payload,
     create_record,
@@ -642,26 +641,12 @@ def restore_records(
     ]
     if full:
         missing = creation_order(api, missing, snapshot.source)
-    placeholders = [
-        medium
-        for medium in snapshot.media
-        if full
-        and has_placeholder_media(medium)
-        and (medium["o:id"] not in current or str(medium["o:id"]) in ledger["ids"])
-    ]
-    private: set[int] = {medium["o:id"] for medium in placeholders}
-    private.update(medium["o:item"]["o:id"] for medium in placeholders)
     if not apply:
-        for kind, record in missing:
-            if record["o:id"] in private and record.get("o:is_public", True):
-                announce(f"Recreate {kind}/{record['o:id']} as private")
         for kind, record in all_records:
             if record["o:id"] not in current:
                 continue
             live = current[record["o:id"]]
             proposed = remap(kind, record, ids, snapshot.source)
-            if record["o:id"] in private:
-                proposed["o:is_public"] = False
             fields = record_changes(kind, live, proposed)
             if fields:
                 recent = modified_recently(live, skip_recent_hours)
@@ -685,7 +670,6 @@ def restore_records(
 
     created: set[int] = set()
     protected = ledger.setdefault("protected", {})
-    items = {item["o:id"]: item for item in snapshot.items}
     for old, saved in protected.items():
         current_parent = current.get(int(old))
         if (
@@ -726,33 +710,6 @@ def restore_records(
             old_id = record["o:id"]
             key = str(old_id)
             data = recovery_payload(kind, record, ids, internal_ids, snapshot.source)
-            if old_id in private:
-                data["o:is_public"] = False
-            if kind == "media" and old_id in private:
-                parent_id = record["o:item"]["o:id"]
-                parent = current[parent_id]
-                if parent["o:is_public"]:
-                    result = update_record(
-                        api,
-                        "items",
-                        parent,
-                        {**parent, "o:is_public": False},
-                        apply=True,
-                        backup_dir=directory / "before-edit",
-                        skip_recent_hours=0
-                        if parent["o:id"] in created
-                        else skip_recent_hours,
-                        backup_record=items[parent_id],
-                        exclusive_write=True,
-                    )
-                    assert result.record is not None
-                    current[parent_id] = protected[str(parent_id)] = result.record
-                    write_json(ledger_path, ledger)
-                    created.add(parent["o:id"])
-                    announce(
-                        f"Set items/{parent['o:id']} to private "
-                        "before restoring its placeholder"
-                    )
             file, filename = (
                 file_args(directory, manifest, record)
                 if kind == "media"
@@ -818,7 +775,6 @@ def restore_records(
         ids,
         current,
         created,
-        private,
         skip_recent_hours,
         announce,
     )
@@ -833,7 +789,6 @@ def verify_restored_records(
     ids: dict[int, int],
     current: dict[int, Record],
     created: set[int],
-    private: set[int],
     skip_recent_hours: float,
     announce: Callable[[str], None],
 ) -> None:
@@ -845,8 +800,6 @@ def verify_restored_records(
             continue
         before = current[old_id]
         after = remap(kind, record, ids, snapshot.source)
-        if old_id in private:
-            after["o:is_public"] = False
         if kind == "items":
             desired = [
                 ids[rid]

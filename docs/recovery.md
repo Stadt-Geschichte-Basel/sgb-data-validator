@@ -28,7 +28,7 @@ Omeka S 3 and 4 have no conditional write check. Another writer can change a rec
 
 The restore saves new resource IDs in `restore-progress.json`. Keep this file with the backup. The tool uses it to resume creation and repair links. It creates targets of required links first. Preview reports cycles that block creation.
 
-Before it recreates a placeholder, the restore makes the placeholder and its parent item private. The preview lists the parent visibility change. The restore puts backed-up media in their recorded order. It keeps media added after the backup and puts them after the backed-up media. It checks the original file bytes after recovery.
+The restore keeps the visibility of each record from the backup. This also applies to placeholder media and their parent items. The restore puts backed-up media in their recorded order. It keeps media added after the backup and puts them after the backed-up media. It checks the original file bytes after recovery.
 
 An Omeka resource can have links from records outside the set. The tool lists known external links for editorial review. Check sites, page blocks, and external systems separately. The API limits the links that it exposes in resource metadata.
 

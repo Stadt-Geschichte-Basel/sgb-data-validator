@@ -44,6 +44,8 @@ def api_for(source, *, truncate_media=False):
 
 @pytest.mark.parametrize("suffix", ["raw", "transformed", ""])
 def test_offline_and_live_findings_match(tmp_path, source, suffix):
+    # A missing recommended field gives media 3 a row in the media report.
+    source["media"][0].pop("dcterms:creator", None)
     with api_for(source) as api:
         live = capture_snapshot(api, 1)
     path = tmp_path / "snapshot"
@@ -58,14 +60,8 @@ def test_offline_and_live_findings_match(tmp_path, source, suffix):
     assert [str(w) for w in live_findings.warnings] == [
         str(w) for w in offline_findings.warnings
     ]
-    assert any(
-        e.field == "o:is_public" and e.resource_type == "Media"
-        for e in offline_findings.warnings
-    )
-    assert any(
-        e.field == "o:is_public" and e.resource_type == "Item"
-        for e in offline_findings.warnings
-    )
+    # A public placeholder carries public media metadata: no visibility finding.
+    assert not any(w.field == "o:is_public" for w in offline_findings.warnings)
     report = tmp_path / "report"
     result = CliRunner().invoke(
         app, ["validate", str(path), "--export-csv", "--csv-output", str(report)]
@@ -84,7 +80,7 @@ def test_media_truncation_detected_without_count_header(source):
             capture_snapshot(api, 1)
 
 
-def test_transform_leaves_source_intact_and_reports_visibility_change(tmp_path, source):
+def test_transform_leaves_source_intact_and_keeps_visibility(tmp_path, source):
     with api_for(source) as api:
         snapshot = capture_snapshot(api, 1)
     raw = tmp_path / "raw"
@@ -94,10 +90,10 @@ def test_transform_leaves_source_intact_and_reports_visibility_change(tmp_path, 
         app, ["transform", str(raw), "--output-dir", str(tmp_path)]
     )
     assert result.exit_code == 0, result.output
-    assert "media/3  o:is_public" in result.output
+    assert "o:is_public" not in result.output
     transformed = read_snapshot(Path(result.output.splitlines()[-1]))
-    assert transformed.media[0]["o:is_public"] is False
-    assert transformed.items[0]["o:is_public"] is False
+    assert transformed.media[0]["o:is_public"] is True
+    assert transformed.items[0].get("o:is_public", True) is True
     assert (raw / "media_raw.json").read_bytes() == before
 
 

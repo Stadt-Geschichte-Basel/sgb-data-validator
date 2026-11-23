@@ -127,7 +127,7 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
         b = create_record(
             api, "items", record(f"{tag}-b"), target_id=set_id, apply=True
         )["o:id"]
-        # Simulate a placeholder from an older collection whose parent is public.
+        # A private placeholder with a public parent: the restore keeps both.
         medium = api.create(
             "media",
             {
@@ -238,7 +238,7 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
         bb = api.get("items", mapping[str(b)])
         media = api.get("media", mapping[str(medium["o:id"])])
         markup = api.get("media", mapping[str(html["o:id"])])
-        assert not aa["o:is_public"] and not media["o:is_public"]
+        assert aa["o:is_public"] and not media["o:is_public"]
         assert bb["o:is_public"] and markup["o:is_public"]
         assert media_ids(aa) == [media["o:id"], survivor["o:id"]]
         restored_url = api.get("media", mapping[str(url_media["o:id"])])

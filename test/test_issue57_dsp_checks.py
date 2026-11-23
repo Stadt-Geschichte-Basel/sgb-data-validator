@@ -164,3 +164,14 @@ def test_live_validate_needs_keys_or_public_only(monkeypatch, source):  # noqa: 
         app, ["validate", "--item-set-id", "1", "--public-only"]
     )
     assert "--public-only" not in result.output
+
+
+@pytest.mark.parametrize("code", ["he", "gsw", "gmh"])
+def test_dsp_language_codes_without_iso639_1_pass(code):
+    item = create_minimal_item(1)
+    item["dcterms:language"] = [entry(code)]
+    assert not errors_for(findings(item=item), "dcterms:language")
+
+
+def test_cc_by_nc_nd_license_passes():
+    assert VOCAB.is_valid_license("https://creativecommons.org/licenses/by-nc-nd/4.0/")

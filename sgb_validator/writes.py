@@ -15,7 +15,6 @@ from .api import OmekaClient, OmekaError, Record, Upload, find
 from .changes import identifiers, properties, record_changes, ref_id, writable
 from .models import Item, Media
 from .snapshots import write_json
-from .transformations import has_placeholder_media
 
 
 def check_identifiers(
@@ -259,8 +258,6 @@ def create_payload(
             if payload.get("o:ingester", "upload") != "upload":
                 raise ValueError("A local file requires the upload ingester")
             payload.update({"o:ingester": "upload", "file_index": 0})
-            if has_placeholder_media({**payload, "o:filename": filename or file.name}):
-                payload["o:is_public"] = False
         elif payload.get("o:ingester") in (None, "upload"):
             raise ValueError("Supply a file with --file or select an Omeka ingester")
         # Keep native media ingester parameters.
@@ -273,15 +270,6 @@ def create_payload(
             }
         )
     return payload
-
-
-def check_placeholder_parent(data: Record, parent: Record, filename: str) -> None:
-    if parent.get("o:is_public") and has_placeholder_media(
-        {**data, "o:filename": filename}
-    ):
-        raise OmekaError(
-            "Set the parent item to private before attaching a placeholder"
-        )
 
 
 def verify_creation(
@@ -319,10 +307,7 @@ def create_record(
     if target_id is not None and kind == "items":
         api.get("item_sets", target_id)
     if kind == "media":
-        parent_id = payload["o:item"]["o:id"]
-        parent = api.get("items", parent_id)
-        if file:
-            check_placeholder_parent(payload, parent, filename or file.name)
+        api.get("items", payload["o:item"]["o:id"])
     check_identifiers(api, kind, payload)
     if not apply:
         return payload

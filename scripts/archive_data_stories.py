@@ -54,7 +54,6 @@ from sgb_validator.snapshots import (  # noqa: E402
 from sgb_validator.validation import validate_records  # noqa: E402
 from sgb_validator.vocabularies import VocabularyLoader  # noqa: E402
 from sgb_validator.writes import (  # noqa: E402
-    check_placeholder_parent,
     create_payload,
     create_record,
     file_digest,
@@ -1069,9 +1068,20 @@ def backup(records: list[dict[str, Any]], name: str) -> Path:
     return path
 
 
+def one_era(record: dict[str, Any], label: str | None = None) -> list[str]:
+    """The era of a record. DSP takes one era, so stop on two or more."""
+    eras = [v["@value"] for v in record.get("dcterms:temporal", []) if v.get("@value")]
+    if len(eras) > 1:
+        name = label or f"items/{record.get('o:id')}"
+        raise ValueError(
+            f"{name} has {len(eras)} eras ({', '.join(eras)}). "
+            "Keep one era before the upload."
+        )
+    return eras
+
+
 def story_temporal(api: Omeka, slug: str) -> list[str]:
-    parent = api.get("items", STORIES[slug]["item"])
-    return [v["@value"] for v in parent.get("dcterms:temporal", []) if v.get("@value")]
+    return one_era(api.get("items", STORIES[slug]["item"]))
 
 
 def upload(
@@ -1150,9 +1160,6 @@ def upload_rows(
             file = WORK / slug / row["file"]
             if not file.is_file():
                 raise ValueError(f"Missing original file {file}")
-            check_placeholder_parent(
-                media, existing[0] if existing else item, file.name
-            )
             found = find(api, "media", media["dcterms:identifier"][0]["@value"])
             if found:
                 if (
@@ -1406,6 +1413,15 @@ def apply_parent(
         raise OmekaError(
             "The old-media cleanup plan belongs to a different parent or instance"
         )
+    if plan:
+        # A resumed run sends the saved replacement, so check it before any write.
+        try:
+            one_era(plan["replacement"], f"{cleanup.name} (saved replacement)")
+        except ValueError as exc:
+            raise OmekaError(
+                f"{exc} Keep one value in replacement.dcterms:temporal of {cleanup}, "
+                "then run again."
+            ) from None
     old_media = [api.get("media", m["o:id"]) for m in item.get("o:media", [])]
     done = [
         m
@@ -1438,7 +1454,7 @@ def apply_parent(
         raise ValueError(f"{screenshot}: file not found")
     doi = f"https://doi.org/{story['doi']}"
     url = story.get("url") or f"https://storymaps.arcgis.com/stories/{story['arcgis']}"
-    temporal = [v["@value"] for v in item.get("dcterms:temporal", [])]
+    temporal = one_era(item)
     licensed = bool(story["license"])
     is_pdf = screenshot.suffix.lower() == ".pdf"
     # Decision 2026-11-19: all Zenodo story PDFs are public, also without a CC license.

@@ -340,12 +340,7 @@ def validate_records(
     max_file_size: int | None = 500_000_000,
 ) -> Findings:
     """Return findings for the supplied records."""
-    from .transformations import has_placeholder_media
-
     result = Findings()
-    items_by_id = {
-        item["o:id"]: item for item in items if isinstance(item.get("o:id"), int)
-    }
     parents = {
         m["o:item"]["o:id"]: m
         for m in media
@@ -409,32 +404,6 @@ def validate_records(
                     result.warnings.append(
                         DataValidationWarning(
                             label, rid, "No media/children found for this item"
-                        )
-                    )
-            else:
-                placeholder = has_placeholder_media(record)
-                parent = items_by_id.get((record.get("o:item") or {}).get("o:id"))
-                if placeholder and record.get("o:is_public", True):
-                    result.warnings.append(
-                        DataValidationWarning(
-                            label,
-                            rid,
-                            "Placeholder media must be private",
-                            "o:is_public",
-                        )
-                    )
-                if (
-                    (placeholder or record.get("o:is_public") is False)
-                    and parent is not None
-                    and parent.get("o:is_public", True)
-                ):
-                    result.warnings.append(
-                        DataValidationWarning(
-                            "Item",
-                            parent["o:id"],
-                            f"Media {rid} is private or a placeholder. "
-                            "Set its parent to private.",
-                            "o:is_public",
                         )
                     )
         for identifier, ids in identifiers.items():
