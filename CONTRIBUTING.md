@@ -129,7 +129,7 @@ uv run ruff check . --fix
 
 ## Repository structure
 
-- [sgb_validator/](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/tree/main/sgb_validator/) contains the CLI, models, rules, and Omeka client.
+- [sgb_validator/](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/tree/main/sgb_validator/) contains the CLI, models, rules, and Omeka helpers. It uses [omeka-s-client](https://github.com/maehr/omeka-s-client) for Omeka API calls and snapshot files.
 - [scripts/](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/tree/main/scripts/) contains the collection worklists and the Data Story tool.
 - [test/](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/tree/main/test/) contains tests and the recovery drill.
 - [docs/](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/tree/main/docs/) contains editor procedures and the transformation history.

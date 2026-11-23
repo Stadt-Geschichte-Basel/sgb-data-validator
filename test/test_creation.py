@@ -1,11 +1,15 @@
 """Exercise guarded creation and update with Omeka JSON."""
 
-from copy import deepcopy
+import hashlib
+import json
+from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 import pytest
+from omeka_s_client.testing import FakeOmeka
 from test_issue16_validation import create_minimal_item
 
-from sgb_validator.api import OmekaError
+from sgb_validator.api import Omeka, OmekaError
 from sgb_validator.writes import create_payload, create_record, update_record
 
 
@@ -13,46 +17,55 @@ def literal(value, pid=10):
     return [{"type": "literal", "property_id": pid, "@value": value, "is_public": True}]
 
 
-class FakeAPI:
-    def __init__(self, record, matches=()):
-        self.record = record
-        self.matches = matches
-        self.writes = []
-        self.reads = 0
-        self.before_last_read = None
+class Server:
+    """Run FakeOmeka behind an Omeka client and record each request."""
 
-    def get(self, kind, rid):
-        self.reads += 1
-        if self.reads == 2 and self.before_last_read:
-            self.before_last_read()
-        return deepcopy(self.record)
+    def __init__(self, records, before_second_read=None, after_create=None):
+        self.fake = FakeOmeka({"items": [], "media": [], **records})
+        self.before_second_read = before_second_read
+        self.after_create = after_create
+        self.record_reads = 0
 
-    def find(self, *args):
-        return list(self.matches)
+    def __call__(self, request):
+        path = urlsplit(request.url).path
+        if request.method == "GET" and path.count("/") == 3:
+            self.record_reads += 1
+            if self.record_reads == 2 and self.before_second_read:
+                self.before_second_read(self.fake)
+        response = self.fake(request)
+        if request.method == "POST" and self.after_create:
+            self.after_create(self.fake)
+        return response
 
-    def post(self, *args, **kwargs):
-        self.writes.append(args)
-        raise AssertionError("Unexpected POST")
+    def client(self):
+        return Omeka("https://omeka.example", "identity", "secret", transport=self)
 
-    def patch(self, kind, rid, payload):
-        self.writes.append((kind, rid, payload))
-        self.record.update(
-            {key: val for key, val in payload.items() if key != "clear_property_values"}
-        )
+    @property
+    def writes(self):
+        return [r for r in self.fake.requests if r.method != "GET"]
+
+    @property
+    def reads(self):
+        return [r for r in self.fake.requests if r.method == "GET"]
 
 
 def test_create_preview_includes_target_and_excludes_server_fields():
-    api = FakeAPI({"o:id": 3})
+    server = Server({"item_sets": [{"o:id": 3}], "items": []})
     data = {"o:id": 101, "dcterms:identifier": literal("new")}
-    plan = create_record(api, "items", data, target_id=3)
+    with server.client() as api:
+        plan = create_record(api, "items", data, target_id=3)
     assert plan == {"o:item_set": [{"o:id": 3}], "dcterms:identifier": literal("new")}
-    assert not api.writes
+    assert not server.writes
     assert data["o:id"] == 101
 
 
 def test_duplicate_identifier_blocks_creation():
-    api = FakeAPI({"o:id": 3}, matches=[{"o:id": 9}])
-    with pytest.raises(OmekaError, match="Identifier collision"):
+    existing = {"o:id": 9, "dcterms:identifier": literal("existing")}
+    server = Server({"item_sets": [{"o:id": 3}], "items": [existing]})
+    with (
+        server.client() as api,
+        pytest.raises(OmekaError, match="Identifier collision"),
+    ):
         create_record(
             api,
             "items",
@@ -60,7 +73,52 @@ def test_duplicate_identifier_blocks_creation():
             target_id=3,
             apply=True,
         )
-    assert not api.writes
+    assert not server.writes
+
+
+def test_create_item_writes_and_reads_back():
+    server = Server({"item_sets": [{"o:id": 3}], "items": []})
+    data = {"o:is_public": False, "dcterms:identifier": literal("new")}
+    with server.client() as api:
+        record = create_record(api, "items", data, target_id=3, apply=True)
+    assert record["o:id"] == 1
+    assert record["o:item_set"] == [{"o:id": 3}]
+    assert [r.method for r in server.writes] == ["POST"]
+    assert json.loads(server.writes[0].content)["dcterms:identifier"] == literal("new")
+
+
+def test_create_media_uploads_the_file_as_the_first_part(tmp_path):
+    file = tmp_path / "scan.png"
+    file.write_bytes(b"image bytes")
+    content = b"image bytes"
+
+    def store_file_metadata(fake):
+        # Omeka computes the size and digest of each upload.
+        fake.records["media"][-1].update(
+            {"o:size": len(content), "o:sha256": hashlib.sha256(content).hexdigest()}
+        )
+
+    server = Server(
+        {"items": [{"o:id": 4, "o:is_public": False}]},
+        after_create=store_file_metadata,
+    )
+    data = {"dcterms:identifier": literal("scan"), "o:source": "scan.png"}
+    with server.client() as api:
+        record = create_record(api, "media", data, target_id=4, file=file, apply=True)
+    assert record["o:item"] == {"o:id": 4}
+    (post,) = server.writes
+    assert post.headers["content-type"].startswith("multipart/form-data")
+    assert b'name="file[0]"; filename="scan.png"' in post.content
+    assert b'"file_index": 0' in post.content
+
+
+def test_create_media_rejects_a_different_upload_digest(tmp_path):
+    file = tmp_path / "scan.png"
+    file.write_bytes(b"image bytes")
+    server = Server({"items": [{"o:id": 4, "o:is_public": False}]})
+    data = {"dcterms:identifier": literal("scan"), "o:source": "scan.png"}
+    with server.client() as api, pytest.raises(OmekaError, match="SHA-256"):
+        create_record(api, "media", data, target_id=4, file=file, apply=True)
 
 
 def test_upload_requires_a_parent_and_a_file(tmp_path):
@@ -72,12 +130,14 @@ def test_upload_requires_a_parent_and_a_file(tmp_path):
 
 def test_concurrent_edit_detected_after_before_copy(tmp_path):
     before = {**create_minimal_item(3), "dcterms:identifier": literal("source")}
-    api = FakeAPI(deepcopy(before))
-    api.before_last_read = lambda: api.record.update(
-        {"dcterms:creator": literal("editor", 2)}
+    server = Server(
+        {"items": [before]},
+        before_second_read=lambda fake: fake.records["items"][0].update(
+            {"dcterms:creator": literal("editor", 2)}
+        ),
     )
     after = {**before, "dcterms:identifier": literal("changed")}
-    with pytest.raises(OmekaError, match="immediately before"):
+    with server.client() as api, pytest.raises(OmekaError, match="immediately before"):
         update_record(
             api,
             "items",
@@ -87,17 +147,15 @@ def test_concurrent_edit_detected_after_before_copy(tmp_path):
             exclusive_write=True,
             backup_dir=tmp_path,
         )
-    assert not api.writes
+    assert not server.writes
     copy = next(tmp_path.iterdir())
     assert copy.stat().st_mode & 0o777 == 0o600
 
 
 def test_recent_edit_is_skipped(tmp_path):
-    from datetime import UTC, datetime
-
     before = {"o:id": 3, "o:modified": {"@value": datetime.now(UTC).isoformat()}}
-    api = FakeAPI(before)
-    with pytest.raises(OmekaError, match="edited within"):
+    server = Server({"items": [before]})
+    with server.client() as api, pytest.raises(OmekaError, match="edited within"):
         update_record(
             api,
             "items",
@@ -107,7 +165,7 @@ def test_recent_edit_is_skipped(tmp_path):
             exclusive_write=True,
             backup_dir=tmp_path,
         )
-    assert not api.writes
+    assert not server.writes
 
 
 def test_update_preserves_unrelated_fields(tmp_path):
@@ -117,21 +175,24 @@ def test_update_preserves_unrelated_fields(tmp_path):
         "dcterms:identifier": literal("source"),
         "custom:field": literal("preserve", 123),
     }
-    api = FakeAPI(deepcopy(before), matches=[{"o:id": 3}])
+    server = Server({"items": [before]})
     after = {**before, "dcterms:identifier": literal("changed")}
-    result = update_record(
-        api,
-        "items",
-        before,
-        after,
-        apply=True,
-        exclusive_write=True,
-        backup_dir=tmp_path,
-    )
+    with server.client() as api:
+        result = update_record(
+            api,
+            "items",
+            before,
+            after,
+            apply=True,
+            exclusive_write=True,
+            backup_dir=tmp_path,
+        )
     assert result.status == "updated"
     assert result.record["custom:field"] == before["custom:field"]
     assert result.record["dcterms:identifier"] == after["dcterms:identifier"]
-    _, _, payload = api.writes[0]
+    (patch,) = server.writes
+    assert patch.method == "PATCH"
+    payload = json.loads(patch.content)
     assert "o:is_public" not in payload
     assert payload["custom:field"] == before["custom:field"]
 
@@ -139,11 +200,12 @@ def test_update_preserves_unrelated_fields(tmp_path):
 def test_already_applied_is_distinct_from_a_preview():
     before = create_minimal_item(3)
     after = {**before, "o:is_public": False}
-    api = FakeAPI(after)
-    assert update_record(api, "items", before, after).status == "already_applied"
-    assert not api.writes
-    api.record = before
-    assert update_record(api, "items", before, after).status == "preview"
+    with Server({"items": [after]}).client() as api:
+        assert update_record(api, "items", before, after).status == "already_applied"
+    server = Server({"items": [before]})
+    with server.client() as api:
+        assert update_record(api, "items", before, after).status == "preview"
+    assert not server.writes
 
 
 @pytest.mark.parametrize(
@@ -151,8 +213,11 @@ def test_already_applied_is_distinct_from_a_preview():
 )
 def test_malformed_property_cannot_be_written(tmp_path, value):
     before = create_minimal_item(3)
-    api = FakeAPI(before)
-    with pytest.raises((ValueError, OmekaError), match="dcterms:description"):
+    server = Server({"items": [before]})
+    with (
+        server.client() as api,
+        pytest.raises((ValueError, OmekaError), match="dcterms:description"),
+    ):
         update_record(
             api,
             "items",
@@ -162,15 +227,18 @@ def test_malformed_property_cannot_be_written(tmp_path, value):
             exclusive_write=True,
             backup_dir=tmp_path,
         )
-    assert not api.writes
+    assert not server.writes
     assert not list(tmp_path.iterdir())
 
 
 @pytest.mark.parametrize("apply", [False, True])
 @pytest.mark.parametrize("value", [42, "", " \n"])
 def test_create_rejects_invalid_native_literals_before_http(apply, value):
-    api = FakeAPI({"o:id": 3})
-    with pytest.raises(ValueError, match="dcterms:description.*non-empty string"):
+    server = Server({"item_sets": [{"o:id": 3}]})
+    with (
+        server.client() as api,
+        pytest.raises(ValueError, match="dcterms:description.*non-empty string"),
+    ):
         create_record(
             api,
             "items",
@@ -178,7 +246,7 @@ def test_create_rejects_invalid_native_literals_before_http(apply, value):
             target_id=3,
             apply=apply,
         )
-    assert not api.reads and not api.writes
+    assert not server.fake.requests
 
 
 def test_create_rejects_malformed_item_set_references():
@@ -188,9 +256,9 @@ def test_create_rejects_malformed_item_set_references():
 
 def test_update_requires_an_exclusive_write_window():
     before = create_minimal_item(3)
-    api = FakeAPI(before)
-    with pytest.raises(ValueError, match="maintenance window"):
+    server = Server({"items": [before]})
+    with server.client() as api, pytest.raises(ValueError, match="maintenance window"):
         update_record(
             api, "items", before, {**before, "o:is_public": False}, apply=True
         )
-    assert not api.reads and not api.writes
+    assert not server.fake.requests

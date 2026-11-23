@@ -1,83 +1,91 @@
-"""fetch_items must return the complete item set or fail (PR #46)."""
+"""Item listings must return the complete item set or fail (PR #46)."""
 
-import httpx2
+import json
+from urllib.parse import parse_qs, urlsplit
+
 import pytest
+from omeka_s_client import (
+    IncompleteListingError,
+    SnapshotConsistencyError,
+    TransportResponse,
+)
 
-from sgb_validator import api
-from sgb_validator.api import OmekaAPI
+from sgb_validator.api import Omeka
+from sgb_validator.snapshots import capture_snapshot
 
 
-def make_validator(passes: list[list[int]], total: int) -> OmekaAPI:
-    """Validator whose API returns the given item ids, one list per pass."""
+def page(ids, total):
+    body = json.dumps([{"o:id": rid} for rid in ids]).encode()
+    return TransportResponse(200, {"Omeka-S-Total-Results": str(total)}, body)
+
+
+def make_client(passes: list[list[int]], total: int) -> Omeka:
+    """Return a client whose API returns the given item IDs, one list per pass."""
     state = {"pass": 0}
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        page = int(request.url.params["page"])
-        assert request.url.params["_"], "each request needs a cache-busting nonce"
+    def transport(request):
+        query = parse_qs(urlsplit(request.url).query)
         ids = passes[min(state["pass"], len(passes) - 1)]
-        if page == 1:
-            body = [{"o:id": i} for i in ids]
-        else:
-            body = []
-            state["pass"] += 1
-        return httpx2.Response(
-            200, json=body, headers={"omeka-s-total-results": str(total)}
-        )
+        if query["page"] == ["1"]:
+            return page(ids, total)
+        state["pass"] += 1
+        return page([], total)
 
-    return OmekaAPI("https://omeka.example", transport=httpx2.MockTransport(handler))
+    return Omeka("https://omeka.example", transport=transport, sleep=lambda _: None)
 
 
-def test_fetch_items_retries_a_truncated_listing(monkeypatch) -> None:
-    sleeps: list[float] = []
-    monkeypatch.setattr(api.time, "sleep", sleeps.append)
-    validator = make_validator([[1, 2], [1, 2, 3]], total=3)
-
-    items = validator.listing("items", item_set_id=10780)
-
+def test_listing_retries_a_truncated_listing() -> None:
+    with make_client([[1, 2], [1, 2, 3]], total=3) as client:
+        items = client.list("items", filters={"item_set_id": 10780}, verify=True)
     assert sorted(i["o:id"] for i in items) == [1, 2, 3]
-    assert sleeps == [2]
 
 
-def test_fetch_items_fails_when_truncation_persists(monkeypatch) -> None:
-    sleeps: list[float] = []
-    monkeypatch.setattr(api.time, "sleep", sleeps.append)
-    validator = make_validator([[1, 2]], total=3)
+def test_listing_waits_between_attempts() -> None:
+    waits: list[float] = []
+    state = {"pass": 0}
+    passes = [[1, 2], [1, 2, 3]]
 
-    with pytest.raises(RuntimeError, match="Incomplete items listing"):
-        validator.listing("items", item_set_id=10780)
+    def transport(request):
+        query = parse_qs(urlsplit(request.url).query)
+        if query["page"] == ["1"]:
+            return page(passes[min(state["pass"], 1)], 3)
+        state["pass"] += 1
+        return page([], 3)
 
-    # No wait after the last attempt.
-    assert sleeps == [2, 4, 6, 8]
+    with Omeka("https://omeka.example", transport=transport, sleep=waits.append) as c:
+        c.list("items", verify=True)
+    assert waits == [2]
 
 
-def test_unverified_listing_names_the_missing_count_header(monkeypatch):
-    monkeypatch.setattr(api.time, "sleep", lambda _: None)
+def test_listing_fails_when_truncation_persists() -> None:
+    with make_client([[1, 2]], total=3) as client:
+        with pytest.raises(IncompleteListingError, match="three attempts"):
+            client.list("items", filters={"item_set_id": 10780}, verify=True)
 
-    def handler(request):
-        return httpx2.Response(200, json=[])
 
-    with OmekaAPI(
-        "https://omeka.example", transport=httpx2.MockTransport(handler)
+def test_verified_listing_requires_a_count_header():
+    def transport(request):
+        return TransportResponse(200, content=b"[]")
+
+    with Omeka(
+        "https://omeka.example", transport=transport, sleep=lambda _: None
     ) as client:
-        with pytest.raises(RuntimeError, match="missing omeka-s-total-results header"):
-            client.listing("items")
+        with pytest.raises(IncompleteListingError, match="No count"):
+            client.list("items", verify=True)
 
 
-def test_snapshot_item_listing_rejects_a_different_membership_with_the_same_count(
-    monkeypatch,
-):
-    monkeypatch.setattr(api.time, "sleep", lambda _: None)
-
-    def handler(request):
-        descending = request.url.params["sort_order"] == "desc"
+def test_snapshot_item_listing_rejects_a_different_membership_with_the_same_count():
+    def transport(request):
+        url = urlsplit(request.url)
+        query = parse_qs(url.query)
+        if url.path == "/api/item_sets/1":
+            return TransportResponse(200, content=b'{"o:id": 1}')
+        descending = query.get("sort_order") == ["desc"]
         ids = [5, 4, 3, 2] if descending else [1, 2, 4, 5]
-        body = (
-            [{"o:id": rid} for rid in ids] if request.url.params["page"] == "1" else []
-        )
-        return httpx2.Response(200, json=body, headers={"omeka-s-total-results": "4"})
+        return page(ids if query["page"] == ["1"] else [], 4)
 
-    with OmekaAPI(
-        "https://omeka.example", transport=httpx2.MockTransport(handler)
+    with Omeka(
+        "https://omeka.example", transport=transport, sleep=lambda _: None
     ) as client:
-        with pytest.raises(RuntimeError, match="Incomplete items listing"):
-            client.listing("items", item_set_id=1)
+        with pytest.raises(SnapshotConsistencyError, match=r"Missing examples: \[1\]"):
+            capture_snapshot(client, 1)

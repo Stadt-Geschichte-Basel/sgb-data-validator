@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from sgb_validator.api import OmekaAPI, OmekaError
+from sgb_validator.api import Omeka, OmekaError
 from sgb_validator.writes import require_exclusive_write, update_record
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -93,7 +93,7 @@ def main() -> int:
 
     copies = ROOT / "backups" / f"issue44_{datetime.now():%Y%m%d_%H%M%S_%f}"
     failed = changed = already_applied = 0
-    with OmekaAPI(
+    with Omeka(
         os.environ["OMEKA_URL"],
         os.environ["KEY_IDENTITY"],
         os.environ["KEY_CREDENTIAL"],

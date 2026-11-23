@@ -1,16 +1,18 @@
 """Check live and offline validation against the same records."""
 
+import json
 from pathlib import Path
+from urllib.parse import urlsplit
 
-import httpx2
 import pytest
+from omeka_s_client import SnapshotConsistencyError, TransportResponse
+from omeka_s_client.testing import FakeOmeka
 from test_issue16_validation import create_minimal_item, create_minimal_media
 from typer.testing import CliRunner
 
-from sgb_validator import api as client_module
-from sgb_validator.api import OmekaAPI, OmekaError
+from sgb_validator.api import Omeka
 from sgb_validator.cli import app
-from sgb_validator.snapshots import download_snapshot, read_snapshot, write_snapshot
+from sgb_validator.snapshots import capture_snapshot, read_snapshot, write_snapshot
 from sgb_validator.validation import validate_records
 from sgb_validator.vocabularies import VocabularyLoader
 
@@ -24,29 +26,26 @@ def source():
     media["o:filename"] = "0011aabb.png"
     media["o:source"] = "sgb-fdp-platzhalter[1].png"
     media["o:is_public"] = True
-    return {"item_sets/1": {"o:id": 1}, "items": [item], "media": [media]}
+    item["o:item_set"] = [{"o:id": 1}]
+    return {"item_sets": [{"o:id": 1}], "items": [item], "media": [media]}
 
 
 def api_for(source, *, truncate_media=False):
-    def handler(request):
-        field = request.url.path.removeprefix("/api/")
-        body = source[field]
-        if isinstance(body, dict):
-            return httpx2.Response(200, json=body)
-        results = body if request.url.params["page"] == "1" else []
-        if truncate_media and field == "media":
-            return httpx2.Response(200, json=[])
-        return httpx2.Response(
-            200, json=results, headers={"omeka-s-total-results": str(len(body))}
-        )
+    fake = FakeOmeka(source)
 
-    return OmekaAPI("https://omeka.example", transport=httpx2.MockTransport(handler))
+    def transport(request):
+        if truncate_media and urlsplit(request.url).path == "/api/media":
+            # An empty page without a count header hides the missing media.
+            return TransportResponse(200, content=b"[]")
+        return fake(request)
+
+    return Omeka("https://omeka.example", transport=transport, sleep=lambda _: None)
 
 
 @pytest.mark.parametrize("suffix", ["raw", "transformed", ""])
 def test_offline_and_live_findings_match(tmp_path, source, suffix):
     with api_for(source) as api:
-        live = download_snapshot(api, 1)
+        live = capture_snapshot(api, 1)
     path = tmp_path / "snapshot"
     write_snapshot(path, live, suffix)
     offline = read_snapshot(path)
@@ -79,16 +78,15 @@ def test_offline_and_live_findings_match(tmp_path, source, suffix):
     assert (report / "validation_summary.csv").is_file()
 
 
-def test_media_truncation_detected_without_count_header(monkeypatch, source):
-    monkeypatch.setattr(client_module.time, "sleep", lambda _: None)
+def test_media_truncation_detected_without_count_header(source):
     with api_for(source, truncate_media=True) as api:
-        with pytest.raises(OmekaError, match="Incomplete media listing"):
-            download_snapshot(api, 1)
+        with pytest.raises(SnapshotConsistencyError, match="Missing examples: \\[3\\]"):
+            capture_snapshot(api, 1)
 
 
 def test_transform_leaves_source_intact_and_reports_visibility_change(tmp_path, source):
     with api_for(source) as api:
-        snapshot = download_snapshot(api, 1)
+        snapshot = capture_snapshot(api, 1)
     raw = tmp_path / "raw"
     write_snapshot(raw, snapshot, "raw")
     before = (raw / "media_raw.json").read_bytes()
@@ -101,3 +99,48 @@ def test_transform_leaves_source_intact_and_reports_visibility_change(tmp_path, 
     assert transformed.media[0]["o:is_public"] is False
     assert transformed.items[0]["o:is_public"] is False
     assert (raw / "media_raw.json").read_bytes() == before
+
+
+def test_capture_keeps_the_item_media_order(tmp_path, source):
+    item = source["items"][0]
+    second = {**source["media"][0], "o:id": 1}
+    source["media"].append(second)
+    item["o:media"] = [{"o:id": 3}, {"o:id": 1}]
+    with api_for(source) as api:
+        snapshot = capture_snapshot(api, 1)
+    assert [medium["o:id"] for medium in snapshot.media] == [3, 1]
+    path = write_snapshot(tmp_path / "nested" / "raw", snapshot, "raw")
+    assert sorted(entry.name for entry in path.iterdir()) == [
+        "download_metadata.json",
+        "item_set_raw.json",
+        "items_raw.json",
+        "media_raw.json",
+    ]
+    assert read_snapshot(path) == snapshot
+
+
+def test_legacy_sgb_snapshot_stays_readable(tmp_path, source):
+    path = tmp_path / "legacy"
+    path.mkdir()
+    for name, value in (
+        ("item_set_raw", source["item_sets"][0]),
+        ("items_raw", source["items"]),
+        ("media_raw", source["media"]),
+    ):
+        (path / f"{name}.json").write_text(json.dumps(value))
+    (path / "download_metadata.json").write_text(
+        json.dumps(
+            {
+                "source": "https://omeka.example",
+                "item_set_id": 1,
+                "items_count": 1,
+                "media_count": 1,
+                "status": "raw",
+                "timestamp": "20250101_120000",
+            }
+        )
+    )
+    snapshot = read_snapshot(path)
+    assert snapshot.source == "https://omeka.example"
+    assert snapshot.item_set_id == 1
+    assert [medium["o:id"] for medium in snapshot.media] == [3]

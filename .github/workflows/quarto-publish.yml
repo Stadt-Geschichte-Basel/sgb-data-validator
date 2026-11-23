@@ -90,6 +90,7 @@ jobs:
         run: |
           mkdir -p analysis
           uv run --locked sgb validate \
+            --public-only \
             --output analysis/validation_report.txt \
             --export-csv \
             --csv-output analysis/

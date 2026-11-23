@@ -1700,6 +1700,19 @@ wheels = [
 ]
 
 [[package]]
+name = "omeka-s-client"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx2" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/80/90/b326bead14435cc80bec9a230fdbd2ed90878cf3f8b80cfb92d4021316f8/omeka_s_client-0.1.0.tar.gz", hash = "sha256:8d725d4394623bab2e2c8306f4e54942bac175485d263543850fbd4f4a3a0ef6", size = 231520, upload-time = "2026-11-23T09:12:08.785Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dc/85/c4fa5de742b421f5821fcdb134412fb2af69513aec2d51120c9692bc6281/omeka_s_client-0.1.0-py3-none-any.whl", hash = "sha256:acead944a8ea03aea1bda582b2432307fe49c1e8fb73d7939b6ec83a313e273f", size = 46860, upload-time = "2026-11-23T09:12:07.719Z" },
+]
+
+[[package]]
 name = "overrides"
 version = "7.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2524,6 +2537,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx2" },
+    { name = "omeka-s-client" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "typer" },
@@ -2547,6 +2561,7 @@ docs = ">=3.11.5"
 [package.metadata]
 requires-dist = [
     { name = "httpx2", specifier = ">=2.0" },
+    { name = "omeka-s-client", specifier = ">=0.1.0,<0.2" },
     { name = "pydantic", specifier = ">=2.11.9" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "typer", specifier = ">=0.15.0" },

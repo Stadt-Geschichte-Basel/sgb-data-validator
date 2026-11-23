@@ -1,44 +1,34 @@
-"""HTTP access to an Omeka S instance."""
+"""Omeka S access through the shared omeka-s-client library."""
 
-import json
-import logging
-import mimetypes
-import time
-from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import httpx2
+from omeka_s_client import (
+    OmekaClient,
+    OmekaError,
+    OmekaHTTPError,
+    Record,
+    Upload,
+    property_filter,
+    property_filters,
+)
 
-Record = dict[str, Any]
-TOTAL_RESULTS = "omeka-s-total-results"
+__all__ = [
+    "Omeka",
+    "OmekaClient",
+    "OmekaError",
+    "OmekaHTTPError",
+    "Record",
+    "Upload",
+    "find",
+    "optional_get",
+]
 
-
-class _RedactAPIQuery(logging.Filter):
-    """Remove Omeka query credentials from HTTPX2 request logs."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.args, tuple):
-            record.args = tuple(
-                value.copy_remove_param("key_identity").copy_remove_param(
-                    "key_credential"
-                )
-                if isinstance(value, httpx2.URL)
-                else value
-                for value in record.args
-            )
-        return True
+IDENTIFIER = "dcterms:identifier"
 
 
-logging.getLogger("httpx2").addFilter(_RedactAPIQuery())
+class Omeka(OmekaClient):
+    """Open an Omeka client from optional settings with cache busting on."""
 
-
-class OmekaError(RuntimeError):
-    def __init__(self, message: str, status: int | None = None) -> None:
-        super().__init__(message)
-        self.status = status
-
-
-class OmekaAPI:
     def __init__(
         self,
         base_url: str,
@@ -46,167 +36,32 @@ class OmekaAPI:
         key_credential: str | None = None,
         *,
         timeout: float = 60,
-        transport: httpx2.BaseTransport | None = None,
+        cache_busting: bool = True,
+        **options: Any,
     ) -> None:
-        url = httpx2.URL(base_url)
-        if url.scheme not in ("https", "http") or not url.host:
-            raise ValueError("Set OMEKA_URL to an HTTP or HTTPS Omeka instance URL")
-        if url.userinfo or url.query or url.fragment:
-            raise ValueError("Use an Omeka URL without credentials, query, or fragment")
-        if bool(key_identity) != bool(key_credential):
-            raise ValueError("Supply both Omeka key identity and credential")
-        self.base_url = str(url).rstrip("/").removesuffix("/api")
-        self.auth = (
-            {"key_identity": key_identity, "key_credential": key_credential}
-            if key_identity and key_credential
-            else {}
-        )
-        self.client = httpx2.Client(
+        # Unset environment variables can arrive as empty strings.
+        super().__init__(
+            base_url,
+            key_identity=key_identity or None,
+            key_credential=key_credential or None,
             timeout=timeout,
-            transport=transport,
-            headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},
+            cache_busting=cache_busting,
+            **options,
         )
 
-    def __enter__(self) -> "OmekaAPI":
-        return self
 
-    def __exit__(self, *_: Any) -> None:
-        self.client.close()
+def find(
+    client: OmekaClient, kind: str, value: str, term: str = IDENTIFIER
+) -> list[Record]:
+    """List the records with an exact property value."""
+    conditions = property_filters(property_filter(term, "eq", value))
+    return client.list(kind, filters=conditions, verify=True)
 
-    def request(
-        self, method: str, endpoint: str, *, params: Record | None = None, **kwargs: Any
-    ) -> httpx2.Response:
-        if method != "GET" and not self.auth:
-            raise OmekaError("Omeka credentials are required for writes")
-        attempts = 4 if method == "GET" else 1
-        for attempt in range(attempts):
-            query = {**(params or {}), **self.auth, "_": str(time.time_ns())}
-            try:
-                response = self.client.request(
-                    method,
-                    f"{self.base_url}/api/{endpoint}",
-                    params=query,
-                    **kwargs,
-                )
-            except httpx2.RequestError as exc:
-                if attempt + 1 < attempts:
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                raise OmekaError(f"{method} {endpoint}: {type(exc).__name__}") from None
-            if not response.is_success:
-                raise OmekaError(
-                    f"{method} {endpoint}: HTTP {response.status_code}",
-                    response.status_code,
-                )
-            return response
-        raise AssertionError("No request attempt")
 
-    def get(self, kind: str, rid: int) -> Record:
-        return cast(Record, self.request("GET", f"{kind}/{rid}").json())
-
-    def listing(
-        self,
-        kind: str,
-        *,
-        expected_ids: set[int] | None = None,
-        per_page: int = 50,
-        sort_order: str = "asc",
-        **filters: Any,
-    ) -> list[Record]:
-        """Check counts and confirm membership for item-set and media listings."""
-        check_membership = (
-            kind == "items" and "item_set_id" in filters and expected_ids is None
-        )
-        for attempt in range(5):
-            records: dict[int, Record] = {}
-            totals: set[int] = set()
-            page = 1
-            repeated_ids = False
-            while True:
-                response = self.request(
-                    "GET",
-                    kind,
-                    params={
-                        **filters,
-                        "page": page,
-                        "per_page": per_page,
-                        "sort_by": "id",
-                        "sort_order": sort_order,
-                    },
-                )
-                total = response.headers.get(TOTAL_RESULTS)
-                if total is not None:
-                    try:
-                        totals.add(int(total))
-                    except ValueError:
-                        raise OmekaError(f"Invalid {kind} count header") from None
-                batch = response.json()
-                if not batch:
-                    break
-                ids = {record["o:id"] for record in batch}
-                if len(ids) != len(batch) or ids.intersection(records):
-                    repeated_ids = True
-                    break
-                records.update((record["o:id"], record) for record in batch)
-                if totals == {len(records)}:
-                    break
-                page += 1
-            count_ok = totals == {len(records)} if totals else expected_ids is not None
-            if (
-                not repeated_ids
-                and count_ok
-                and (expected_ids is None or records.keys() == expected_ids)
-            ):
-                if check_membership:
-                    # Membership changes can shift pages without changing the count.
-                    self.listing(
-                        kind,
-                        expected_ids=set(records),
-                        per_page=per_page,
-                        sort_order="desc" if sort_order == "asc" else "asc",
-                        **filters,
-                    )
-                return list(records.values())
-            if attempt < 4:
-                time.sleep(2 * (attempt + 1))
-        if not totals and expected_ids is None:
-            raise OmekaError(
-                f"Incomplete {kind} listing: missing {TOTAL_RESULTS} header"
-            )
-        raise OmekaError(
-            f"Incomplete {kind} listing for {filters}: got {len(records)}, "
-            f"server counts {sorted(totals)}, referenced count "
-            f"{len(expected_ids) if expected_ids is not None else 'unknown'}"
-        )
-
-    def find(self, kind: str, identifier: str, property_id: int = 10) -> list[Record]:
-        filters: Record = {
-            "property[0][property]": property_id,
-            "property[0][type]": "eq",
-            "property[0][text]": identifier,
-        }
-        return self.listing(kind, **filters)
-
-    def post(
-        self,
-        kind: str,
-        payload: Record,
-        file: Path | None = None,
-        *,
-        filename: str | None = None,
-    ) -> Record:
-        if file is None:
-            return cast(Record, self.request("POST", kind, json=payload).json())
-        filename = filename or file.name
-        mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-        with file.open("rb") as source:
-            response = self.request(
-                "POST",
-                kind,
-                data={"data": json.dumps(payload, ensure_ascii=False)},
-                files={"file[0]": (filename, source, mime)},
-            )
-            return cast(Record, response.json())
-
-    def patch(self, kind: str, rid: int, payload: Record) -> Record:
-        return cast(Record, self.request("PATCH", f"{kind}/{rid}", json=payload).json())
+def optional_get(client: OmekaClient, kind: str, rid: int) -> Record | None:
+    try:
+        return client.get(kind, rid)
+    except OmekaHTTPError as exc:
+        if exc.status != 404:
+            raise
+        return None

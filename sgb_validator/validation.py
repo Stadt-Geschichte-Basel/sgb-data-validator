@@ -3,11 +3,14 @@
 import re
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
 from .models import Item, Media
 from .vocabularies import VocabularyLoader
+
+TYPE_LABELS = {"image", "dataset", "interactive resource"}
 
 # Fields without brackets in the datamodel diagram take exactly one value.
 # https://dokumentation.stadtgeschichtebasel.ch/products/research-data/datamodel/
@@ -18,6 +21,7 @@ SINGLE_VALUE_FIELDS = {
         "dcterms:description",
         "dcterms:temporal",
         "dcterms:language",
+        "dcterms:isPartOf",
     ),
     "Media": (
         "dcterms:identifier",
@@ -107,13 +111,13 @@ def _validate_vocabularies(
             "type",
             "@id",
             vocabularies.is_valid_type,
-            "Invalid type URI (must be Image or Dataset)",
+            "Invalid type URI (must be Image, Dataset or InteractiveResource)",
         ),
         (
             "language",
             "@value",
             vocabularies.is_valid_language,
-            "Invalid language code (must be valid ISO 639-1 two-letter code)",
+            "Invalid language code (not in the DSP language list)",
         ),
     )
     for term, key, valid, message in rules:
@@ -122,6 +126,32 @@ def _validate_vocabularies(
         if not isinstance(values, list):
             continue
         for index, entry in enumerate(values):
+            if isinstance(entry, dict) and term == "language":
+                literal = entry.get("@value")
+                if not (isinstance(literal, str) and literal):
+                    result.errors.append(
+                        DataValidationError(
+                            resource_type,
+                            resource_id,
+                            f"{field_name}[{index}]",
+                            "Use a literal language code, not a URI: "
+                            f"{entry.get('@id') or '(empty)'}",
+                        )
+                    )
+                    continue
+            if isinstance(entry, dict) and term == "type" and "@id" not in entry:
+                label = entry.get("@value") or entry.get("o:label")
+                if isinstance(label, str) and label.casefold() not in TYPE_LABELS:
+                    result.errors.append(
+                        DataValidationError(
+                            resource_type,
+                            resource_id,
+                            f"{field_name}[{index}]",
+                            "Invalid type (must be Image, Dataset or "
+                            f"Interactive Resource): {label}",
+                        )
+                    )
+                continue
             value = entry.get(key) if isinstance(entry, dict) else None
             if isinstance(value, str) and value and not valid(value):
                 result.errors.append(
@@ -207,6 +237,41 @@ def _check_literal_fields_for_urls(
                             )
 
 
+def _is_http_url(text: Any) -> bool:
+    if not isinstance(text, str) or any(c.isspace() for c in text):
+        return False
+    try:
+        parts = urlsplit(text)
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and bool(parts.netloc)
+
+
+def _check_invalid_uris(
+    result: Findings, data: dict[str, Any], resource_type: str, resource_id: int | str
+) -> None:
+    """Flag @id values that are not absolute http(s) URLs (issue #57)"""
+    for key, value in data.items():
+        if key == "dcterms:subject" or not key.startswith("dcterms:"):
+            continue
+        if not isinstance(value, list):
+            continue
+        for idx, entry in enumerate(value):
+            if not isinstance(entry, dict) or "value_resource_id" in entry:
+                continue
+            uri = entry.get("@id")
+            if not isinstance(uri, str) or _is_http_url(uri):
+                continue
+            message = f"Invalid URI: {uri[:80]}"
+            if _is_http_url(entry.get("o:label")):
+                message += " (@id and o:label look swapped)"
+            result.errors.append(
+                DataValidationError(
+                    resource_type, resource_id, f"{key}[{idx}]", message
+                )
+            )
+
+
 REQUIRED_TERMS = {
     "Item": ("identifier", "description", "temporal"),
     "Media": ("identifier", "description", "rights", "license"),
@@ -272,6 +337,7 @@ def validate_records(
     vocabularies: VocabularyLoader,
     *,
     check_collection: bool = True,
+    max_file_size: int | None = 500_000_000,
 ) -> Findings:
     """Return findings for the supplied records."""
     from .transformations import has_placeholder_media
@@ -321,6 +387,23 @@ def validate_records(
             _validate_vocabularies(vocabularies, result, record, label, rid)
             _validate_fields(result, record, label, rid)
             _check_literal_fields_for_urls(result, record, label, rid)
+            _check_invalid_uris(result, record, label, rid)
+            size = record.get("o:size")
+            if (
+                label == "Media"
+                and max_file_size
+                and isinstance(size, int)
+                and size > max_file_size
+            ):
+                result.warnings.append(
+                    DataValidationWarning(
+                        "Media",
+                        rid,
+                        f"File is {size // 1_000_000} MB; DSP conversion may fail "
+                        f"above {max_file_size // 1_000_000} MB",
+                        "o:size",
+                    )
+                )
             if label == "Item":
                 if check_collection and rid not in parents:
                     result.warnings.append(

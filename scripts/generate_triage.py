@@ -31,9 +31,9 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from sgb_validator.api import OmekaAPI, OmekaError  # noqa: E402
+from sgb_validator.api import Omeka, OmekaError  # noqa: E402
 from sgb_validator.changes import identifiers  # noqa: E402
-from sgb_validator.snapshots import Snapshot, download_snapshot  # noqa: E402
+from sgb_validator.snapshots import Snapshot, capture_snapshot  # noqa: E402
 from sgb_validator.validation import Findings, validate_records  # noqa: E402
 from sgb_validator.vocabularies import VocabularyLoader  # noqa: E402
 
@@ -248,7 +248,7 @@ def build_entries(snapshot: Snapshot, findings: Findings) -> list[Entry]:
     def index(records: dict) -> dict[str, list[int]]:
         result = {}
         for rid, record in records.items():
-            for identifier in dict.fromkeys(value for _, value in identifiers(record)):
+            for identifier in dict.fromkeys(identifiers(record)):
                 result.setdefault(identifier, []).append(rid)
         return result
 
@@ -405,7 +405,7 @@ def build_entries(snapshot: Snapshot, findings: Findings) -> list[Entry]:
     return list(entries.values())
 
 
-def owner_names(api: OmekaAPI, owner_ids: set[int]) -> dict[int, str]:
+def owner_names(api: Omeka, owner_ids: set[int]) -> dict[int, str]:
     names = {}
     for uid in owner_ids:
         try:
@@ -415,7 +415,7 @@ def owner_names(api: OmekaAPI, owner_ids: set[int]) -> dict[int, str]:
     return names
 
 
-def render(entries: list[Entry], api: OmekaAPI, admin: str, findings: Findings) -> str:
+def render(entries: list[Entry], api: Omeka, admin: str, findings: Findings) -> str:
     def owner(e: Entry) -> int | None:
         return (e.record.get("o:owner") or {}).get("o:id")
 
@@ -547,11 +547,11 @@ def main() -> int:
     load_dotenv(ROOT / ".env")
     base_url = os.environ["OMEKA_URL"].strip().strip('"').rstrip("/")
     item_set_id = args.item_set_id or int(os.environ.get("ITEM_SET_ID", "10780"))
-    with OmekaAPI(
+    with Omeka(
         base_url, os.environ["KEY_IDENTITY"], os.environ["KEY_CREDENTIAL"]
     ) as api:
         try:
-            snapshot = download_snapshot(api, item_set_id)
+            snapshot = capture_snapshot(api, item_set_id)
         except (OmekaError, ValueError) as exc:
             print(exc, file=sys.stderr)
             return 1
@@ -563,7 +563,10 @@ def main() -> int:
             file=sys.stderr,
         )
         body = render(
-            build_entries(snapshot, findings), api, f"{api.base_url}/admin", findings
+            build_entries(snapshot, findings),
+            api,
+            f"{api.installation_url}/admin",
+            findings,
         )
     if len(body) > 65536:
         print(
