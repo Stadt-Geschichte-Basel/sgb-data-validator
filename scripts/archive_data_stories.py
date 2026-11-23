@@ -971,7 +971,7 @@ def media_payload(
         "dcterms:type": [
             {**uri(8, "Type", type_uri, type_label), "type": "valuesuggestall:dc:types"}
         ],
-        "dcterms:format": [vocab(9, "Format", "customvocab:15", row["mime"])],
+        "dcterms:format": [vocab(9, "Format", "customvocab:15", row["mime"], "en")],
         "dcterms:language": [vocab(12, "Language", "valuesuggest:lc:iso6392", "de")],
         "dcterms:relation": [
             uri(13, "Relation", f"https://doi.org/{story['doi']}", story["title"]),
@@ -1513,6 +1513,7 @@ def apply_parent(
                 "Format",
                 "customvocab:15",
                 FORMATS.get(screenshot.suffix.lower(), "image/png"),
+                "en",
             )
         ],
         "dcterms:source": [uri(11, "Source", url, "Interaktive Data Story")],
