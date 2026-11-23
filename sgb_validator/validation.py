@@ -240,7 +240,10 @@ def _check_literal_fields_for_urls(
 def _is_http_url(text: Any) -> bool:
     if not isinstance(text, str) or any(c.isspace() for c in text):
         return False
-    parts = urlsplit(text)
+    try:
+        parts = urlsplit(text)
+    except ValueError:
+        return False
     return parts.scheme in ("http", "https") and bool(parts.netloc)
 
 
@@ -249,7 +252,9 @@ def _check_invalid_uris(
 ) -> None:
     """Flag @id values that are not absolute http(s) URLs (issue #57)"""
     for key, value in data.items():
-        if not key.startswith("dcterms:") or not isinstance(value, list):
+        if key == "dcterms:subject" or not key.startswith("dcterms:"):
+            continue
+        if not isinstance(value, list):
             continue
         for idx, entry in enumerate(value):
             if not isinstance(entry, dict) or "value_resource_id" in entry:

@@ -103,6 +103,18 @@ def test_uri_with_space_fails():
     assert "Invalid URI" in errors_for(findings(item=item), "dcterms:source")[0].error
 
 
+def test_unparsable_uri_fails():
+    item = create_minimal_item(1)
+    item["dcterms:source"] = [{"type": "uri", "@id": "http://[", "o:label": "x"}]
+    assert "Invalid URI" in errors_for(findings(item=item), "dcterms:source")[0].error
+
+
+def test_legacy_subject_uri_is_not_checked():
+    item = create_minimal_item(1)
+    item["dcterms:subject"] = [{"type": "uri", "@id": "urn:legacy:subject"}]
+    assert not errors_for(findings(item=item), "dcterms:subject")
+
+
 def test_resource_link_is_not_flagged():
     item = create_minimal_item(1)
     item["dcterms:isPartOf"] = [
@@ -130,6 +142,8 @@ def test_file_size_check_can_be_off():
 
 
 def test_download_needs_keys_or_public_only(monkeypatch, tmp_path, source):  # noqa: F811
+    monkeypatch.delenv("KEY_IDENTITY", raising=False)
+    monkeypatch.delenv("KEY_CREDENTIAL", raising=False)
     monkeypatch.setattr(cli, "connect", lambda *_: api_for(source))
     args = ["download", "--item-set-id", "1", "--output-dir", str(tmp_path)]
     result = CliRunner().invoke(app, args)
@@ -140,6 +154,8 @@ def test_download_needs_keys_or_public_only(monkeypatch, tmp_path, source):  # n
 
 
 def test_live_validate_needs_keys_or_public_only(monkeypatch, source):  # noqa: F811
+    monkeypatch.delenv("KEY_IDENTITY", raising=False)
+    monkeypatch.delenv("KEY_CREDENTIAL", raising=False)
     monkeypatch.setattr(cli, "connect", lambda *_: api_for(source))
     result = CliRunner().invoke(app, ["validate", "--item-set-id", "1"])
     assert result.exit_code == 1
