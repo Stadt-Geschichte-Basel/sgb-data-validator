@@ -142,9 +142,15 @@ def download_file(api: OmekaClient, url: str, destination: Path) -> tuple[int, s
     return result.size, result.sha256
 
 
-def file_checksum(api: OmekaClient, url: str) -> tuple[int, str]:
-    """Download a file to a private temporary directory and return its digest."""
-    with TemporaryDirectory() as directory:
+def file_checksum(
+    api: OmekaClient, url: str, parent: Path | None = None
+) -> tuple[int, str]:
+    """Download a file to a private temporary directory and return its digest.
+
+    Pass the backup directory as `parent` to keep large originals off the
+    system temporary directory.
+    """
+    with TemporaryDirectory(dir=parent) as directory:
         return download_file(api, url, Path(directory) / "original")
 
 
@@ -873,7 +879,12 @@ def verify_restored_records(
             verify_fields(kind, after, actual)
             if kind == "media" and full:
                 verify_original(
-                    api, record, actual, manifest, recreated=ids[old_id] != old_id
+                    api,
+                    record,
+                    actual,
+                    manifest,
+                    recreated=ids[old_id] != old_id,
+                    parent=directory,
                 )
             announce(f"Verified {kind}/{actual['o:id']}")
         except (OmekaError, OSError, ValueError) as exc:
@@ -890,6 +901,7 @@ def verify_original(
     manifest: Record,
     *,
     recreated: bool,
+    parent: Path | None = None,
 ) -> None:
     expected_ingester = record.get("o:ingester")
     if expected_ingester == "url" and recreated:
@@ -912,5 +924,5 @@ def verify_original(
     url = actual.get("o:original_url")
     if not url:
         raise OmekaError("Missing live original URL")
-    if file_checksum(api, url) != expected:
+    if file_checksum(api, url, parent) != expected:
         raise OmekaError("Live original file bytes differ")

@@ -20,6 +20,7 @@ Open `.env` in a text editor.
 - Set `OMEKA_URL` to the address of your Omeka instance, such as `https://omeka.unibe.ch`.
 - Set `ITEM_SET_ID` to the number in your item set’s admin URL.
 - For private records or edits, enter your Omeka key in `KEY_IDENTITY` and `KEY_CREDENTIAL`. For public checks, leave both values empty and pass `--public-only`. [Omeka API key guide](https://omeka.org/s/docs/user-manual/admin/users/#api-keys)
+- Omeka requests ignore `HTTP_PROXY` and `HTTPS_PROXY`. The validator needs a direct connection to Omeka.
 
 ## Check an item set
 

@@ -422,9 +422,10 @@ def test_backup_requires_keys(tmp_path):
             backup(api, 1, tmp_path / "backup")
 
 
-def test_file_checksum_leaves_no_file():
+def test_file_checksum_leaves_no_file(tmp_path):
     with Omeka("https://omeka.example", transport=backup_source()) as api:
         size, digest = file_checksum(
-            api, "https://omeka.example/files/original/abc.txt"
+            api, "https://omeka.example/files/original/abc.txt", tmp_path
         )
     assert (size, digest) == (len(ORIGINAL), hashlib.sha256(ORIGINAL).hexdigest())
+    assert list(tmp_path.iterdir()) == []
