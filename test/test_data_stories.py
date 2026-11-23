@@ -391,3 +391,9 @@ def test_one_era_stops_on_two_eras():
         ads.one_era(
             {"o:id": 1, "dcterms:temporal": [era, {"@value": "20. Jahrhundert"}]}
         )
+
+
+def test_one_era_names_the_saved_plan():
+    eras = [{"@value": "19. Jahrhundert"}, {"@value": "20. Jahrhundert"}]
+    with pytest.raises(ValueError, match="plan.json"):
+        ads.one_era({"dcterms:temporal": eras}, "plan.json")

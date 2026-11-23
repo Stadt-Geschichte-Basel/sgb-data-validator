@@ -64,3 +64,26 @@ def test_plan_adds_new_field_and_removes_empty_field():
 def test_plan_rejects_other_fields():
     with pytest.raises(ValueError, match="not allowed"):
         fix.plan_record({}, [{"field": "dcterms:title", "old": [], "new": []}])
+
+
+def test_plan_keeps_private_visibility():
+    before = {"o:id": 1, "dcterms:source": [{**SOURCE, "is_public": False}]}
+    edit = {
+        "field": "dcterms:source",
+        "old": [SOURCE],
+        "new": [{"type": "literal", "@value": "x"}],
+    }
+    assert fix.plan_record(before, [edit])["dcterms:source"][0]["is_public"] is False
+
+
+def test_plan_rejects_mixed_visibility_without_explicit_flag():
+    private = {**SOURCE, "@id": "b", "is_public": False}
+    before = {"o:id": 1, "dcterms:source": [SOURCE, private]}
+    old = [{k: v[k] for k in ("type", "@id", "o:label")} for v in (SOURCE, private)]
+    new = [{"type": "literal", "@value": "a"}, {"type": "literal", "@value": "b"}]
+    edit = {"field": "dcterms:source", "old": old, "new": new}
+    with pytest.raises(ValueError, match="mixes public and private"):
+        fix.plan_record(before, [edit])
+    edit["new"] = [{**new[0], "is_public": True}, {**new[1], "is_public": False}]
+    after = fix.plan_record(before, [edit])["dcterms:source"]
+    assert [v["is_public"] for v in after] == [True, False]

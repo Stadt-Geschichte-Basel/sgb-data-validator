@@ -9,6 +9,8 @@ The edit list is a JSON file with one entry per field:
 
 "old" must match the live values exactly (type, @value, @id, o:label), in order.
 "new" replaces all values of the field. An empty "new" list removes the field.
+A new value keeps the visibility of the old values when all old values share
+one visibility. When they differ, every new value must set "is_public".
 The script previews by default. --apply --exclusive-write writes, keeps a
 before-edit copy, and reads every record back.
 """
@@ -50,14 +52,25 @@ def shape(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def native(field: str, value: dict[str, Any], like: dict[str, Any]) -> dict[str, Any]:
-    """A complete Omeka value. Keep property and visibility of the old value."""
+    """A complete Omeka value. Keep the property of the old value."""
     pid, label = PROPERTIES[field]
     return {
         "property_id": like.get("property_id", pid),
         "property_label": like.get("property_label", label),
-        "is_public": like.get("is_public", True),
         **value,
     }
+
+
+def visibility(field: str, live: list[dict[str, Any]], new: dict[str, Any]) -> bool:
+    """The visibility of a new value. Never guess between mixed old values."""
+    if isinstance(new.get("is_public"), bool):
+        return new["is_public"]
+    seen = {v.get("is_public", True) for v in live}
+    if len(seen) > 1:
+        raise ValueError(
+            f"{field} mixes public and private values. Set is_public on each new value."
+        )
+    return seen.pop() if seen else True
 
 
 def plan_record(before: dict[str, Any], edits: list[dict[str, Any]]) -> dict[str, Any]:
@@ -71,7 +84,10 @@ def plan_record(before: dict[str, Any], edits: list[dict[str, Any]]) -> dict[str
         if [shape(v) for v in live] != [shape(v) for v in edit["old"]]:
             raise ValueError(f"{field} is not as expected any more: {live}")
         like = live[0] if live else {}
-        after[field] = [native(field, v, like) for v in edit["new"]]
+        after[field] = [
+            {**native(field, v, like), "is_public": visibility(field, live, v)}
+            for v in edit["new"]
+        ]
         if not after[field]:
             after.pop(field)
     return after

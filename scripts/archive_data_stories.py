@@ -1068,12 +1068,13 @@ def backup(records: list[dict[str, Any]], name: str) -> Path:
     return path
 
 
-def one_era(record: dict[str, Any]) -> list[str]:
+def one_era(record: dict[str, Any], label: str | None = None) -> list[str]:
     """The era of a record. DSP takes one era, so stop on two or more."""
     eras = [v["@value"] for v in record.get("dcterms:temporal", []) if v.get("@value")]
     if len(eras) > 1:
+        name = label or f"items/{record.get('o:id')}"
         raise ValueError(
-            f"items/{record.get('o:id')} has {len(eras)} eras ({', '.join(eras)}). "
+            f"{name} has {len(eras)} eras ({', '.join(eras)}). "
             "Keep one era before the upload."
         )
     return eras
@@ -1412,6 +1413,15 @@ def apply_parent(
         raise OmekaError(
             "The old-media cleanup plan belongs to a different parent or instance"
         )
+    if plan:
+        # A resumed run sends the saved replacement, so check it before any write.
+        try:
+            one_era(plan["replacement"], f"{cleanup.name} (saved replacement)")
+        except ValueError as exc:
+            raise OmekaError(
+                f"{exc} Keep one value in replacement.dcterms:temporal of {cleanup}, "
+                "then run again."
+            ) from None
     old_media = [api.get("media", m["o:id"]) for m in item.get("o:media", [])]
     done = [
         m
