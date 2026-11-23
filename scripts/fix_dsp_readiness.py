@@ -54,9 +54,11 @@ def shape(value: dict[str, Any]) -> dict[str, Any]:
 def native(field: str, value: dict[str, Any], like: dict[str, Any]) -> dict[str, Any]:
     """A complete Omeka value. Keep the property of the old value."""
     pid, label = PROPERTIES[field]
+    keep = {"@language": like["@language"]} if "@language" in like else {}
     return {
         "property_id": like.get("property_id", pid),
         "property_label": like.get("property_label", label),
+        **keep,
         **value,
     }
 

@@ -87,3 +87,13 @@ def test_plan_rejects_mixed_visibility_without_explicit_flag():
     edit["new"] = [{**new[0], "is_public": True}, {**new[1], "is_public": False}]
     after = fix.plan_record(before, [edit])["dcterms:source"]
     assert [v["is_public"] for v in after] == [True, False]
+
+
+def test_plan_keeps_language_tag():
+    before = {"o:id": 1, "dcterms:source": [{**SOURCE, "@language": "en"}]}
+    edit = {
+        "field": "dcterms:source",
+        "old": [SOURCE],
+        "new": [{"type": "literal", "@value": "x"}],
+    }
+    assert fix.plan_record(before, [edit])["dcterms:source"][0]["@language"] == "en"
