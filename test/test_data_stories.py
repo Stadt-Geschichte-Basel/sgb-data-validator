@@ -381,3 +381,13 @@ def test_parent_resumes_cleanup_with_replacement_already_saved(tmp_path, monkeyp
     )
     assert api.deleted == [3]
     assert ads.json.loads(path.read_text())["completed"] == [2, 3]
+
+
+def test_one_era_stops_on_two_eras():
+    era = {"@value": "19. Jahrhundert"}
+    assert ads.one_era({"dcterms:temporal": [era]}) == ["19. Jahrhundert"]
+    assert ads.one_era({}) == []
+    with pytest.raises(ValueError, match="2 eras"):
+        ads.one_era(
+            {"o:id": 1, "dcterms:temporal": [era, {"@value": "20. Jahrhundert"}]}
+        )

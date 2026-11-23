@@ -1068,9 +1068,19 @@ def backup(records: list[dict[str, Any]], name: str) -> Path:
     return path
 
 
+def one_era(record: dict[str, Any]) -> list[str]:
+    """The era of a record. DSP takes one era, so stop on two or more."""
+    eras = [v["@value"] for v in record.get("dcterms:temporal", []) if v.get("@value")]
+    if len(eras) > 1:
+        raise ValueError(
+            f"items/{record.get('o:id')} has {len(eras)} eras ({', '.join(eras)}). "
+            "Keep one era before the upload."
+        )
+    return eras
+
+
 def story_temporal(api: Omeka, slug: str) -> list[str]:
-    parent = api.get("items", STORIES[slug]["item"])
-    return [v["@value"] for v in parent.get("dcterms:temporal", []) if v.get("@value")]
+    return one_era(api.get("items", STORIES[slug]["item"]))
 
 
 def upload(
@@ -1434,7 +1444,7 @@ def apply_parent(
         raise ValueError(f"{screenshot}: file not found")
     doi = f"https://doi.org/{story['doi']}"
     url = story.get("url") or f"https://storymaps.arcgis.com/stories/{story['arcgis']}"
-    temporal = [v["@value"] for v in item.get("dcterms:temporal", [])]
+    temporal = one_era(item)
     licensed = bool(story["license"])
     is_pdf = screenshot.suffix.lower() == ".pdf"
     # Decision 2026-11-19: all Zenodo story PDFs are public, also without a CC license.
