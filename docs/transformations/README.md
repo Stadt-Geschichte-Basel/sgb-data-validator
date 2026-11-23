@@ -36,6 +36,8 @@ After upload, the team removed the site assignments for 38 items that Omeka had 
 
 A final recorded pass moved extra DOIs and Handles from Identifier to Relation on story and KNIL records. It combined four descriptions on one item, corrected a language value, and completed a placeholder from the volume 3 workbook. It also kept one historical period on each of 28 items and 29 media. The validation run recorded three remaining errors, all for KNIL language values that needed a decision. [Live fixes in PR #51](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/pull/51)
 
+On 23 November, the project lead retired the placeholder privacy rule. Omeka needs a media record to hold the metadata of a source. Where the project may not publish a file, that record holds the placeholder image, and its metadata stays public. DSP receives these records as metadata without a file. The validator, the cleanup copy, and the restore now keep the visibility as it is. [DSP readiness record](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues/44)
+
 ## Supporting records
 
 - Two other archived comparisons list 383 and 357 proposed field changes. The private archive keeps those comparisons and the upload logs. The dated snapshots and backups stay in their data locations.

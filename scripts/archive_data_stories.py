@@ -54,7 +54,6 @@ from sgb_validator.snapshots import (  # noqa: E402
 from sgb_validator.validation import validate_records  # noqa: E402
 from sgb_validator.vocabularies import VocabularyLoader  # noqa: E402
 from sgb_validator.writes import (  # noqa: E402
-    check_placeholder_parent,
     create_payload,
     create_record,
     file_digest,
@@ -1150,9 +1149,6 @@ def upload_rows(
             file = WORK / slug / row["file"]
             if not file.is_file():
                 raise ValueError(f"Missing original file {file}")
-            check_placeholder_parent(
-                media, existing[0] if existing else item, file.name
-            )
             found = find(api, "media", media["dcterms:identifier"][0]["@value"])
             if found:
                 if (
