@@ -16,7 +16,11 @@ Rules:
   - Files are the "item-resource" originals that were uploaded to the StoryMap.
     Replace a file in files/ (and set sha256/width/height to empty) when the
     holder has a larger original.
-  - A record is public only if rights_status is "verified". Else it is private.
+  - Items are public. A media is public if rights_status is "verified" or if
+    PUBLICATION_APPROVAL covers it. Else it is private. Visibility does not
+    change the rights fields.
+  - A rerun keeps the live visibility of existing records. Publication
+    exceptions are kept by hand in Omeka.
   - Before each create, the script looks for the identifier in Omeka. A rerun
     does not create duplicates.
 """
@@ -231,7 +235,8 @@ HOLDERS = {
 PDM = "https://creativecommons.org/publicdomain/mark/1.0/"
 BY_SA = "https://creativecommons.org/licenses/by-sa/4.0/"
 # House practice in Omeka item set 10780 (counts 2026-11-19). Suggestions only:
-# a row stays story_cleared (private) until the rights are checked.
+# a row stays story_cleared until the rights are checked. The rights fields do
+# not set visibility.
 HOUSE_RIGHTS = {
     "Archäologische Bodenforschung Basel-Stadt": ("CC BY-SA 4.0", BY_SA),
     "Historisches Museum Basel": ("CC BY-SA 4.0", BY_SA),
@@ -923,7 +928,8 @@ def rights_problems(row: dict[str, str]) -> list[str]:
 def item_payload(slug: str, row: dict[str, str], temporal: list[str]) -> dict[str, Any]:
     story = STORIES[slug]
     return {
-        "o:is_public": row["rights_status"] == "verified",
+        # Items hold no file. They are always public.
+        "o:is_public": True,
         "o:resource_template": {"o:id": ITEM_TEMPLATE},
         "o:item_set": [{"o:id": ITEM_SET_ID}],
         # Explicit empty list: Omeka otherwise adds new items to every site
@@ -950,7 +956,7 @@ def media_payload(
     story = STORIES[slug]
     type_uri, type_label = TYPES[row["kind"]]
     payload: dict[str, Any] = {
-        "o:is_public": row["rights_status"] == "verified",
+        "o:is_public": media_is_public(row),
         "o:ingester": "upload",
         "file_index": 0,
         "o:item": {"o:id": item_id},
@@ -1149,15 +1155,13 @@ def upload_rows(
             item_id = existing[0]["o:id"] if existing else None
             if row.get("omeka_item") and str(item_id) != row["omeka_item"]:
                 raise ValueError("Manifest item ID differs from the identifier match")
-            if item_id is not None and (
-                existing[0].get("o:is_public", item["o:is_public"])
-                != item["o:is_public"]
-                or ITEM_SET_ID
-                not in {ref["o:id"] for ref in existing[0].get("o:item_set", [])}
-            ):
-                raise ValueError(
-                    "Identifier matches an item with a different set or visibility"
-                )
+            if item_id is not None and ITEM_SET_ID not in {
+                ref["o:id"] for ref in existing[0].get("o:item_set", [])
+            }:
+                raise ValueError("Identifier matches an item in a different set")
+            if item_id is not None and existing[0].get("o:is_public") is False:
+                # Report only. Visibility is a manual decision in Omeka.
+                print(f"NOTE {row['identifier']}: item {item_id} is private in Omeka")
             file = WORK / slug / row["file"]
             if not file.is_file():
                 raise ValueError(f"Missing original file {file}")
@@ -1170,6 +1174,8 @@ def upload_rows(
                     raise ValueError("Media identifier collision")
                 proposed = create_payload("media", media, target_id=item_id, file=file)
                 actual = api.get("media", found[0]["o:id"])
+                # Keep the manual visibility. Check all other fields and the file.
+                proposed["o:is_public"] = actual.get("o:is_public")
                 verify_creation("media", proposed, actual, file_digest(file))
                 if apply:
                     row.update(
@@ -1245,6 +1251,25 @@ def link_existing(
     print(f"{'OK' if apply else 'DRY'} link item {item_id} -> {doi}")
     if apply:
         row["omeka_item"] = str(item_id)
+
+
+# Project-level publication approval, decision of the project lead on 2026-11-24:
+# Data Story sources may be public also when their rights are not checked. The
+# archive material of the excluded holders restricts reuse and stays private.
+# Set PUBLICATION_APPROVAL to None to withdraw the approval.
+PUBLICATION_APPROVAL: dict[str, Any] | None = {
+    "date": "2026-11-24",
+    "excluded_holders": frozenset({"Schweizer Radio und Fernsehen SRF"}),
+}
+
+
+def media_is_public(row: dict[str, str]) -> bool:
+    """Publication policy for a new media. Existing media keep their visibility."""
+    if row.get("rights_status") == "verified":
+        return True
+    if PUBLICATION_APPROVAL is None:
+        return False
+    return row.get("holder", "").strip() not in PUBLICATION_APPROVAL["excluded_holders"]
 
 
 NO_RIGHTS_NOTE = "(Rechte nicht geklärt)"
@@ -1490,7 +1515,7 @@ def apply_parent(
     if is_pdf and not zenodo_has_file(story["doi"], screenshot):
         print(f"{screenshot}: not a file of {doi}. Use the Zenodo PDF.")
         return 1
-    public = licensed or is_pdf
+    public = licensed or is_pdf or PUBLICATION_APPROVAL is not None
     kind = "PDF" if is_pdf else "Screenshot"
     note = (
         f"PDF-Fassung der Data Story, archiviert auf Zenodo ({doi})."

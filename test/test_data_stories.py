@@ -69,12 +69,12 @@ def test_walk_finds_slide_source_and_heading():
     assert media[1][4] == ""
 
 
-def test_payloads_pass_the_validator_and_stay_private():
+def test_payloads_pass_the_validator_and_are_public_under_the_approval():
     item = ads.item_payload("schulden", ROW, ["Mittelalter"])
     media = ads.media_payload("schulden", ROW, None, ["Mittelalter"])
     assert ads.validation_errors(item, "item") == []
     assert ads.validation_errors(media, "media") == []
-    assert item["o:is_public"] is False and media["o:is_public"] is False
+    assert item["o:is_public"] is True and media["o:is_public"] is True
     assert (
         item["dcterms:isPartOf"][0]["@id"] == "https://doi.org/10.5281/zenodo.17192327"
     )
@@ -115,6 +115,30 @@ def test_verified_needs_evidence():
     row["rights_evidence"] = "https://example.org/terms"
     assert ads.rights_problems(row) == []
     assert ads.item_payload("schulden", row, [])["o:is_public"] is True
+    assert ads.media_payload("schulden", row, None, [])["o:is_public"] is True
+
+
+@pytest.mark.parametrize("status", ["unknown", "story_cleared"])
+def test_unchecked_rights_are_public_only_with_the_approval(monkeypatch, status):
+    row = {**ROW, "rights_status": status}
+    assert ads.media_payload("schulden", row, None, [])["o:is_public"] is True
+    monkeypatch.setattr(ads, "PUBLICATION_APPROVAL", None)
+    assert ads.media_payload("schulden", row, None, [])["o:is_public"] is False
+    # Items hold no file and stay public.
+    assert ads.item_payload("schulden", row, [])["o:is_public"] is True
+    # The rights fields do not change.
+    media = ads.media_payload("schulden", row, None, [])
+    assert media["dcterms:rights"][0]["@value"] == ROW["rights"]
+    assert media["dcterms:license"][0]["@value"] == ROW["license"]
+
+
+def test_excluded_holder_stays_private():
+    row = {**ROW, "rights_status": "story_cleared"}
+    row["holder"] = "Schweizer Radio und Fernsehen SRF"
+    assert ads.media_payload("schulden", row, None, [])["o:is_public"] is False
+    assert ads.item_payload("schulden", row, [])["o:is_public"] is True
+    verified = {**row, "rights_status": "verified", "rights_evidence": "x"}
+    assert ads.media_payload("schulden", verified, None, [])["o:is_public"] is True
 
 
 def test_upload_skips_existing_identifier(tmp_path, monkeypatch):
@@ -424,3 +448,112 @@ def test_one_era_names_the_saved_plan():
     eras = [{"@value": "19. Jahrhundert"}, {"@value": "20. Jahrhundert"}]
     with pytest.raises(ValueError, match="plan.json"):
         ads.one_era({"dcterms:temporal": eras}, "plan.json")
+
+
+def existing_media_omeka(tmp_path, monkeypatch, *, media_changes=None, item=None):
+    """A fake Omeka that already holds the item and media of ROW."""
+    monkeypatch.setattr(ads, "WORK", tmp_path)
+    file = tmp_path / "schulden" / ROW["file"]
+    file.parent.mkdir(parents=True)
+    file.write_bytes(b"jpg")
+    size, digest = ads.file_digest(file)
+    ads.write_manifest("schulden", [ROW])
+    expected = ads.create_payload(
+        "media",
+        ads.media_payload("schulden", ROW, None, ["Mittelalter"]),
+        target_id=999,
+        file=file,
+    )
+    media = {**expected, "o:id": 5, "o:size": size, "o:sha256": digest}
+    media.update(media_changes or {})
+    live_item = {
+        "o:id": 999,
+        "o:media": [{"o:id": 5}],
+        "o:item_set": [{"o:id": ads.ITEM_SET_ID}],
+        **(item or {}),
+    }
+    posted = []
+
+    class FakeOmeka:
+        def get(self, kind, rid):
+            if kind == "media":
+                return media
+            return {"dcterms:temporal": [{"@value": "Mittelalter"}]}
+
+        def find(self, kind, identifier):
+            return [live_item] if kind == "items" else [media]
+
+        def post(self, *args, **kwargs):
+            posted.append(args)
+
+        def patch(self, *args, **kwargs):
+            posted.append(args)
+
+    return FakeOmeka(), posted
+
+
+def test_resume_keeps_existing_private_media(tmp_path, monkeypatch, capsys):
+    """A manual private decision in Omeka survives a rerun."""
+    api, posted = existing_media_omeka(
+        tmp_path,
+        monkeypatch,
+        media_changes={"o:is_public": False},
+        item={"o:is_public": False},
+    )
+    assert ads.upload_rows(api, "schulden", apply=True, limit=None) == 0
+    assert posted == []
+    row = ads.read_manifest("schulden")[0]
+    assert (row["omeka_item"], row["omeka_media"]) == ("999", "5")
+    assert "item 999 is private in Omeka" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "media_changes",
+    [
+        {"o:item": {"o:id": 1000}},
+        {"o:sha256": "0" * 64},
+        {"o:size": 1},
+        {"dcterms:title": []},
+    ],
+    ids=["parent", "checksum", "size", "metadata"],
+)
+def test_resume_with_private_media_still_checks_the_rest(
+    tmp_path, monkeypatch, media_changes
+):
+    api, posted = existing_media_omeka(
+        tmp_path,
+        monkeypatch,
+        media_changes={"o:is_public": False, **media_changes},
+    )
+    assert ads.upload_rows(api, "schulden", apply=True, limit=None) == 1
+    assert posted == []
+    assert not ads.read_manifest("schulden")[0]["omeka_media"]
+
+
+def test_resume_stops_on_an_item_in_another_set(tmp_path, monkeypatch):
+    api, posted = existing_media_omeka(
+        tmp_path, monkeypatch, item={"o:item_set": [{"o:id": 1}]}
+    )
+    assert ads.upload_rows(api, "schulden", apply=True, limit=None) == 1
+    assert posted == []
+
+
+def test_resume_stops_when_the_recorded_item_is_gone(tmp_path, monkeypatch, capsys):
+    """Old visibility is unknown: do not create a new record."""
+    monkeypatch.setattr(ads, "WORK", tmp_path)
+    (tmp_path / "schulden" / "files").mkdir(parents=True)
+    (tmp_path / "schulden" / "files" / "x.jpg").write_bytes(b"jpg")
+    ads.write_manifest("schulden", [{**ROW, "omeka_item": "999"}])
+    created = []
+
+    class FakeOmeka:
+        def get(self, kind, rid):
+            return {"dcterms:temporal": [{"@value": "Mittelalter"}]}
+
+        def find(self, kind, identifier):
+            return []
+
+    monkeypatch.setattr(ads, "create_record", lambda *a, **k: created.append(a))
+    assert ads.upload_rows(FakeOmeka(), "schulden", apply=True, limit=None) == 1
+    assert created == []
+    assert "Manifest item ID differs" in capsys.readouterr().out

@@ -517,10 +517,19 @@ def transform_item_set_data(
     return deepcopy((transformed_item_set, transformed_items, transformed_media))
 
 
+# The one image Omeka holds for sources that SGB may not publish. Same value as
+# PLACEHOLDER_SHA256 in omeka2dsp and in the website export.
+PLACEHOLDER_SHA256 = frozenset(
+    {"2c07e74c08e23923b89470509d095b329e7d77d6bd2e9212b2a773c97ab4c16e"}
+)
+
+
 def has_placeholder_media(media_data: dict[str, Any]) -> bool:
-    """Recognize the placeholder in Omeka's source name or stored filename."""
+    """Recognize the placeholder by checksum, source name or stored filename."""
     if not isinstance(media_data, dict):
         return False
+    if media_data.get("o:sha256") in PLACEHOLDER_SHA256:
+        return True
     return any(
         isinstance(name, str) and "sgb-fdp-platzhalter" in name.lower()
         for name in (media_data.get("o:source"), media_data.get("o:filename"))
