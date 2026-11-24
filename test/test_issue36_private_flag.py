@@ -21,6 +21,14 @@ def test_has_placeholder_media_detection() -> None:
     assert has_placeholder_media({"o:filename": "image-sgb-fdp-platzhalter-01.jpg"})
     assert has_placeholder_media({"o:source": PLACEHOLDER})
     assert not has_placeholder_media({"o:filename": "regular-image.jpg"})
+    assert has_placeholder_media(
+        {
+            "o:source": "upload.png",
+            "o:sha256": "2c07e74c08e23923b89470509d095b329e7d77d6bd2e9212b2a773c97ab4c16e",
+        }
+    )
+    assert not has_placeholder_media({"o:source": "a.png", "o:sha256": "0" * 64})
+    assert not has_placeholder_media({"o:source": "a.png", "o:sha256": ["x"]})
     assert not has_placeholder_media(None)  # type: ignore[arg-type]
     assert not has_placeholder_media("not a dict")  # type: ignore[arg-type]
 

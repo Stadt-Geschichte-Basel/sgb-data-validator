@@ -38,6 +38,8 @@ A final recorded pass moved extra DOIs and Handles from Identifier to Relation o
 
 On 23 November, the project lead retired the placeholder privacy rule. Omeka needs a media record to hold the metadata of a source. Where the project may not publish a file, that record holds the placeholder image, and its metadata stays public. DSP receives these records as metadata without a file. The validator, the cleanup copy, and the restore now keep the visibility as it is. [DSP readiness record](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/issues/44)
 
+On 24 November, the project lead separated publication from the rights check. Items are public because they hold no file. The project lead approved public Data Story sources also when their rights are not checked. Archive material from Schweizer Radio und Fernsehen SRF stays private. Private media show their metadata and a preview on the website, but no download. The rights fields describe the rights and no longer set visibility. Omeka keeps each manual visibility decision, and a rerun does not change it. Omeka still serves private files to anyone who has the address. The project accepts this risk until it retires the Omeka collection after the move to DSP. [Website change](https://github.com/Stadt-Geschichte-Basel/forschung.stadtgeschichtebasel.ch/pull/276)
+
 ## Supporting records
 
 - Two other archived comparisons list 383 and 357 proposed field changes. The private archive keeps those comparisons and the upload logs. The dated snapshots and backups stay in their data locations.
