@@ -528,7 +528,8 @@ def has_placeholder_media(media_data: dict[str, Any]) -> bool:
     """Recognize the placeholder by checksum, source name or stored filename."""
     if not isinstance(media_data, dict):
         return False
-    if media_data.get("o:sha256") in PLACEHOLDER_SHA256:
+    checksum = media_data.get("o:sha256")
+    if isinstance(checksum, str) and checksum in PLACEHOLDER_SHA256:
         return True
     return any(
         isinstance(name, str) and "sgb-fdp-platzhalter" in name.lower()

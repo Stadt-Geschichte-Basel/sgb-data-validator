@@ -28,6 +28,7 @@ def test_has_placeholder_media_detection() -> None:
         }
     )
     assert not has_placeholder_media({"o:source": "a.png", "o:sha256": "0" * 64})
+    assert not has_placeholder_media({"o:source": "a.png", "o:sha256": ["x"]})
     assert not has_placeholder_media(None)  # type: ignore[arg-type]
     assert not has_placeholder_media("not a dict")  # type: ignore[arg-type]
 
