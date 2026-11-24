@@ -66,9 +66,10 @@ ITEM_SET_ID = 10780
 ITEM_TEMPLATE = 48
 MEDIA_TEMPLATE = 33
 WORK = ROOT / "data" / "data_stories"
-AI_NOTE = "Metadaten mit KI-Unterstützung erstellt."
-OLD_AI_NOTE = (
-    "Metadaten mit KI-Unterstützung (Claude) erfasst und redaktionell geprüft."
+AI_NOTE = "(Metadaten mit KI-Unterstützung erstellt.)"
+OLD_AI_NOTES = (
+    "Metadaten mit KI-Unterstützung (Claude) erfasst und redaktionell geprüft.",
+    "Metadaten mit KI-Unterstützung erstellt.",
 )
 
 # slug -> story facts. DOI and license: index.qmd front matter in
@@ -1246,10 +1247,31 @@ def link_existing(
         row["omeka_item"] = str(item_id)
 
 
+NO_RIGHTS_NOTE = "(Rechte nicht geklärt)"
+# Earlier rights remarks, as written to Omeka before the bracketed wording.
+OLD_RIGHTS_REMARKS = re.compile(
+    r"Hinweis: Die Nutzungsrechte an diesem (?:Video|Bild) sind "
+    r"(?:un|nicht )geklärt(?: \(Werk urheberrechtlich geschützt\))?\. "
+    r"Der Datensatz ist deshalb nicht öffentlich\."
+    r"|Privat bis zur Klärung der Rechte "
+    r"\(Entscheid der Projektleitung vom 2026-11-23\)\."
+)
+
+
+def with_rights_note(text: str) -> str:
+    """Replace earlier rights remarks with the bracketed wording."""
+    return OLD_RIGHTS_REMARKS.sub(NO_RIGHTS_NOTE, text)
+
+
 def with_note(text: str) -> str:
     """Return the description with the current AI note at its end."""
-    text = text.replace(OLD_AI_NOTE, AI_NOTE)
-    return text if AI_NOTE in text else f"{text}\n\n{AI_NOTE}".strip()
+    text = with_rights_note(text)
+    if AI_NOTE in text:
+        return text
+    for old in OLD_AI_NOTES:
+        if old in text:
+            return text.replace(old, AI_NOTE)
+    return f"{text}\n\n{AI_NOTE}".strip()
 
 
 def ainote(
@@ -1259,7 +1281,7 @@ def ainote(
     *,
     exclusive_write: bool = False,
 ) -> int:
-    """Set the current AI note on the uploaded items and media of a story."""
+    """Set the current AI note and rights remark on the items and media of a story."""
     with omeka() as api:
         return apply_ai_note(
             api, slug, apply, skip_recent_hours, exclusive_write=exclusive_write
@@ -1289,9 +1311,15 @@ def apply_ai_note(
                     values.append(literal(4, "Description", ""))
                 old = values[0].get("@value", "")
                 new = with_note(old)
-                if new == old:
-                    continue
+                changed_text = new != old
                 values[0]["@value"] = new
+                for rights in proposed.get("dcterms:rights", []):
+                    text = rights.get("@value", "")
+                    if with_rights_note(text) != text:
+                        rights["@value"] = with_rights_note(text)
+                        changed_text = True
+                if not changed_text:
+                    continue
                 update_record(
                     api,
                     kind,

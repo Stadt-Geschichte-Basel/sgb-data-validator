@@ -82,6 +82,33 @@ def test_payloads_pass_the_validator_and_stay_private():
     assert ads.AI_NOTE in media["dcterms:description"][0]["@value"]
 
 
+def test_with_note_is_idempotent_and_replaces_old_forms():
+    base = "Beschreibung."
+    for old in ads.OLD_AI_NOTES:
+        assert ads.with_note(f"{base}\n\n{old}") == f"{base}\n\n{ads.AI_NOTE}"
+    once = ads.with_note(base)
+    assert once == f"{base}\n\n{ads.AI_NOTE}"
+    assert ads.with_note(once) == once
+    assert "((" not in ads.with_note(once)
+
+
+def test_with_note_replaces_old_rights_remarks():
+    old = (
+        "Beschreibung. Hinweis: Die Nutzungsrechte an diesem Bild sind ungeklärt. "
+        "Der Datensatz ist deshalb nicht öffentlich.\n\nMetadaten mit KI-Unterstützung erstellt."
+    )
+    assert ads.with_note(old) == (
+        f"Beschreibung. {ads.NO_RIGHTS_NOTE}\n\n{ads.AI_NOTE}"
+    )
+    assert (
+        ads.with_rights_note(
+            "In Copyright. Privat bis zur Klärung der Rechte "
+            "(Entscheid der Projektleitung vom 2026-11-23)."
+        )
+        == f"In Copyright. {ads.NO_RIGHTS_NOTE}"
+    )
+
+
 def test_verified_needs_evidence():
     row = {**ROW, "rights_status": "verified"}
     assert "verified without rights_evidence" in ads.rights_problems(row)
