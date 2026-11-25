@@ -2,6 +2,8 @@
 
 import hashlib
 import os
+import sys
+from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -12,6 +14,7 @@ from omeka_s_client.testing import FakeOmeka
 from typer.testing import CliRunner
 
 from sgb_validator.api import Omeka, OmekaError, find, optional_get
+from sgb_validator.changes import properties, writable
 from sgb_validator.cli import app
 from sgb_validator.recovery import backup, file_checksum, load_backup, restore
 from sgb_validator.snapshots import Snapshot, read_json, read_snapshot, write_snapshot
@@ -225,6 +228,8 @@ def test_disposable_omeka_recovery(base, tmp_path, monkeypatch):
             str(path),
             "--apply",
             "--exclusive-write",
+            "--skip-recent-hours",
+            "0",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -429,3 +434,72 @@ def test_file_checksum_leaves_no_file(tmp_path):
         )
     assert (size, digest) == (len(ORIGINAL), hashlib.sha256(ORIGINAL).hexdigest())
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("base", DRILL_URLS)
+def test_visibility_run_keeps_values_on_disposable_omeka(base, tmp_path):
+    if not base:
+        pytest.skip("Set SGB_DRILL_URLS to run the disposable Omeka drill")
+    if httpx2.URL(base).host not in {"127.0.0.1", "::1", "localhost"}:
+        pytest.fail("The visibility drill requires a disposable loopback instance")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import fix_dsp_readiness as fix
+
+    tag = f"drill-{uuid4().hex}"
+
+    def fixture(name):
+        return {
+            **record(name, False),
+            "dcterms:description": [
+                {**literal("text", 4), "is_public": False},
+                literal("open", 4),
+            ],
+            "dcterms:rights": [literal("Rights", 15)],
+        }
+
+    created = []
+    key = (os.environ["SGB_DRILL_KEY_IDENTITY"], os.environ["SGB_DRILL_KEY_CREDENTIAL"])
+    with Omeka(base, *key) as api:
+        try:
+            set_id = api.create("item_sets", record(f"{tag}-set"))["o:id"]
+            created.append(("item_sets", set_id))
+            item = create_record(
+                api, "items", fixture(f"{tag}-items"), target_id=set_id, apply=True
+            )
+            created.append(("items", item["o:id"]))
+            html = {**fixture(f"{tag}-media"), "o:ingester": "html", "html": "<p>x</p>"}
+            medium = create_record(
+                api, "media", html, target_id=item["o:id"], apply=True
+            )
+            created.append(("media", medium["o:id"]))
+            kinds = {"items": item["o:id"], "media": medium["o:id"]}
+            edits = [
+                {
+                    "kind": kind,
+                    "id": rid,
+                    "identifier": f"{tag}-{kind}",
+                    "visibility": {"expected": False, "target": True},
+                    "why": "drill",
+                }
+                for kind, rid in kinds.items()
+            ]
+            before = {
+                k: properties(writable(k, api.get(k, r))) for k, r in kinds.items()
+            }
+            options = {
+                "apply": True,
+                "exclusive_write": True,
+                "set_id": set_id,
+                "backup_dir": tmp_path / "before",
+                "skip_recent_hours": 0,
+            }
+            assert fix.run(api, edits, **options)["changed"] == 2
+            for kind, rid in kinds.items():
+                live = api.get(kind, rid)
+                assert live["o:is_public"] is True
+                assert properties(writable(kind, live)) == before[kind]
+            assert fix.run(api, edits, **options)["changed"] == 0
+        finally:
+            for kind, rid in reversed(created):
+                remove_fixture(api, kind, rid)
