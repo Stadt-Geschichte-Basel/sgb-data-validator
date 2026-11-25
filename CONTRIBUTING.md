@@ -8,8 +8,9 @@ Thank you for your help with sgb-data-validator. Follow the [code of conduct](CO
 2. Fork the repository on GitHub.
 3. Clone your fork.
 4. Run `uv sync --locked` in the repository root.
-5. Copy `example.env` to `.env`.
-6. Set the values in `.env`. The [README](README.md) explains each value.
+5. Run `npm ci` in the repository root. Use Node.js 24, as in CI.
+6. Copy `example.env` to `.env`.
+7. Set the values in `.env`. The [README](README.md) explains each value.
 
 ## Make a change
 
@@ -31,7 +32,7 @@ Do not edit `CHANGELOG.md` by hand. Run `npm run changelog` to make it from the 
 
 ## Record a live write
 
-A live write changes records in Omeka. After a live write, add a row to the [live runs table](docs/transformations/README.md#live-runs). Keep the backup folder that the run prints in a private location.
+A live write changes records in Omeka. After a live write, add a row to the [live runs table](https://github.com/Stadt-Geschichte-Basel/sgb-data-validator/blob/main/docs/transformations/README.md#live-runs). Keep the backup folder that the run prints in a private location.
 
 ## Open a pull request
 

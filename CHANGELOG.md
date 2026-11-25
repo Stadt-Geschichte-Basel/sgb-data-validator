@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 
 - 2026-11-25 · Add a reproducible change history
+- 2026-11-25 · Name only confirmed tools in the live runs table
+- 2026-11-25 · Record the visibility run of 2026-11-25
 
 ### Features
 
