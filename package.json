@@ -8,7 +8,7 @@
 		"check": "prettier --check .",
 		"format": "prettier --write .",
 		"prepare": "husky",
-		"changelog": "npm exec git-cliff -- --config cliff.toml"
+		"changelog": "git-cliff --config cliff.toml -o CHANGELOG.md && prettier --write CHANGELOG.md"
 	},
 	"devDependencies": {
 		"git-cliff": "^2.10.1",
