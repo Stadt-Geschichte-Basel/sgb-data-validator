@@ -30,6 +30,8 @@ uv run --locked sgb validate --export-csv
 
 The command prints a report and saves CSV files in `validation_reports/`. Open `items_validation.csv` or `media_validation.csv`. Use the `edit_link` column to find a record in Omeka. Use `--max-file-size MB` to change the file size warning limit.
 
+The command compares the records that it fetched with the totals that Omeka reports for the item set and for its media. If a count differs, the command prints both numbers to stderr and exits with code 1. It writes no report. `sgb download` saves the expected totals in `download_metadata.json`. `sgb validate DIR` compares them with the snapshot files. If a snapshot has no saved totals, the command prints a warning and continues.
+
 ## Preview edits
 
 ```sh

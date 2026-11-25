@@ -16,9 +16,11 @@ from .links import check_links
 from .reports import export_validation_csv, print_report, save_report
 from .snapshots import (
     Snapshot,
-    capture_snapshot,
+    check_saved_totals,
+    fetch_snapshot,
     read_snapshot,
     records,
+    saved_totals,
     write_snapshot,
 )
 from .transformations import transform_item_set_data
@@ -99,9 +101,9 @@ def download(
     with command_errors():
         require_keys(key_identity, key_credential, public_only)
         with connect(base_url, key_identity, key_credential) as api:
-            snapshot = capture_snapshot(api, target(item_set_id))
+            snapshot, totals = fetch_snapshot(api, target(item_set_id))
         directory = dated_dir(output_dir, "raw", snapshot.item_set_id)
-        write_snapshot(directory, snapshot, "raw")
+        write_snapshot(directory, snapshot, "raw", totals=totals)
         typer.echo(directory)
 
 
@@ -164,9 +166,15 @@ def validate(
         if directory is None:
             require_keys(key_identity, key_credential, public_only)
             with connect(base_url, key_identity, key_credential) as api:
-                snapshot = capture_snapshot(api, target(item_set_id))
+                snapshot, _ = fetch_snapshot(api, target(item_set_id))
         else:
             snapshot = read_snapshot(directory)
+            if not check_saved_totals(directory, snapshot):
+                typer.echo(
+                    "Warning: this snapshot has no saved totals. "
+                    "Validation cannot detect an incomplete download.",
+                    err=True,
+                )
         vocabulary = (
             VocabularyLoader(vocabularies) if vocabularies else VocabularyLoader()
         )
@@ -227,7 +235,13 @@ def transform(
                 if fields:
                     typer.echo(f"{kind}/{before.get('o:id')}  {', '.join(fields)}")
         destination = dated_dir(output_dir, "transformed", source.item_set_id)
-        write_snapshot(destination, edited, "transformed", source_directory=directory)
+        write_snapshot(
+            destination,
+            edited,
+            "transformed",
+            source_directory=directory,
+            totals=saved_totals(directory),
+        )
         typer.echo(destination)
 
 
