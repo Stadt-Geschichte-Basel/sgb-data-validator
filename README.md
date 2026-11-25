@@ -50,6 +50,6 @@ Review the update preview. Pause other Omeka writers during a maintenance window
 
 Run `uv run --locked sgb --help` to see all commands.
 
-[Published reports](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/validation-reports.html) · [Transformation history](docs/transformations/README.md) · [Contributing](CONTRIBUTING.md) · [Citation](CITATION.cff)
+[Published reports](https://dokumentation.stadtgeschichtebasel.ch/sgb-data-validator/validation-reports.html) · [Transformation history](docs/transformations/README.md) · [Changelog](CHANGELOG.md) · [Recovery guide](docs/recovery.md) · [Tests](test/README.md) · [Contributing](CONTRIBUTING.md) · [Citation](CITATION.cff)
 
 Code uses the [AGPL-3.0 license](LICENSE-AGPL.md). Project data uses the [CC BY 4.0 license](LICENSE-CCBY.md).
