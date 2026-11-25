@@ -96,6 +96,28 @@ def visibility(field: str, live: list[dict[str, Any]], new: dict[str, Any]) -> b
     return seen.pop() if seen else True
 
 
+def applied(live: list[dict[str, Any]], new: list[dict[str, Any]]) -> bool:
+    """True when the live values already equal the new values.
+
+    A new value with an explicit is_public or @language must match it too.
+    """
+    if len(live) != len(new):
+        return False
+    for old_value, new_value in zip(live, new, strict=True):
+        if shape(old_value) != shape(new_value):
+            return False
+        if isinstance(new_value.get("is_public"), bool) and (
+            old_value.get("is_public", True) != new_value["is_public"]
+        ):
+            return False
+        if (
+            "@language" in new_value
+            and old_value.get("@language") != new_value["@language"]
+        ):
+            return False
+    return True
+
+
 def plan_record(before: dict[str, Any], edits: list[dict[str, Any]]) -> dict[str, Any]:
     """Return the new record. Raise ValueError when a live value differs."""
     after = dict(before)
@@ -104,7 +126,7 @@ def plan_record(before: dict[str, Any], edits: list[dict[str, Any]]) -> dict[str
         if field not in PROPERTIES:
             raise ValueError(f"{field} is not allowed")
         live = before.get(field) or []
-        if [shape(v) for v in live] == [shape(v) for v in edit["new"]]:
+        if applied(live, edit["new"]):
             continue  # already applied
         if [shape(v) for v in live] != [shape(v) for v in edit["old"]]:
             raise ValueError(f"{field} is not as expected any more: {live}")
@@ -185,8 +207,13 @@ def run(
                 raise MismatchError(f"Outside item set {set_id}")
             entries = [e for e in group if "visibility" in e]
             after = plan_record(before, [e for e in group if "field" in e])
+            if len(entries) > 1:
+                raise MismatchError("More than one visibility entry for one record")
             if entries:
-                after = plan_visibility(after, entries[0])
+                after = {
+                    **after,
+                    "o:is_public": plan_visibility(before, entries[0])["o:is_public"],
+                }
             result = update_record(
                 api,
                 kind,

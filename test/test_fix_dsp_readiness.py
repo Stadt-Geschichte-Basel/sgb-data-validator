@@ -209,6 +209,45 @@ def test_mismatch_stops_the_run(tmp_path, first, entry):
     assert not patches(fake)
 
 
+def test_plan_applies_explicit_private_flag_on_equal_value():
+    before = {"dcterms:source": [literal("x", 11)]}
+    edit = {
+        "field": "dcterms:source",
+        "old": [{"type": "literal", "@value": "x"}],
+        "new": [{"type": "literal", "@value": "x", "is_public": False}],
+    }
+    after = fix.plan_record(before, [edit])
+    assert after["dcterms:source"][0]["is_public"] is False
+    assert fix.plan_record(after, [edit]) == after
+
+
+def identifier_edit(old, new):
+    return {
+        "kind": "items",
+        "id": 1,
+        "field": "dcterms:identifier",
+        "old": [{"type": "literal", "@value": old}],
+        "new": [{"type": "literal", "@value": new}],
+        "why": "test",
+    }
+
+
+def test_visibility_identifier_is_checked_against_live_record(tmp_path):
+    fake = FakeOmeka({"items": [item(1)]})
+    assert go(fake, [identifier_edit("ID1", "NEW"), vis(1)], tmp_path)["changed"] == 1
+    assert len(patches(fake)) == 1
+    fake = FakeOmeka({"items": [item(1)]})
+    result = go(fake, [identifier_edit("ID1", "NEW"), vis(1, ident="NEW")], tmp_path)
+    assert result["stopped"]
+    assert not patches(fake)
+
+
+def test_two_visibility_entries_for_one_record_stop_the_run(tmp_path):
+    fake = FakeOmeka({"items": [item(1)]})
+    assert go(fake, [vis(1), vis(1, target=False)], tmp_path)["stopped"]
+    assert not patches(fake)
+
+
 def test_media_uses_parent_item_set(tmp_path):
     medium = item(7, ident="M7") | {"o:item": {"o:id": 1}, "o:ingester": "html"}
     medium |= {"o:renderer": "html", "o:media_type": None, "@type": "o:Media"}
