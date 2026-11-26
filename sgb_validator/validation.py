@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import ValidationError
 
 from .models import Item, Media
+from .transformations import has_placeholder_media
 from .vocabularies import VocabularyLoader
 
 TYPE_LABELS = {"image", "dataset", "interactive resource"}
@@ -276,6 +277,9 @@ REQUIRED_TERMS = {
     "Item": ("identifier", "description", "temporal"),
     "Media": ("identifier", "description", "rights", "license"),
 }
+
+# The placeholder file is not the master. Its format and size do not describe it.
+PLACEHOLDER_SKIPPED_TERMS = frozenset({"format", "extent"})
 RECOMMENDED_TERMS = {
     "Item": ("language", "isPartOf"),
     "Media": (
@@ -325,7 +329,10 @@ def _validate_fields(
                 "Missing thumbnails (large, medium, small) or media",
             )
         )
+    is_placeholder = label == "Media" and has_placeholder_media(record)
     for term in RECOMMENDED_TERMS[label]:
+        if is_placeholder and term in PLACEHOLDER_SKIPPED_TERMS:
+            continue
         name = f"dcterms:{term}"
         if _check_missing_field(record, name):
             result.warnings.append(DataValidationWarning(label, rid, f"Missing {name}"))

@@ -600,3 +600,25 @@ def test_single_value_fields() -> None:
         e.field == "dcterms:language" and "Only one value" in e.error
         for e in validator.errors
     )
+
+
+def test_placeholder_media_skips_format_and_extent() -> None:
+    """The placeholder file does not describe the master, so format and extent stay optional."""
+    media = create_minimal_media(8)
+    media["o:source"] = "sgb-fdp-platzhalter[1].png"
+    del media["dcterms:format"]
+    del media["dcterms:extent"]
+    del media["dcterms:creator"]
+    result = validate_records([], [media], VOCABULARIES, check_collection=False)
+    text = " ".join(str(w) for w in result.warnings)
+    assert "dcterms:format" not in text
+    assert "dcterms:extent" not in text
+    assert "dcterms:creator" in text
+
+    media = create_minimal_media(9)
+    del media["dcterms:format"]
+    del media["dcterms:extent"]
+    result = validate_records([], [media], VOCABULARIES, check_collection=False)
+    text = " ".join(str(w) for w in result.warnings)
+    assert "dcterms:format" in text
+    assert "dcterms:extent" in text
